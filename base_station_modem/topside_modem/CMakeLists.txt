@@ -11,5 +11,5 @@ if(NOT TARGET seatrac_driver)
     FetchContent_MakeAvailable(seatrac_driver)
 endif()
 
-add_executable(ping_example src/ping_example.cpp)
-target_link_libraries(ping_example PRIVATE seatrac_driver)
+add_executable(topside_modem src/topside_modem.cpp)
+target_link_libraries(topside_modem PRIVATE seatrac_driver)

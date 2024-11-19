@@ -75,11 +75,13 @@ class MyDriver : public SeatracDriver
 int main(int argc, char *argv[])
 {
 
+    // TODO add code here to run specific commands
+
     std::string serial_port;
     if (argc == 1) serial_port = "/dev/ttyUSB0";
     else serial_port = argv[1];
 
-    MyDriver seatrac(serial_port);    
+    MyDriver seatrac(serial_port);
 
     seatrac.ping_beacon(BEACON_ID_15, MSG_REQU);
 
