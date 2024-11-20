@@ -83,9 +83,35 @@ int main(int argc, char *argv[])
 
     MyDriver seatrac(serial_port);
 
-    seatrac.ping_beacon(BEACON_ID_15, MSG_REQU);
+    // second argument is command
+    if (argc >= 3 && argv[2][0]=='-' && strlen(argv[2])==2) {
+        switch(argv[2][1]){
+            default: {
+                getchar();
+            } break;
 
-    getchar();
+            case 'k': {
+                int target_id = (argc>=4)? std::stoi(argv[3]) : 0;
+                if(target_id<=0 || target_id>16) {
+                    command::data_send(seatrac, BEACON_ALL, MSG_OWAY, 4, (uint8_t*)"STOP");
+                    std::cout << "Kill command sent to all vehicles" << std::endl;
+                } else {
+                    command::data_send(seatrac, (BID_E)target_id, MSG_REQ, 4, (uint8_t*)"STOP");
+                    std::cout << "Kill command sent to id " << target_id << std::endl;
+                    messages::DataReceive rec;
+                    try {
+                        seatrac.wait_for_message(CID_DAT_RECEIVE, &rec);
+                        std::cout << "Kill command reception confirmed from id " << target_id << std::endl;
+                    } catch(TimeoutReached _) {
+                        std::cout << "Kill command was not recieved by id " << target_id << std::endl;
+                    }
+                }
+            } break;
+
+        }
+        
+
+    }
 
     return 0;
 }
