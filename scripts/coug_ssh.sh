@@ -60,8 +60,8 @@ IFS=':' read -r USERNAME PASSWORD <<< "${CREDENTIALS[$choice]}"
 DEVICE_IP="${DEVICES[$choice]}"
 
 # Define the command to execute
-COMMAND="bash -i"
+CONNECT='mosh'
 
 # Connect to the selected device
 echo "Connecting to ${DEVICE_IP}..."
-sshpass -p "$PASSWORD" ssh -t -o StrictHostKeyChecking=no "$USERNAME@$DEVICE_IP" "$COMMAND"
+$CONNECT "$USERNAME@$DEVICE_IP" 
