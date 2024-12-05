@@ -4,6 +4,10 @@
 #include <seatrac_driver/SeatracDriver.h>
 #include <seatrac_driver/messages/Messages.h>
 #include <seatrac_driver/commands.h>
+
+#include "topside_modem/coms_protocol.hpp"
+
+
 using namespace narval::seatrac;
 
 class MyDriver : public SeatracDriver
@@ -93,17 +97,19 @@ int main(int argc, char *argv[])
             case 'k': {
                 int target_id = (argc>=4)? std::stoi(argv[3]) : 0;
                 if(target_id<=0 || target_id>16) {
-                    command::data_send(seatrac, BEACON_ALL, MSG_OWAY, 4, (uint8_t*)"STOP");
+                    cougars_coms::EmergencyKill message;
+                    command::data_send(seatrac, BEACON_ALL, MSG_OWAY, sizeof(message), (uint8_t*)&message);
                     std::cout << "Kill command sent to all vehicles" << std::endl;
                 } else {
-                    command::data_send(seatrac, (BID_E)target_id, MSG_REQ, 4, (uint8_t*)"STOP");
+                    cougars_coms::EmergencyKill message;
+                    command::data_send(seatrac, (BID_E)target_id, MSG_REQ, sizeof(message), (uint8_t*)&message);
                     std::cout << "Kill command sent to id " << target_id << std::endl;
                     messages::DataReceive rec;
                     try {
                         seatrac.wait_for_message(CID_DAT_RECEIVE, &rec);
                         std::cout << "Kill command reception confirmed from id " << target_id << std::endl;
                     } catch(TimeoutReached _) {
-                        std::cout << "Kill command was not recieved by id " << target_id << std::endl;
+                        std::cout << "Kill command was not confirmed by id " << target_id << std::endl;
                     }
                 }
             } break;

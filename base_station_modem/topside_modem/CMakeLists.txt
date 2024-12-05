@@ -11,5 +11,8 @@ if(NOT TARGET seatrac_driver)
     FetchContent_MakeAvailable(seatrac_driver)
 endif()
 
+include_directories(include)
+
 add_executable(topside_modem src/topside_modem.cpp)
 target_link_libraries(topside_modem PRIVATE seatrac_driver)
+

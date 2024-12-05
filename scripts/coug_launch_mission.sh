@@ -1,8 +1,7 @@
 #!/bin/bash
-# Created by Brighton Anderson, Nov 2024
-#
-# Connects to an avaliable CougUV via SSH
-# - Make sure the router is powered on before running this script
+# Created by Brighton Anderson, NOV 2024
+
+# Make sure the router is powered on before running this script
 
 # Check if sshpass is installed, and install it if it isn't
 if ! command -v sshpass &> /dev/null; then
@@ -60,8 +59,10 @@ IFS=':' read -r USERNAME PASSWORD <<< "${CREDENTIALS[$choice]}"
 DEVICE_IP="${DEVICES[$choice]}"
 
 # Define the command to execute
-CONNECT='mosh'
+COMMAND="cd ~/CoUGARs
+         bash tmux.sh -i"
+
 
 # Connect to the selected device
 echo "Connecting to ${DEVICE_IP}..."
-$CONNECT "$USERNAME@$DEVICE_IP" 
+sshpass -p "$PASSWORD" ssh -t -o StrictHostKeyChecking=no "$USERNAME@$DEVICE_IP" "$COMMAND"
