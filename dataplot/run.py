@@ -29,10 +29,6 @@ if (process == 'all'):
     # rosbag_interpreter.run(args)
     data_processor.run(args)
     map_generator.run(args)
-elif (process == 'csv'):
-    csv_interpreter.run(args)
-elif (process == 'rosbag'):
-    rosbag_interpreter.run(args)
 elif (process == 'dat'):
     data_processor.run(args)
 elif (process == 'map'):
