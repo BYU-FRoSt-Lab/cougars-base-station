@@ -6,6 +6,7 @@ from plotter_utility import config, cordinatehandling
 from plotter_utility.printing import update
 from tqdm import tqdm
 import os
+import glob
 
 #ROS BAG INTERPRETER
 from plotter_utility.classes_ros import *
@@ -109,6 +110,19 @@ def read_bhv_file(file_path):
     return waypoints, radii
 
 
+def find_db3_file(directory):
+    # Get the list of .db3 files in the directory
+    db3_files = glob.glob(os.path.join(directory, "*.db3"))
+    
+    # Check if there's exactly one .db3 file
+    if len(db3_files) == 1:
+        return db3_files[0]
+    elif len(db3_files) == 0:
+        raise FileNotFoundError(f"No .db3 file found in directory: {directory}")
+    else:
+        raise ValueError(f"Multiple .db3 files found in directory: {directory}. Please specify one.")
+
+
 #TODO: make functions that parse each data item
 
 def run(args):
@@ -129,9 +143,9 @@ def run(args):
         update('ERROR: A valid rosbag file is required when running the interpreter', True)
         quit(2)
 
-    file = os.path.basename(args.folder.rstrip("/"))
-    db3_path = args.folder + '/'+ file + "_0.db3"
-    update('Opening rosbag file: ' + db3_path)
+    # Example usage
+    directory = args.folder.rstrip("/")
+    db3_path = find_db3_file(directory)
 
     try:
         # Set up the rosbag2 reader
@@ -158,6 +172,8 @@ def run(args):
                 data_dict[config.INTERPRETED_GPS_ODOM].append(ODOM(deserialized_msg))
             elif topic.endswith('/fix'):
                 data_dict[config.INTERPRETED_GPS].append(GPS_FIX(deserialized_msg))
+            elif topic.endswith('/smoothed_output'):
+                data_dict[config.INTERPRETED_FACTOR].append(ODOM(deserialized_msg))
             elif topic.endswith('/smoothed_output'):
                 data_dict[config.INTERPRETED_FACTOR].append(ODOM(deserialized_msg))
             # elif topic.endswith('/fix'):
@@ -205,6 +221,7 @@ def run(args):
 
     data_reduction = args.samplereduction
 
+    #TODO: Maybe move these functions to above 
     update("Processing data:", True)
     # Iterate over the data
     for i in range(len(data_dict[config.INTERPRETED_GPS])):

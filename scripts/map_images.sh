@@ -38,6 +38,8 @@ fi
 # Find directories starting with "UL" and process them
 cd $COUG_WORKSPACE_DIR/cougars-base-station/dataplot || { echo "Error: Unable to navigate to $COUG_WORKSPACE_DIR/cougars-base-station/dataplot"; exit 1; }
 
+#TODO: THINK ABOUT PULLING IN THE REF LAT AND LON from the yaml file!!!
+
 for dir in "$TARGET_DIR"/UL*; do
     if [ -d "$dir" ]; then
         # Check if a PNG file already exists in the directory

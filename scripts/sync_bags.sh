@@ -20,15 +20,25 @@ function printFailure {
   echo -e "\033[0m\033[31m[FAIL] $1\033[0m"
 }
 
-# Ensure the script is called with an argument
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <vehicle_id>"
-    echo "Example: $0 coug1"
-    exit 1
-fi
+# Prompt the user to select the vehicle ID
+echo "Select a vehicle ID:"
+echo "1) coug1"
+echo "2) coug2"
+echo "3) coug3"
+echo "4) coug4"
+echo "5) coug5"
+read -p "Enter the number (1-5): " vehicle_option
+
+case $vehicle_option in
+    1) VEHICLE_ID="coug1" ;;
+    2) VEHICLE_ID="coug2" ;;
+    3) VEHICLE_ID="coug3" ;;
+    4) VEHICLE_ID="coug4" ;;
+    5) VEHICLE_ID="coug5" ;;
+    *) echo "Invalid option. Exiting."; exit 1 ;;
+esac
 
 # Variables
-VEHICLE_ID=$1
 REMOTE_USER="frostlab"
 REMOTE_FOLDER="/home/frostlab/CoUGARs/bag"
 LOCAL_FOLDER="../../bag/$VEHICLE_ID"
