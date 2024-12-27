@@ -9,7 +9,7 @@
 # to ever exceed that number, and I see no reason I would deactivate it.  Nonetheless, if the script returns "The API key has
 # not been accepted.  Please verify that it is correct.", you may need to get a new API key from
 # https://www.console.cloud.google.com
-GMAPS_API_KEY = "AIzaSyBlXKs4ye3MZHG8aLSxMKgT1yzZKTndO08"
+GMAPS_API_KEY = ""
 
 # Google maps allows a zoom level between 0 and 21, 0 seeing the global and 21 inspecting individual blades of grass  (that's an 
 # overexageration, to be clear). This is the default value that the script will use for map generation.  It will check to see if 
@@ -77,17 +77,19 @@ INTERPRETED_BEAM_INTENSITY  = 'beam_intensity'
 INTERPRETED_GPS             = 'gps'
 INTERPRETED_GPS_ODOM        = 'gps_odom'
 INTERPRETED_FACTOR          = 'factor'
+DEAD_RECKON                 = 'dr'
 
 # Dict items output by the processor
 PROCESSED_CENTER        = 'center'
 PROCESSED_TIME_START    = 'start_time'
 PROCESSED_TIME_DIFF     = 'time_diff'
 PROCESSED_BATHYMETRY    = 'bathymetry'
-PROCESSED_PATH          = 'path'
+PROCESSED_PATH          = 'GPS'
 PROCESSED_GPS_ODOM      = 'odom'
 PROCESSED_FACTOR        = 'factor'
 PROCESSED_WPT           = 'waypoint'
 PROCESSED_RAD           = 'radii'
+PROCESSED_DR            = 'dead_reckon'
 
 #--------------------#
 # CONSTANT VARIABLES #

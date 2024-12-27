@@ -1,54 +1,56 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
  <tabbed_widget name="Main Window" parent="main_window">
-  <Tab containers="1" tab_name="tab5">
+  <Tab tab_name="Global" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" mode="XYPlot" flip_y="false" style="Lines">
-       <range right="113.896156" bottom="-10.157607" left="-8.647176" top="61.982449"/>
+      <plot style="Lines" flip_y="false" flip_x="false" mode="XYPlot">
+       <range bottom="-216.580988" left="-183.099437" top="41.663380" right="233.911059"/>
        <limitY/>
-       <curve color="#ff7f0e" curve_x="/coug1/gps_odom/pose/pose/position/x" name="/coug1/gps_odom/pose/pose/position/[x;y]" curve_y="/coug1/gps_odom/pose/pose/position/y"/>
-       <curve color="#d62728" curve_x="/coug1/smoothed_output/pose/pose/position/x" name="/coug1/smoothed_output/pose/pose/position/[x;y]" curve_y="/coug1/smoothed_output/pose/pose/position/y"/>
+       <curve color="#ff7f0e" name="/coug1/gps_odom/pose/pose/position/[x;y]" curve_y="/coug1/gps_odom/pose/pose/position/y" curve_x="/coug1/gps_odom/pose/pose/position/x"/>
+       <curve color="#d62728" name="/coug1/smoothed_output/pose/pose/position/[x;y]" curve_y="/coug1/smoothed_output/pose/pose/position/y" curve_x="/coug1/smoothed_output/pose/pose/position/x"/>
+       <curve color="#f14cc1" name="/coug1/dvl/dr_global/pose/pose/position/[x;y]" curve_y="/coug1/dvl/dr_global/pose/pose/position/y" curve_x="/coug1/dvl/dr_global/pose/pose/position/x"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="tab4">
+  <Tab tab_name="Dead Reckon" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" mode="XYPlot" flip_y="false" style="Lines">
-       <range right="80.937324" bottom="-213.113374" left="-1949.129940" top="990.694769"/>
+      <plot style="Lines" flip_y="false" flip_x="false" mode="XYPlot">
+       <range bottom="-106.395823" left="-236.669337" top="106.395823" right="106.944545"/>
        <limitY/>
-       <curve color="#d62728" curve_x="/coug1/dvl/position/position/x" name="/coug1/dvl/position/position/[x;y]" curve_y="/coug1/dvl/position/position/y"/>
-       <curve color="#1ac938" curve_x="/coug1/dvl_dead_reckoning/pose/pose/position/x" name="/coug1/dvl_dead_reckoning/pose/pose/position/[x;y]" curve_y="/coug1/dvl_dead_reckoning/pose/pose/position/y"/>
+       <curve color="#d62728" name="/coug1/dvl/position/position/[x;y]" curve_y="/coug1/dvl/position/position/y" curve_x="/coug1/dvl/position/position/x"/>
+       <curve color="#1ac938" name="/coug1/dvl_dead_reckoning/pose/pose/position/[x;y]" curve_y="/coug1/dvl_dead_reckoning/pose/pose/position/y" curve_x="/coug1/dvl_dead_reckoning/pose/pose/position/x"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="tab1">
+  <Tab tab_name="Depth/Altitude" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" mode="TimeSeries" flip_y="false" style="Lines">
-       <range right="697.480326" bottom="-0.019068" left="0.903539" top="0.524151"/>
+      <plot style="Lines" flip_y="false" flip_x="false" mode="TimeSeries">
+       <range bottom="-0.097741" left="0.000000" top="4.007381" right="409.179331"/>
        <limitY/>
        <curve color="#1f77b4" name="negativeDepth"/>
        <curve color="#1f77b4" name="/coug1/controls/command/fin[2]"/>
+       <curve color="#9467bd" name="/coug1/dvl/data/altitude"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="tab2">
+  <Tab tab_name="Heading" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" mode="TimeSeries" flip_y="false" style="Lines">
-       <range right="697.480326" bottom="-188.984414" left="0.903539" top="188.906607"/>
+      <plot style="Lines" flip_y="false" flip_x="false" mode="TimeSeries">
+       <range bottom="-188.997626" left="0.000000" top="188.767687" right="409.179331"/>
        <limitY/>
        <curve color="#d62728" name="/coug1/modem_imu/orientation/yaw"/>
        <curve color="#1ac938" name="/coug1/desired_heading/desired_heading"/>
@@ -59,13 +61,13 @@
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="tab3">
+  <Tab tab_name="Actuator" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
-     <DockSplitter sizes="0.500233;0.499767" orientation="|" count="2">
+    <DockSplitter sizes="1" count="1" orientation="-">
+     <DockSplitter sizes="0.5;0.5" count="2" orientation="|">
       <DockArea name="...">
-       <plot flip_x="false" mode="TimeSeries" flip_y="false" style="Lines">
-        <range right="697.480326" bottom="-26.250000" left="0.903539" top="26.250000"/>
+       <plot style="Lines" flip_y="false" flip_x="false" mode="TimeSeries">
+        <range bottom="-26.250000" left="0.000000" top="26.250000" right="409.179331"/>
         <limitY/>
         <curve color="#17becf" name="/coug1/controls/command/fin[0]"/>
         <curve color="#bcbd22" name="/coug1/controls/command/fin[1]"/>
@@ -73,8 +75,8 @@
        </plot>
       </DockArea>
       <DockArea name="...">
-       <plot flip_x="false" mode="TimeSeries" flip_y="false" style="Lines">
-        <range right="697.480326" bottom="-1.034008" left="0.903539" top="20.020825"/>
+       <plot style="Lines" flip_y="false" flip_x="false" mode="TimeSeries">
+        <range bottom="-0.776361" left="0.000000" top="20.014541" right="409.179331"/>
         <limitY/>
         <curve color="#1ac938" name="/coug1/kinematics/command/thruster"/>
         <curve color="#ff7f0e" name="/coug1/desired_speed/desired_speed"/>
@@ -86,20 +88,20 @@
     </DockSplitter>
    </Container>
   </Tab>
-  <Tab containers="1" tab_name="tab6">
+  <Tab tab_name="GPS Fix" containers="1">
    <Container>
-    <DockSplitter sizes="1" orientation="-" count="1">
+    <DockSplitter sizes="1" count="1" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" mode="XYPlot" flip_y="false" style="Lines">
-       <range right="40.239974" bottom="-111.739636" left="40.237410" top="-111.738056"/>
+      <plot style="Lines" flip_y="false" flip_x="false" mode="XYPlot">
+       <range bottom="-111.739684" left="40.238805" top="-111.739496" right="40.239099"/>
        <limitY/>
-       <curve color="#f14cc1" curve_x="/coug1/fix/latitude" name="/coug1/fix/l[atitude;ongitude]" curve_y="/coug1/fix/longitude"/>
+       <curve color="#f14cc1" name="/coug1/fix/l[atitude;ongitude]" curve_y="/coug1/fix/longitude" curve_x="/coug1/fix/latitude"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <currentTabIndex index="0"/>
+  <currentTabIndex index="2"/>
  </tabbed_widget>
  <use_relative_time_offset enabled="1"/>
  <!-- - - - - - - - - - - - - - - -->
@@ -140,48 +142,38 @@
  </Plugins>
  <!-- - - - - - - - - - - - - - - -->
  <previouslyLoaded_Datafiles>
-  <fileInfo filename="../bag/coug1/ULmiss2.4-2024-11-14-14-05-12/metadata.yaml" prefix="">
+  <fileInfo prefix="" filename="../../../bag/coug1/UL_1.5_2024_12_07-13_27_43/metadata.yaml">
    <plugin ID="DataLoad ROS2 bags">
     <use_header_stamp value="false"/>
     <discard_large_arrays value="true"/>
     <max_array_size value="100"/>
     <boolean_strings_to_number value="true"/>
     <remove_suffix_from_strings value="true"/>
-    <selected_topics value="/coug1/controls/command;/events/write_split;/parameter_events;/rosout;/coug1/gps_odom;/coug1/battery/data;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl_dead_reckoning;/coug1/dvl_dfb;/coug1/dvl_velocity;/coug1/dvl/command/response;/coug1/dvl/config/status;/coug1/dvl/data;/coug1/dvl/position;/coug1/extended_fix;/coug1/fix;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_cmd_update;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_status;/coug1/odom;/coug1/pressure/data;/coug1/smoothed_output"/>
-   </plugin>
-  </fileInfo>
-  <fileInfo filename="../bag/coug1/utah_lake_ping_mooswpt5.0-2024-11-21-12-26-54/metadata.yaml" prefix="">
-   <plugin ID="DataLoad ROS2 bags">
-    <use_header_stamp value="false"/>
-    <discard_large_arrays value="true"/>
-    <max_array_size value="100"/>
-    <boolean_strings_to_number value="true"/>
-    <remove_suffix_from_strings value="true"/>
-    <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl_dead_reckoning;/coug1/dvl_dfb;/coug1/dvl_velocity;/coug1/dvl/command/response;/coug1/dvl/config/status;/coug1/dvl/data;/coug1/dvl/position;/coug1/extended_fix;/coug1/fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_cmd_update;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_status;/coug1/odom;/coug1/pressure/data;/coug1/smoothed_output;/events/write_split;/parameter_events;/rosout"/>
+    <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl_dead_reckoning;/coug1/dvl_dfb;/coug1/dvl_velocity;/coug1/dvl/command/response;/coug1/dvl/config/status;/coug1/dvl/data;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/extended_fix;/coug1/fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_cmd_update;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/odom;/coug1/pressure/data;/coug1/smoothed_output;/events/write_split;/parameter_events;/rosout"/>
    </plugin>
   </fileInfo>
  </previouslyLoaded_Datafiles>
  <!-- - - - - - - - - - - - - - - -->
  <customMathEquations>
-  <snippet name="negativeDepth">
-   <global></global>
-   <function>return -value</function>
-   <linked_source>/coug1/depth_data/pose/pose/position/z</linked_source>
-  </snippet>
-  <snippet name="headingDeg">
+  <snippet name="rolldeg">
    <global></global>
    <function>return value * 180 / 3.1415</function>
-   <linked_source>/coug1/modem_imu/orientation/yaw</linked_source>
+   <linked_source>/coug1/modem_imu/orientation/roll</linked_source>
   </snippet>
   <snippet name="PITCHDEG">
    <global></global>
    <function>return value * 180 / 3.1415</function>
    <linked_source>/coug1/modem_imu/orientation/pitch</linked_source>
   </snippet>
-  <snippet name="rolldeg">
+  <snippet name="headingDeg">
    <global></global>
    <function>return value * 180 / 3.1415</function>
-   <linked_source>/coug1/modem_imu/orientation/roll</linked_source>
+   <linked_source>/coug1/modem_imu/orientation/yaw</linked_source>
+  </snippet>
+  <snippet name="negativeDepth">
+   <global></global>
+   <function>return -value</function>
+   <linked_source>/coug1/depth_data/pose/pose/position/z</linked_source>
   </snippet>
  </customMathEquations>
  <snippets/>

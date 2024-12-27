@@ -4,6 +4,34 @@ import argparse
 from plotter_utility import config
 from datetime import datetime
 
+def process_data(folder, maptype='sat', latlongaxis=False, process='all', colormap='jet_r', 
+                 samplereduction=1, location='online', behavior=False):
+    
+    # Create an argparse.Namespace object to mimic command-line arguments
+    args = argparse.Namespace(
+        folder=folder,
+        maptype=maptype,
+        latlongaxis=latlongaxis,
+        process=process,
+        colormap=colormap,
+        samplereduction=samplereduction,
+        location=location,
+        behavior=behavior
+    )
+
+    if args.samplereduction <= 0:
+        raise ValueError('Sample reduction must be an int greater than 0')
+
+    if args.process == 'all':
+        data_processor.run(args)
+        map_generator.run(args)
+    elif args.process == 'dat':
+        data_processor.run(args)
+    elif args.process == 'map':
+        map_generator.run(args)
+    else:
+        raise ValueError(f"Invalid process option: {args.process}")
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some maps.')
     parser.add_argument('folder', help='the containing rosbag and bhv', default='null')
@@ -17,19 +45,19 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--location', choices=['ul', 'byu','online'], default='online', help='Specifiy which map location. Defaults to online map query')
     parser.add_argument('-b', '--behavior', action='store_true', help='a .bhv file is in directory containing the waypoint data')
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-if (args.samplereduction <= 0):
-    print('Sample reduction must be an int greater than 0')
+    if (args.samplereduction <= 0):
+        print('Sample reduction must be an int greater than 0')
 
-process = args.process
+    process = args.process
 
 
-if (process == 'all'):
-    # rosbag_interpreter.run(args)
-    data_processor.run(args)
-    map_generator.run(args)
-elif (process == 'dat'):
-    data_processor.run(args)
-elif (process == 'map'):
-    map_generator.run(args)
+    if (process == 'all'):
+        # rosbag_interpreter.run(args)
+        data_processor.run(args)
+        map_generator.run(args)
+    elif (process == 'dat'):
+        data_processor.run(args)
+    elif (process == 'map'):
+        map_generator.run(args)

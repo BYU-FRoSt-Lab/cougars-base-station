@@ -137,6 +137,7 @@ def run(args):
         config.INTERPRETED_GPS: [],
         config.INTERPRETED_GPS_ODOM: [],
         config.INTERPRETED_FACTOR: [],
+        config.DEAD_RECKON: [],
     }
 
     if args.folder == 'null':
@@ -174,10 +175,8 @@ def run(args):
                 data_dict[config.INTERPRETED_GPS].append(GPS_FIX(deserialized_msg))
             elif topic.endswith('/smoothed_output'):
                 data_dict[config.INTERPRETED_FACTOR].append(ODOM(deserialized_msg))
-            elif topic.endswith('/smoothed_output'):
-                data_dict[config.INTERPRETED_FACTOR].append(ODOM(deserialized_msg))
-            # elif topic.endswith('/fix'):
-            #     data_dict[config.INTERPRETED_GPS].append(GPS_FIX(deserialized_msg))
+            elif topic.endswith('global'):
+                data_dict[config.DEAD_RECKON].append(ODOM(deserialized_msg))
     except Exception as e:
         update(f"ERROR: Failed to read rosbag: {str(e)}", True)
         quit(2)
@@ -195,6 +194,10 @@ def run(args):
         # BYU in front of the MARB
         ref_lat = 40.2466104
         ref_lon = -111.6488273
+        # BYU in the MOA parking lot
+        ref_lat = 40.2504278
+        ref_lon = -111.6469067
+
     else:
         ref_lat, ref_lon = cordinatehandling.FindCenter([curr.gps_lat for curr in data_dict[config.INTERPRETED_GPS]], [curr.gps_long for curr in data_dict[config.INTERPRETED_GPS]])
 
@@ -214,6 +217,7 @@ def run(args):
     bathymetry = []
     gps_odom = []
     factor = []
+    dead_reckon = []
 
     #TODO: Do something here for depth map
     depth = []
@@ -250,6 +254,13 @@ def run(args):
         y = data_dict[config.INTERPRETED_FACTOR][i].y
         z = data_dict[config.INTERPRETED_FACTOR][i].z
         factor.append((x, y, z))
+    
+    # Dead Reckoning values to list
+    for i in range(len(data_dict[config.DEAD_RECKON])):
+        x = data_dict[config.DEAD_RECKON][i].x
+        y = data_dict[config.DEAD_RECKON][i].y
+        z = data_dict[config.DEAD_RECKON][i].z
+        dead_reckon.append((x, y, z))
 
     #TODO print out what percent of gps data was thrown out due to nan
 
@@ -259,6 +270,7 @@ def run(args):
     path = np.array(local_coords)
     odom = np.array(gps_odom)
     factor_array = np.array(factor)
+    dr_array = np.array(dead_reckon)
     
     waypoints  = []
 
@@ -276,6 +288,7 @@ def run(args):
     output_dict[config.PROCESSED_PATH] = path
     output_dict[config.PROCESSED_GPS_ODOM] = odom
     output_dict[config.PROCESSED_FACTOR] = factor_array
+    output_dict[config.PROCESSED_DR] = dr_array
 
     # Pickle bathymetry data so it can be used elsewhere
     with open(config.PROCESSOR_OUTPUT, 'wb') as file:
