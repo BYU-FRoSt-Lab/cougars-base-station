@@ -13,7 +13,18 @@ from tqdm import tqdm
 from plotter_utility import config, cordinatehandling
 from plotter_utility.printing import update
 
+from dotenv import load_dotenv
+import os
 
+def gmaps_env_key():
+    # Load environment variables from .env file
+    load_dotenv("plotter_utility/.env")
+
+    # Access the environment variables
+    api_key = os.getenv('GMAPS_API_KEY')
+
+    # Now you can use the variables in your code
+    return api_key
 
 def plot_waypoints(waypoints, radii, ax):
     x_waypoints = waypoints[:, 0]
@@ -112,7 +123,7 @@ def run(args):
         #TODO: Zoom level with the ref lat and lon
         update("Connecting with Google Maps")
         try:
-            gmaps = googlemaps.Client(key = config.GMAPS_API_KEY)
+            gmaps = googlemaps.Client(key = gmaps_env_key())
         except ValueError:
             quit(1)
 

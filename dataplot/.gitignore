@@ -5,3 +5,4 @@ __pycache__
 *.yaml
 *.db3
 output.png
+.env
