@@ -50,10 +50,14 @@ RUN source /opt/ros/humble/setup.bash
 RUN apt update && apt install -y --no-install-recommends \
     ros-humble-gps-msgs \
     ros-humble-geometry-msgs \
-    ros-humble-nav-msgs
+    ros-humble-nav-msgs \ 
+    ros-humble-tf-transformations
 
 # Switch back to the ue4 user
 USER ue4
+# Upgrade this package to work with tf transformations and numpy 2.0
+RUN pip install --upgrade transforms3d
+
 WORKDIR /home/ue4
 RUN mkdir -p .local/lib
 RUN mkdir -p .local/share
