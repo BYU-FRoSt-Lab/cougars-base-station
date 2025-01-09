@@ -40,6 +40,21 @@ void send_kill_command(MyDriver& seatrac, int target_id) {
         cougars_coms::EmergencyKill message;
         command::data_send(seatrac, BEACON_ALL, MSG_OWAY, sizeof(message), (uint8_t*)&message);
         std::cout << "Kill command sent to all vehicles" << std::endl;
+        std::cout << "Waiting for confirmation responses" << std::endl;
+        messages::DataReceive rec;
+        auto start_time = steady_clock::now();
+        int elapsed_seconds = 0;
+        do {
+            if(
+                seatrac.wait_for_message(CID_DAT_RECEIVE, &rec, 500)
+                && rec.packetLen == 1 
+                && rec.packetData[0] == cougars_coms::CONFIRM_EMERGENCY_KILL
+            ) {
+                std::cout << "Thruster kill confirmed from id " << rec.acoFix.srcId << std::endl;
+            }
+            auto current_time = steady_clock::now();
+            elapsed_seconds = duration_cast<seconds>(current_time - start_time).count();
+        } while(elapsed_seconds <= 4);
     } else {
         cougars_coms::EmergencyKill message;
         command::data_send(seatrac, (BID_E)target_id, MSG_OWAY, sizeof(message), (uint8_t*)&message);
@@ -49,8 +64,12 @@ void send_kill_command(MyDriver& seatrac, int target_id) {
         auto start_time = steady_clock::now();
         int elapsed_seconds = 0;
         do {
-            bool success = seatrac.wait_for_message(CID_DAT_RECEIVE, &rec, 1000);
-            if(success && rec.packetLen==1 && rec.packetData[0]==cougars_coms::CONFIRM_EMERGENCY_KILL) {
+            if(
+                seatrac.wait_for_message(CID_DAT_RECEIVE, &rec, 500)
+                && rec.acoFix.srcId == target_id
+                && rec.packetLen == 1 
+                && rec.packetData[0] == cougars_coms::CONFIRM_EMERGENCY_KILL
+            ) {
                 std::cout << "Thruster kill confirmed from id " << target_id << std::endl;
                 return;
             }
