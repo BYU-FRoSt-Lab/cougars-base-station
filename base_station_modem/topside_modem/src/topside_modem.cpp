@@ -1,5 +1,6 @@
 #include <iostream>
 #include <stdio.h>
+#include <chrono>
 
 #include <seatrac_driver/SeatracDriver.h>
 #include <seatrac_driver/messages/Messages.h>
@@ -9,6 +10,7 @@
 
 
 using namespace narval::seatrac;
+using namespace std::chrono;
 
 class MyDriver : public SeatracDriver
 {
@@ -28,53 +30,57 @@ class MyDriver : public SeatracDriver
 
     // this method is called on any message returned by the beacon.
     void on_message(CID_E msgId, const std::vector<uint8_t>& data) {
-        //replace code in this method by your own
-        switch(msgId) {
-            default:
-                std::cout << "Got message : " << msgId << std::endl << std::flush;
-                break;
-
-            case CID_PING_RESP: {
-                    messages::PingResp response;        //struct that contains response fields
-                    response = data;                    //operator overload fills in response struct with correct data
-                    std::cout << response << std::endl; //operator overload prints out response data
-
-                    //sends another ping to the other beacon, creating a feedback loop between ping sends and ping responses
-                    this->ping_beacon(response.acoFix.srcId, MSG_REQU);
-
-                } break;
-            case CID_PING_ERROR: {
-                    messages::PingError response;
-                    response = data;
-                    std::cout << response << std::endl;
-
-                    this->ping_beacon(response.beaconId, MSG_REQU);
-
-                } break;
-            case CID_PING_SEND: {
-                    messages::PingSend response;
-                    response = data;
-                    std::cout << response << std::endl;
-                } break;
-
-            case CID_DAT_RECEIVE: {               
-                    messages::DataReceive response;
-                    response = data;
-                    std::cout << response << std::endl; 
-                } break;
-            case CID_DAT_ERROR: {
-                    messages::DataError response;
-                    response = data;
-                    std::cout << response << std::endl;
-                } break;
-
-            case CID_STATUS:
-                // too many STATUS messages so bypassing display.
-                break;
-        }
 
     }
 };
+
+
+void send_kill_command(MyDriver& seatrac, int target_id) {
+    if(target_id<=0 || target_id>16) {
+        cougars_coms::EmergencyKill message;
+        command::data_send(seatrac, BEACON_ALL, MSG_OWAY, sizeof(message), (uint8_t*)&message);
+        std::cout << "Kill command sent to all vehicles" << std::endl;
+        std::cout << "Waiting for confirmation responses" << std::endl;
+        messages::DataReceive rec;
+        auto start_time = steady_clock::now();
+        int elapsed_seconds = 0;
+        do {
+            if(
+                seatrac.wait_for_message(CID_DAT_RECEIVE, &rec, 500)
+                && rec.packetLen == 1 
+                && rec.packetData[0] == cougars_coms::CONFIRM_EMERGENCY_KILL
+            ) {
+                std::cout << "Thruster kill confirmed from id " << rec.acoFix.srcId << std::endl;
+            }
+            auto current_time = steady_clock::now();
+            elapsed_seconds = duration_cast<seconds>(current_time - start_time).count();
+        } while(elapsed_seconds <= 4);
+    } else {
+        cougars_coms::EmergencyKill message;
+        command::data_send(seatrac, (BID_E)target_id, MSG_OWAY, sizeof(message), (uint8_t*)&message);
+        std::cout << "Kill command sent to id " << target_id << std::endl;
+        messages::DataReceive rec;
+
+        auto start_time = steady_clock::now();
+        int elapsed_seconds = 0;
+        do {
+            if(
+                seatrac.wait_for_message(CID_DAT_RECEIVE, &rec, 500)
+                && rec.acoFix.srcId == target_id
+                && rec.packetLen == 1 
+                && rec.packetData[0] == cougars_coms::CONFIRM_EMERGENCY_KILL
+            ) {
+                std::cout << "Thruster kill confirmed from id " << target_id << std::endl;
+                return;
+            }
+            auto current_time = steady_clock::now();
+            elapsed_seconds = duration_cast<seconds>(current_time - start_time).count();
+        } while(elapsed_seconds <= 4);
+        std::cout << "Timed out waiting for thruster kill confirmation from id " << target_id << std::endl;
+    }
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -96,22 +102,7 @@ int main(int argc, char *argv[])
 
             case 'k': {
                 int target_id = (argc>=4)? std::stoi(argv[3]) : 0;
-                if(target_id<=0 || target_id>16) {
-                    cougars_coms::EmergencyKill message;
-                    command::data_send(seatrac, BEACON_ALL, MSG_OWAY, sizeof(message), (uint8_t*)&message);
-                    std::cout << "Kill command sent to all vehicles" << std::endl;
-                } else {
-                    cougars_coms::EmergencyKill message;
-                    command::data_send(seatrac, (BID_E)target_id, MSG_REQ, sizeof(message), (uint8_t*)&message);
-                    std::cout << "Kill command sent to id " << target_id << std::endl;
-                    messages::DataReceive rec;
-                    try {
-                        seatrac.wait_for_message(CID_DAT_RECEIVE, &rec);
-                        std::cout << "Kill command reception confirmed from id " << target_id << std::endl;
-                    } catch(TimeoutReached _) {
-                        std::cout << "Kill command was not confirmed by id " << target_id << std::endl;
-                    }
-                }
+                send_kill_command(seatrac, target_id);
             } break;
 
         }
