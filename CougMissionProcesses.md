@@ -49,7 +49,7 @@ will recieve and record that message.
 
 #### Contents of Vehicle Status
 
-13 Byte length
+Length: 13 bytes
 
 * VEHICLE_STATUS message header (1 byte)
 * Vehicle status flags (1 byte)
