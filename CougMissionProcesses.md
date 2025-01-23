@@ -40,12 +40,12 @@ Each vehicle gets 4 seconds to talk.
 On vehicle turn:
 
 1. Base Station sends REQUEST_STATUS
-2. Vehicle modem sends first response so Base Station can record status
+2. Vehicle modem sends first response with range to base station
 3. Vehicle sends second response with VEHICLE_STATUS message
 4. Base Station logs response and updates gui
 
 Even though VEHICLE_STATUS messages are addressed to the Base Station, all vehicles
-will recieve that message and can update their own state estimates based on the new data
+will recieve and record that message.
 
 #### Contents of Vehicle Status
 
@@ -74,10 +74,10 @@ will recieve that message and can update their own state estimates based on the 
     Modem command to disable thruster on vehicle
 
 2. Return To Home Command:
-    Tells vehicles to abort the mission and return back for retrieval
+    Commands vehicles to abort the mission and return back for retrieval
 
 3. Surface Command:
-    Tells vehicles to abort mission, turn fins up, and swim to surface.
+    Commands vehicles to abort mission, turn fins up, and swim to surface.
 
 anything else?
 
