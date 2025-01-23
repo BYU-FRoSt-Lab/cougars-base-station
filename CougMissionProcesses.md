@@ -20,13 +20,13 @@ Processes to start and run multi-agent CoUGARs UV missions from the backend pers
 
 5. Start Mission Button:
     1. Verify
-        *  Base Station sends VERIFY to each vehicle individually 
+        *  Base Station sends VERIFY over modem to each vehicle individually 
         *  Turn on dvl acoustics
         *  ROS mission launch (factor_graph, converters, etc.)
         *  Verify sensors (gps, voltage, modem, dvl data, leak, etc.)
         *  Vehicle responds with CONFIRM_VERIFY
     2. Launch
-        *  Base Station sends LAUNCH to each vehicle individually with `start_time`
+        *  Base Station sends LAUNCH over modem to each vehicle individually with `start_time`
         *  Vehicles respond with CONFIRM_LAUNCH and wait for `start_time`
         *  At `start_time`: arm thruster and start mission
 
