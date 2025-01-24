@@ -1,6 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include "seatrac_interfaces/msg/modem_send.hpp"
-#include <seatrac_driver/SeatracEnums.h>
+#include "base_station_coms/seatrac_enums.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include <chrono>
 #include <thread>

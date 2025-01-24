@@ -16,11 +16,15 @@ include_directories(include)
 add_executable(base_station_coms src/base_station_coms.cpp)
 ament_target_dependencies(base_station_coms rclcpp std_srvs seatrac_interfaces)
 
+add_executable(modem_pinger src/modem_pinger.cpp)
+ament_target_dependencies(modem_pinger rclcpp std_srvs seatrac_interfaces)
+
 install(DIRECTORY include/
         DESTINATION include/${PROJECT_NAME})
 
 install(TARGETS
   base_station_coms
+  modem_pinger
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
