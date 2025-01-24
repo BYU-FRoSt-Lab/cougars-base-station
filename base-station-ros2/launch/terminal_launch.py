@@ -28,11 +28,6 @@ def generate_launch_description():
             name='base_station_coms',
             parameters=[param_file]
         ),
-        launch.actions.ExecuteProcess(
-            cmd=['ros2', 'topic', 'echo', '/modem_rec'],
-            output='screen',
-            parameters=[param_file]
-        ),
     ])
 
 if __name__ == '__main__':
