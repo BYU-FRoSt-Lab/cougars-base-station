@@ -15,7 +15,9 @@
 using namespace std::literals::chrono_literals;
 using namespace cougars_coms;
 using namespace narval::seatrac;
+
 using std::placeholders::_1;
+using std::placeholders::_2;
 
 class ComsNode : public rclcpp::Node {
 public:
@@ -31,6 +33,19 @@ public:
         );
         this->modem_publisher_ = this->create_publisher<seatrac_interfaces::msg::ModemSend>("modem_send", 10);
 
+
+        emergency_kill_service_ = this->create_service<std_srvs::srv::SetBool>(
+            "emergency_kill_service",
+            std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
+        );
+
+        start_mission_service_ = this->create_service<std_srvs::srv::SetBool>(
+            "emergency_kill_service",
+            std::bind(&ComsNode::start_mission_callback, this, _1, _2)
+        );
+
+
+
     }
 
     void listen_to_modem(seatrac_interfaces::msg::ModemRec msg) {
@@ -40,6 +55,22 @@ public:
             case EMPTY: break;
         }
     }
+
+
+    void emergency_kill_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                    std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
+    {
+        EmergencyKill e_kill_msg;
+        send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg);
+    }
+
+
+    void start_mission_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                    std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
+    {
+        
+    }
+
 
     void send_acoustic_message(int target_id, int message_len, uint8_t* message) {
         auto request = seatrac_interfaces::msg::ModemSend();
@@ -57,6 +88,10 @@ private:
 
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
+
+
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr emergency_kill_service_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr start_mission_service_;
 
     int base_station_beacon_id_;
 
