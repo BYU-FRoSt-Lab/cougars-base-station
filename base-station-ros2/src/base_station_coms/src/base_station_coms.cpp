@@ -40,7 +40,7 @@ public:
         );
 
         start_mission_service_ = this->create_service<std_srvs::srv::SetBool>(
-            "emergency_kill_service",
+            "start_mission_service",
             std::bind(&ComsNode::start_mission_callback, this, _1, _2)
         );
 
@@ -62,6 +62,7 @@ public:
     {
         EmergencyKill e_kill_msg;
         send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
     }
 
 
