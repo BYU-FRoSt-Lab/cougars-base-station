@@ -1,0 +1,20 @@
+
+
+
+/**:
+  ros__parameters:
+    base_station_modem_id: 15
+
+    # The vehicle ids of the CougUVs running the current mission.
+    vehicles_in_mission: [1, 2, 5]
+
+    # If true, the base station will request a status update form each vehicle during a mission
+    request_status: True
+
+    # During a mission, the base station requests a status update from each vehicle one at
+    # a time on a schedule.  The request frequency is the number of seconds between the
+    # status request of two vehicles.
+    status_request_frequency_seconds: 4
+
+
+
