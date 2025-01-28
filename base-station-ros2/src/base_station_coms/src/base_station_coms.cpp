@@ -21,11 +21,16 @@ using std::placeholders::_2;
 
 class ComsNode : public rclcpp::Node {
 public:
-    ComsNode() : Node("cougars_coms") {
+    ComsNode() : Node("base_station_coms") {
 
         this->declare_parameter<int>("base_station_beacon_id", 15);
-
         this->base_station_beacon_id_ = this->get_parameter("base_station_beacon_id").as_int();
+
+        this->declare_parameter<int>("status_request_frequency_seconds", 15);
+        this->status_request_frequency = this->get_parameter("status_request_frequency_seconds").as_int();
+
+        this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
+        this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
         this->modem_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
             "modem_rec", 10,
@@ -45,6 +50,15 @@ public:
         );
 
 
+        timer_ = this->create_wall_timer(
+                    std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
+
+        std::ostringstream ss;
+        ss << "Vehicle ids in mission: ";
+        for(int64_t i: vehicles_in_mission_) ss << i << ", ";
+        RCLCPP_INFO(this->get_logger(), "base station coms node started");
+        RCLCPP_INFO(this->get_logger(), ss.str().c_str());
+
 
     }
 
@@ -61,7 +75,7 @@ public:
                                     std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
     {
         EmergencyKill e_kill_msg;
-        send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg);
+        send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
     }
 
@@ -73,11 +87,24 @@ public:
     }
 
 
-    void send_acoustic_message(int target_id, int message_len, uint8_t* message) {
+    void request_status_callback() {
+        
+        modem_coms_schedule_turn_index += 1;
+        if (modem_coms_schedule_turn_index>=vehicles_in_mission_.size())
+            modem_coms_schedule_turn_index = 0;
+
+        RequestStatus request;
+        int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
+        send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
+    }
+
+
+    void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
         auto request = seatrac_interfaces::msg::ModemSend();
         request.msg_id = CID_DAT_SEND;
         request.dest_id = (uint8_t)target_id;
-        request.msg_type = MSG_OWAY;
+        request.msg_type = msg_type;
         request.packet_len = (uint8_t)std::min(message_len, 31);
         std::memcpy(&request.packet_data, message, request.packet_len);
         
@@ -90,11 +117,19 @@ private:
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
 
-
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr emergency_kill_service_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr start_mission_service_;
 
+    rclcpp::TimerBase::SharedPtr timer_;
+
+    std::vector<int64_t> vehicles_in_mission_;
+
+    int modem_coms_schedule_turn_index = -1;  
+
+    int status_request_frequency;
+
     int base_station_beacon_id_;
+
 
 };
 
