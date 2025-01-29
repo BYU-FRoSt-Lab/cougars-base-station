@@ -19,8 +19,11 @@ function printSuccess {
 function printFailure {
   echo -e "\033[0m\033[31m[FAIL] $1\033[0m"
 }
-
-VEHICLE_ID=$(./select_vehicle.sh)
+if [[ ! $1 =~ ^[0-9]+$ ]]; then
+    VEHICLE_ID=$(./select_vehicle.sh)
+else
+    VEHICLE_ID="coug$1"
+fi
 
 # Variables
 REMOTE_USER="frostlab"
