@@ -1,0 +1,145 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<root>
+ <tabbed_widget parent="main_window" name="Main Window">
+  <Tab containers="1" tab_name="Control">
+   <Container>
+    <DockSplitter orientation="-" sizes="1" count="1">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="-47.250000" top="47.250000"/>
+       <limitY/>
+       <curve color="#1f77b4" name="/coug1/controls/command/fin[1]"/>
+       <curve color="#d62728" name="/coug1/controls/command/fin[2]"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Depth">
+   <Container>
+    <DockSplitter orientation="-" sizes="0.5;0.5" count="2">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="-0.650034" top="26.651396"/>
+       <limitY/>
+       <curve color="#bcbd22" name="negative_depth"/>
+       <curve color="#1f77b4" name="/coug1/desired_depth/desired_depth"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="-0.650034" top="26.651396"/>
+       <limitY/>
+       <curve color="#f14cc1" name="/coug1/controls/debug/pose/pose/position/z"/>
+       <curve color="#9467bd" name="/coug1/controls/debug/pose/pose/position/y"/>
+       <curve color="#1f77b4" name="/coug1/desired_depth/desired_depth"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Pitch">
+   <Container>
+    <DockSplitter orientation="-" sizes="1" count="1">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="-25.949910" top="8.766345"/>
+       <limitY/>
+       <curve color="#d62728" name="/coug1/controls/debug/pose/pose/orientation/x"/>
+       <curve color="#1ac938" name="/coug1/controls/debug/pose/pose/orientation/y"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Velocity">
+   <Container>
+    <DockSplitter orientation="-" sizes="1" count="1">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="-0.033534" top="1.374908"/>
+       <limitY/>
+       <curve color="#9467bd" name="/coug1/dvl/velocity/twist/twist/linear/x"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Altitude">
+   <Container>
+    <DockSplitter orientation="-" sizes="1" count="1">
+     <DockArea name="...">
+      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
+       <range left="0.340302" right="437.427142" bottom="19.900000" top="20.100000"/>
+       <limitY/>
+       <curve color="#ff7f0e" name="/coug1/dvl/data/altitude"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <currentTabIndex index="0"/>
+ </tabbed_widget>
+ <use_relative_time_offset enabled="1"/>
+ <!-- - - - - - - - - - - - - - - -->
+ <!-- - - - - - - - - - - - - - - -->
+ <Plugins>
+  <plugin ID="DataLoad CSV">
+   <parameters time_axis="" delimiter="0"/>
+  </plugin>
+  <plugin ID="DataLoad MCAP"/>
+  <plugin ID="DataLoad ROS2 bags">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+   <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/pressure/data;/parameter_events;/rosout;/coug1/controls/debug"/>
+  </plugin>
+  <plugin ID="DataLoad ULog"/>
+  <plugin ID="ROS2 Topic Subscriber">
+   <use_header_stamp value="false"/>
+   <discard_large_arrays value="true"/>
+   <max_array_size value="100"/>
+   <boolean_strings_to_number value="true"/>
+   <remove_suffix_from_strings value="true"/>
+   <selected_topics value="/holoocean/DVLSensorRange;/holoocean/DVLSensorVelocity;/holoocean/DynamicsSensorOdom;/holoocean/IMUSensor;/holoocean/LocationSensor;/holoocean/RotationSensor;/holoocean/VelocitySensor;/parameter_events;/rosout;/coug1/controls/command;/holoocean/DepthSensor;/coug3/controls/command;/coug3/depth_data;/coug3/dvl_dead_reckoning;/coug3/gps_odom;/coug3/modem_imu;/coug3/desired_depth;/coug3/desired_heading;/coug3/desired_speed;/coug3/init;/coug3/kinematics/command;/coug3/smoothed_output"/>
+  </plugin>
+  <plugin ID="UDP Server"/>
+  <plugin ID="WebSocket Server"/>
+  <plugin ID="ZMQ Subscriber"/>
+  <plugin ID="Fast Fourier Transform"/>
+  <plugin ID="Quaternion to RPY"/>
+  <plugin ID="Reactive Script Editor">
+   <library code="--[[ Helper function to create a series from arrays&#xa;&#xa; new_series: a series previously created with ScatterXY.new(name)&#xa; prefix:     prefix of the timeseries, before the index of the array&#xa; suffix_X:   suffix to complete the name of the series containing the X value. If [nil], use the index of the array.&#xa; suffix_Y:   suffix to complete the name of the series containing the Y value&#xa; timestamp:   usually the tracker_time variable&#xa;              &#xa; Example:&#xa; &#xa; Assuming we have multiple series in the form:&#xa; &#xa;   /trajectory/node.{X}/position/x&#xa;   /trajectory/node.{X}/position/y&#xa;   &#xa; where {N} is the index of the array (integer). We can create a reactive series from the array with:&#xa; &#xa;   new_series = ScatterXY.new(&quot;my_trajectory&quot;) &#xa;   CreateSeriesFromArray( new_series, &quot;/trajectory/node&quot;, &quot;position/x&quot;, &quot;position/y&quot;, tracker_time );&#xa;--]]&#xa;&#xa;function CreateSeriesFromArray( new_series, prefix, suffix_X, suffix_Y, timestamp )&#xa;  &#xa;  --- clear previous values&#xa;  new_series:clear()&#xa;  &#xa;  --- Append points to new_series&#xa;  index = 0&#xa;  while(true) do&#xa;&#xa;    x = index;&#xa;    -- if not nil, get the X coordinate from a series&#xa;    if suffix_X ~= nil then &#xa;      series_x = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_X) )&#xa;      if series_x == nil then break end&#xa;      x = series_x:atTime(timestamp)&#x9; &#xa;    end&#xa;    &#xa;    series_y = TimeseriesView.find( string.format( &quot;%s.%d/%s&quot;, prefix, index, suffix_Y) )&#xa;    if series_y == nil then break end &#xa;    y = series_y:atTime(timestamp)&#xa;    &#xa;    new_series:push_back(x,y)&#xa;    index = index+1&#xa;  end&#xa;end&#xa;&#xa;--[[ Similar to the built-in function GetSeriesNames(), but select only the names with a give prefix. --]]&#xa;&#xa;function GetSeriesNamesByPrefix(prefix)&#xa;  -- GetSeriesNames(9 is a built-in function&#xa;  all_names = GetSeriesNames()&#xa;  filtered_names = {}&#xa;  for i, name in ipairs(all_names)  do&#xa;    -- check the prefix&#xa;    if name:find(prefix, 1, #prefix) then&#xa;      table.insert(filtered_names, name);&#xa;    end&#xa;  end&#xa;  return filtered_names&#xa;end&#xa;&#xa;--[[ Modify an existing series, applying offsets to all their X and Y values&#xa;&#xa; series: an existing timeseries, obtained with TimeseriesView.find(name)&#xa; delta_x: offset to apply to each x value&#xa; delta_y: offset to apply to each y value &#xa;  &#xa;--]]&#xa;&#xa;function ApplyOffsetInPlace(series, delta_x, delta_y)&#xa;  -- use C++ indeces, not Lua indeces&#xa;  for index=0, series:size()-1 do&#xa;    x,y = series:at(index)&#xa;    series:set(index, x + delta_x, y + delta_y)&#xa;  end&#xa;end&#xa;"/>
+   <scripts/>
+  </plugin>
+  <plugin ID="CSV Exporter"/>
+  <plugin ID="ROS2 Topic Re-Publisher"/>
+ </Plugins>
+ <!-- - - - - - - - - - - - - - - -->
+ <previouslyLoaded_Datafiles>
+  <fileInfo prefix="" filename="../../../bag/coug1/SIM_2.3_controller-2025-01-29-20-55-15/metadata.yaml">
+   <plugin ID="DataLoad ROS2 bags">
+    <use_header_stamp value="false"/>
+    <discard_large_arrays value="true"/>
+    <max_array_size value="100"/>
+    <boolean_strings_to_number value="true"/>
+    <remove_suffix_from_strings value="true"/>
+    <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/pressure/data;/parameter_events;/rosout;/coug1/controls/debug"/>
+   </plugin>
+  </fileInfo>
+ </previouslyLoaded_Datafiles>
+ <!-- - - - - - - - - - - - - - - -->
+ <customMathEquations>
+  <snippet name="negative_depth">
+   <global></global>
+   <function>return value * -1
+</function>
+   <linked_source>/coug1/depth_data/pose/pose/position/z</linked_source>
+  </snippet>
+ </customMathEquations>
+ <snippets/>
+ <!-- - - - - - - - - - - - - - - -->
+</root>
+
