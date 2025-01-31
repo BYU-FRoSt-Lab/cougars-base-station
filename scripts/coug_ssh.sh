@@ -40,24 +40,32 @@ display_menu() {
     echo "Enter your choice (1-5):"
 }
 
-# Main script
-# Display the menu
-display_menu
+if [[ -z $1 ]]; then
+    # Main script
+    # Display the menu
+    display_menu
 
-# Read user input
-read -r choice
+    # Read user input
+    read -r choice
 
-# Validate input
-if [[ ! "$choice" =~ ^[1-5]$ ]]; then
-    echo "Invalid input. Please enter a number between 1 and 5."
-    exit 1
+    # Validate input
+    if [[ ! "$choice" =~ ^[1-5]$ ]]; then
+        echo "Invalid input. Please enter a number between 1 and 5."
+        exit 1
+    fi
+
+    # Split credentials
+    IFS=':' read -r USERNAME PASSWORD <<< "${CREDENTIALS[$choice]}"
+
+    # Get the selected device IP
+    DEVICE_IP="${DEVICES[$choice]}"
+
+else
+    echo "First argument is a number, not running the command."
+    VEHICLE_ID="$1"
+    USERNAME="frostlab"
+    DEVICE_IP="$VEHICLE_ID.local"
 fi
-
-# Split credentials
-IFS=':' read -r USERNAME PASSWORD <<< "${CREDENTIALS[$choice]}"
-
-# Get the selected device IP
-DEVICE_IP="${DEVICES[$choice]}"
 
 # Define the command to execute
 CONNECT='mosh'
