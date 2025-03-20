@@ -1,52 +1,81 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
  <tabbed_widget parent="main_window" name="Main Window">
-  <Tab containers="1" tab_name="Control">
-   <Container>
-    <DockSplitter orientation="-" sizes="1" count="1">
-     <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="-47.250000" top="47.250000"/>
-       <limitY/>
-       <curve color="#1f77b4" name="/coug1/controls/command/fin[1]"/>
-       <curve color="#d62728" name="/coug1/controls/command/fin[2]"/>
-      </plot>
-     </DockArea>
-    </DockSplitter>
-   </Container>
-  </Tab>
   <Tab containers="1" tab_name="Depth">
    <Container>
-    <DockSplitter orientation="-" sizes="0.5;0.5" count="2">
+    <DockSplitter sizes="0.5;0.5" orientation="-" count="2">
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="-0.650034" top="26.651396"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range top="0.709805" bottom="0.297999" right="1.359867" left="0.000000"/>
        <limitY/>
-       <curve color="#bcbd22" name="negative_depth"/>
-       <curve color="#1f77b4" name="/coug1/desired_depth/desired_depth"/>
+       <curve color="#1f77b4" name="/coug1/controls/debug/depth/actual"/>
+       <curve color="#d62728" name="/coug1/controls/debug/depth/desired"/>
+       <curve color="#1ac938" name="/coug1/controls/debug/depth/reference"/>
       </plot>
      </DockArea>
-     <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="-0.650034" top="26.651396"/>
-       <limitY/>
-       <curve color="#f14cc1" name="/coug1/controls/debug/pose/pose/position/z"/>
-       <curve color="#9467bd" name="/coug1/controls/debug/pose/pose/position/y"/>
-       <curve color="#1f77b4" name="/coug1/desired_depth/desired_depth"/>
-      </plot>
-     </DockArea>
+     <DockSplitter sizes="0.599291;0.400709" orientation="|" count="2">
+      <DockArea name="...">
+       <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+        <range top="5.184909" bottom="-2.347313" right="1.359867" left="0.000000"/>
+        <limitY/>
+        <curve color="#ff7f0e" name="/coug1/controls/debug/depth/i"/>
+        <curve color="#f14cc1" name="/coug1/controls/debug/depth/d"/>
+        <curve color="#9467bd" name="/coug1/controls/debug/depth/p"/>
+        <curve color="#17becf" name="/coug1/controls/debug/depth/pid"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+        <range top="0.100000" bottom="-0.100000" right="1.359867" left="0.000000"/>
+        <limitY/>
+        <curve color="#bcbd22" name="/coug1/controls/debug/depth/rate"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
     </DockSplitter>
    </Container>
   </Tab>
   <Tab containers="1" tab_name="Pitch">
    <Container>
-    <DockSplitter orientation="-" sizes="1" count="1">
+    <DockSplitter sizes="0.5;0.5" orientation="-" count="2">
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="-25.949910" top="8.766345"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range top="4.005287" bottom="-0.200129" right="1.359867" left="0.000000"/>
        <limitY/>
-       <curve color="#d62728" name="/coug1/controls/debug/pose/pose/orientation/x"/>
-       <curve color="#1ac938" name="/coug1/controls/debug/pose/pose/orientation/y"/>
+       <curve color="#ff7f0e" name="/coug1/controls/debug/pitch/actual"/>
+       <curve color="#f14cc1" name="/coug1/controls/debug/pitch/desired"/>
+       <curve color="#9467bd" name="/coug1/controls/debug/pitch/reference"/>
+      </plot>
+     </DockArea>
+     <DockSplitter sizes="0.58023;0.41977" orientation="|" count="2">
+      <DockArea name="...">
+       <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+        <range top="13.612495" bottom="-7.533224" right="1.359867" left="0.000000"/>
+        <limitY/>
+        <curve color="#17becf" name="/coug1/controls/debug/pitch/p"/>
+        <curve color="#bcbd22" name="/coug1/controls/debug/pitch/i"/>
+        <curve color="#1f77b4" name="/coug1/controls/debug/pitch/d"/>
+        <curve color="#d62728" name="/coug1/controls/debug/pitch/pid"/>
+       </plot>
+      </DockArea>
+      <DockArea name="...">
+       <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+        <range top="-0.011416" bottom="-0.050291" right="1.359867" left="0.000000"/>
+        <limitY/>
+        <curve color="#1ac938" name="/coug1/controls/debug/pitch/rate"/>
+       </plot>
+      </DockArea>
+     </DockSplitter>
+    </DockSplitter>
+   </Container>
+  </Tab>
+  <Tab containers="1" tab_name="Heading">
+   <Container>
+    <DockSplitter sizes="1" orientation="-" count="1">
+     <DockArea name="...">
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range top="1.000000" bottom="0.000000" right="1.000000" left="0.000000"/>
+       <limitY/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -54,12 +83,11 @@
   </Tab>
   <Tab containers="1" tab_name="Velocity">
    <Container>
-    <DockSplitter orientation="-" sizes="1" count="1">
+    <DockSplitter sizes="1" orientation="-" count="1">
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="-0.033534" top="1.374908"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range top="1.000000" bottom="0.000000" right="1.000000" left="0.000000"/>
        <limitY/>
-       <curve color="#9467bd" name="/coug1/dvl/velocity/twist/twist/linear/x"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -67,18 +95,17 @@
   </Tab>
   <Tab containers="1" tab_name="Altitude">
    <Container>
-    <DockSplitter orientation="-" sizes="1" count="1">
+    <DockSplitter sizes="1" orientation="-" count="1">
      <DockArea name="...">
-      <plot mode="TimeSeries" style="Lines" flip_y="false" flip_x="false">
-       <range left="0.340302" right="437.427142" bottom="19.900000" top="20.100000"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range top="1.000000" bottom="0.000000" right="1.000000" left="0.000000"/>
        <limitY/>
-       <curve color="#ff7f0e" name="/coug1/dvl/data/altitude"/>
       </plot>
      </DockArea>
     </DockSplitter>
    </Container>
   </Tab>
-  <currentTabIndex index="0"/>
+  <currentTabIndex index="3"/>
  </tabbed_widget>
  <use_relative_time_offset enabled="1"/>
  <!-- - - - - - - - - - - - - - - -->
@@ -94,7 +121,7 @@
    <max_array_size value="100"/>
    <boolean_strings_to_number value="true"/>
    <remove_suffix_from_strings value="true"/>
-   <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/pressure/data;/parameter_events;/rosout;/coug1/controls/debug"/>
+   <selected_topics value="/coug1/controls/debug;/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/command/response;/coug1/dvl/config/command;/coug1/dvl/config/status;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_cmd_update;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/odom;/coug1/pressure/data;/events/write_split;/parameter_events;/rosout;/tf;/tf_static"/>
   </plugin>
   <plugin ID="DataLoad ULog"/>
   <plugin ID="ROS2 Topic Subscriber">
@@ -118,27 +145,8 @@
   <plugin ID="ROS2 Topic Re-Publisher"/>
  </Plugins>
  <!-- - - - - - - - - - - - - - - -->
- <!-- <previouslyLoaded_Datafiles>
-  <fileInfo prefix="" filename="../../../bag/coug1/SIM_2.3_controller-2025-01-29-20-55-15/metadata.yaml">
-   <plugin ID="DataLoad ROS2 bags">
-    <use_header_stamp value="false"/>
-    <discard_large_arrays value="true"/>
-    <max_array_size value="100"/>
-    <boolean_strings_to_number value="true"/>
-    <remove_suffix_from_strings value="true"/>
-    <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/pressure/data;/parameter_events;/rosout;/coug1/controls/debug"/>
-   </plugin>
-  </fileInfo>
- </previouslyLoaded_Datafiles> -->
  <!-- - - - - - - - - - - - - - - -->
- <customMathEquations>
-  <snippet name="negative_depth">
-   <global></global>
-   <function>return value * -1
-</function>
-   <linked_source>/coug1/depth_data/pose/pose/position/z</linked_source>
-  </snippet>
- </customMathEquations>
+ <customMathEquations/>
  <snippets/>
  <!-- - - - - - - - - - - - - - - -->
 </root>
