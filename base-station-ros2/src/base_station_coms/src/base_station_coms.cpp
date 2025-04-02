@@ -70,13 +70,13 @@ public:
         }
     }
 
-
     void emergency_kill_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                     std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
     {
         EmergencyKill e_kill_msg;
         send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
+        response->success = true;
     }
 
 
@@ -101,11 +101,13 @@ public:
 
 
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
+
         auto request = seatrac_interfaces::msg::ModemSend();
         request.msg_id = CID_DAT_SEND;
         request.dest_id = (uint8_t)target_id;
         request.msg_type = msg_type;
         request.packet_len = (uint8_t)std::min(message_len, 31);
+        request.insert_timestamp = true;
         std::memcpy(&request.packet_data, message, request.packet_len);
         
         this->modem_publisher_->publish(request);
