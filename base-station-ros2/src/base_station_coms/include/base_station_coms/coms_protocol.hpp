@@ -23,7 +23,21 @@ enum COUG_MSG_ID : uint8_t {
     EMERGENCY_KILL = 0xFF,
     CONFIRM_EMERGENCY_KILL = 0xFC,
 
+    EMERGENCY_SURFACE = 0xEE,
+    CONFIRM_EMERGENCY_SURFACE = 0xEC,
+
 };
+
+
+enum COUG_STATUS_CODE : uint8_t {
+    READY = 0x1,
+    IN_MISSION = 0x2,
+    // NON_MOOS_MISSION = 0x3,
+    EMERGENCY_STOPPED = 0x4,
+    EMERGENCY_SURFACING = 0x5,
+};
+
+
 
 
 struct EmergencyKill {
@@ -72,6 +86,8 @@ struct VehicleStatus {
 
     uint32_t timestamp;
 
+    COUG_STATUS_CODE status_code;
+
     uint8_t moos_waypoint;
     uint8_t moos_behavior_number;
 
@@ -83,6 +99,19 @@ struct VehicleStatus {
 }__attribute__((packed));
 
 
-
 } // cougars_coms
+
+inline std::ostream& operator<<(std::ostream& os, cougars_coms::COUG_STATUS_CODE code)
+{
+    switch(code) {
+        case     cougars_coms::READY :                os << "READY";                      break;
+        case     cougars_coms::IN_MISSION :           os << "IN_MISSION";                 break;
+        // case     cougars_coms::NON_MOOS_MISSION :     os << "NON_MOOS_MISSION";           break;
+        case     cougars_coms::EMERGENCY_STOPPED :    os << "EMERGENCY_STOPPED";          break;
+        case     cougars_coms::EMERGENCY_SURFACING :  os << "EMERGENCY_SURFACING";        break;
+        default:                        os << "Unknown cougUV status code"; break;
+    };
+    return os;
+}
+
 #endif //_COUGARS_COMS_PROTOCOL_

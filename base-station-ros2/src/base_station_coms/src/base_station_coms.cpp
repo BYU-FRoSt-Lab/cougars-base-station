@@ -3,6 +3,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_srvs/srv/set_bool.hpp"
 #include "seatrac_interfaces/msg/modem_rec.hpp"
+#include "seatrac_interfaces/msg/modem_cmd_update.hpp"
 #include "seatrac_interfaces/msg/modem_send.hpp"
 
 #include "base_station_coms/coms_protocol.hpp"
@@ -11,6 +12,8 @@
 #include <iostream>
 #include <chrono>
 #include <memory>
+#include <sstream>
+#include <algorithm>
 
 using namespace std::literals::chrono_literals;
 using namespace cougars_coms;
@@ -32,9 +35,14 @@ public:
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
-        this->modem_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
+
+        this->modem_rec_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
             "modem_rec", 10,
-            std::bind(&ComsNode::listen_to_modem, this, _1)
+            std::bind(&ComsNode::modem_rec_callback_, this, _1)
+        );
+        this->modem_update_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
+            "modem_cmd_update", 10,
+            std::bind(&ComsNode::modem_err_callback_, this, _1)
         );
         this->modem_publisher_ = this->create_publisher<seatrac_interfaces::msg::ModemSend>("modem_send", 10);
 
@@ -62,13 +70,29 @@ public:
 
     }
 
-    void listen_to_modem(seatrac_interfaces::msg::ModemRec msg) {
-        COUG_MSG_ID id = (COUG_MSG_ID)msg.packet_data[0];
+    void modem_rec_callback_(seatrac_interfaces::msg::ModemRec msg) {
+        COUG_MSG_ID id = (COUG_MSG_ID)msg->packet_data[0];
         switch(id) {
+            case EMPTY: {
+                if( msg->is_response && 
+                    msg->dest_id==base_station_beacon_id_ &&
+                    msg->src_id==(BID_E)vehicles_in_mission_[modem_coms_schedule_turn_index]
+                ) {
+                    first_status_resp_callback(msg);
+                }
+            } break;
+            case VEHICLE_STATUS: {
+                second_status_resp_callback(msg);
+            }
             default: break;
-            case EMPTY: break;
         }
     }
+    void modem_err_callback_(seatrac_interfaces::msg::ModemCmdUpdate msg) {
+        if(msg->msg_id == CID_DAT_ERROR) {
+            RCLCPP_INFO(this->get_logger(), "  X- missing response 1 of 2");
+        }
+    }
+
 
     void emergency_kill_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                                     std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
@@ -76,7 +100,6 @@ public:
         EmergencyKill e_kill_msg;
         send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
-        response->success = true;
     }
 
 
@@ -88,20 +111,39 @@ public:
 
 
     void request_status_callback() {
-        
+        if(!got_status_2nd_resp) {
+            RCLCPP_INFO(this->get_logger(), "  X- missing response 2 of 2");
+        }
+
         modem_coms_schedule_turn_index += 1;
+        got_status_2nd_resp = false;
         if (modem_coms_schedule_turn_index>=vehicles_in_mission_.size())
             modem_coms_schedule_turn_index = 0;
 
         RequestStatus request;
         int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\nRequesting COUG %i Status:", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
+    }
+
+    void first_status_resp_callback(seatrac_interfaces::msg::ModemRec::SharedPtr msg) {
+        float range = 0.1*msg->range_dist;
+        float depth = 0.1*msg->position_depth;
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "  recieved response 1 of 2 - range: %fm, depth: %fm", range, depth);
+    }
+    void second_status_resp_callback(seatrac_interfaces::msg::ModemRec::SharedPtr msg) {
+        got_status_2nd_resp = true;
+        VehicleStatus status;
+        uint8_t* status_ptr = (uint8_t*)&status_ptr;
+        for(int i=0; i<std::min((uint8_t)sizeof(status),msg->packet_len); i++)
+            status_ptr[i] = msg->packet_data[i];
+        std::stringstream ss;
+        ss << status.status_code;
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "  recieved response 2 of 2 - status: %s", ss.str().c_str());
     }
 
 
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
-
         auto request = seatrac_interfaces::msg::ModemSend();
         request.msg_id = CID_DAT_SEND;
         request.dest_id = (uint8_t)target_id;
@@ -116,7 +158,8 @@ public:
 
 private:
 
-    rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
+    rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_rec_subscriber_;
+    rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_update_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
 
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr emergency_kill_service_;
@@ -131,6 +174,8 @@ private:
     int status_request_frequency;
 
     int base_station_beacon_id_;
+
+    bool got_status_2nd_resp = false;
 
 
 };
