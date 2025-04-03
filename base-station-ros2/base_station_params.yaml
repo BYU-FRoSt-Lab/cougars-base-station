@@ -25,7 +25,7 @@
   ros__parameters:
     base_station_modem_id: 15
 
-    logging_verbosity: 3
+    logging_verbosity: 1
     
 
 

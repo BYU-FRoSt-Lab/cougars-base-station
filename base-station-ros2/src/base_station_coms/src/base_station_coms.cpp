@@ -40,7 +40,7 @@ public:
             "modem_rec", 10,
             std::bind(&ComsNode::modem_rec_callback_, this, _1)
         );
-        this->modem_update_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
+        this->modem_update_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemCmdUpdate>(
             "modem_cmd_update", 10,
             std::bind(&ComsNode::modem_err_callback_, this, _1)
         );
@@ -70,7 +70,7 @@ public:
 
     }
 
-    void modem_rec_callback_(seatrac_interfaces::msg::ModemRec msg) {
+    void modem_rec_callback_(seatrac_interfaces::msg::ModemRec::SharedPtr msg) {
         COUG_MSG_ID id = (COUG_MSG_ID)msg->packet_data[0];
         switch(id) {
             case EMPTY: {
@@ -87,7 +87,7 @@ public:
             default: break;
         }
     }
-    void modem_err_callback_(seatrac_interfaces::msg::ModemCmdUpdate msg) {
+    void modem_err_callback_(seatrac_interfaces::msg::ModemCmdUpdate::SharedPtr msg) {
         if(msg->msg_id == CID_DAT_ERROR) {
             RCLCPP_INFO(this->get_logger(), "  X- missing response 1 of 2");
         }
@@ -122,7 +122,8 @@ public:
 
         RequestStatus request;
         int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "\nRequesting COUG %i Status:", vehicle_turn_id);
+        RCLCPP_INFO(this->get_logger(), "");
+        RCLCPP_INFO(this->get_logger(), "Requesting COUG %i Status:", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
     }
 
@@ -159,7 +160,7 @@ public:
 private:
 
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_rec_subscriber_;
-    rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_update_subscriber_;
+    rclcpp::Subscription<seatrac_interfaces::msg::ModemCmdUpdate>::SharedPtr modem_update_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
 
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr emergency_kill_service_;
