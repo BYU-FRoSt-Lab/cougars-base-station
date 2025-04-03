@@ -99,7 +99,7 @@ public:
     {
         EmergencyKill e_kill_msg;
         send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
+        RCLCPP_INFO(this->get_logger(), "Emergency Kill Signal Sent");
     }
 
 
@@ -130,7 +130,7 @@ public:
     void first_status_resp_callback(seatrac_interfaces::msg::ModemRec::SharedPtr msg) {
         float range = 0.1*msg->range_dist;
         float depth = 0.1*msg->position_depth;
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "  recieved response 1 of 2 - range: %fm, depth: %fm", range, depth);
+        RCLCPP_INFO(this->get_logger(), "  recieved response 1 of 2 - range: %fm, depth: %fm", range, depth);
     }
     void second_status_resp_callback(seatrac_interfaces::msg::ModemRec::SharedPtr msg) {
         got_status_2nd_resp = true;
@@ -140,7 +140,7 @@ public:
             status_ptr[i] = msg->packet_data[i];
         std::stringstream ss;
         ss << status.status_code;
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "  recieved response 2 of 2 - status: %s", ss.str().c_str());
+        RCLCPP_INFO(this->get_logger(), "  recieved response 2 of 2 - status: %s", ss.str().c_str());
     }
 
 
