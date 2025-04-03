@@ -11,6 +11,7 @@ uint8 msg_id            # CIDE - Command Identification Code. Indicates the type
 ### Acoustic Fix (ACOFIX_T) Fields ###
         # An Acoustic Fix structure is generated for every successfully received acoustic transmission.
 bool  local_flag          # True if the transmission was addressed to this beacon. False if it was "sniffed" by the beacon.
+bool  is_response         # True if the transmission was generated as a response to request from some beacon.
 bool  position_enhanced   # True if depth was sent in the acoustic transmission. False if depth was not transmitted.
 bool  position_flt_error  # True if the position filter detected a discrepancy between this position and the last position.
 
