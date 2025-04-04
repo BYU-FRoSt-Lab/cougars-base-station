@@ -161,6 +161,7 @@ public:
         report = data;                    //operator overload fills in report struct with correct data
         msg.packet_len = report.packetLen;
         msg.local_flag = report.localFlag;
+        msg.is_response = report.ackFlag;
         std::memcpy(&msg.packet_data, report.packetData, report.packetLen);
         cpyFixtoRosmsg(msg, report.acoFix);
         rec_pub_->publish(msg);
@@ -200,6 +201,7 @@ public:
         messages::EchoResp report;     //struct that contains report fields
         report = data;                    //operator overload fills in report struct with correct data
         msg.local_flag = true;
+        msg.is_response = true;
         msg.packet_len = report.packetLen;
         std::memcpy(&msg.packet_data, report.packetData, report.packetLen);
         cpyFixtoRosmsg(msg, report.acoFix);
@@ -212,6 +214,8 @@ public:
         msg.msg_id = msgId;
         messages::EchoReq report;
         report = data;
+        msg.local_flag = true;
+        msg.is_response = false;
         msg.packet_len = report.packetLen;
         std::memcpy(&msg.packet_data, report.packetData, report.packetLen);
         cpyFixtoRosmsg(msg, report.acoFix);
@@ -253,6 +257,7 @@ public:
         report = data;
         msg.packet_len = 0;
         msg.local_flag = true; //Ping messages are not sniffed.
+        msg.is_response = true;
         cpyFixtoRosmsg(msg, report.acoFix);
         rec_pub_->publish(msg);
       } break;
@@ -265,6 +270,7 @@ public:
         report = data;
         msg.packet_len = 0;
         msg.local_flag = true;
+        msg.is_response = false;
         cpyFixtoRosmsg(msg, report.acoFix);
         rec_pub_->publish(msg);
       } break;
@@ -303,6 +309,7 @@ public:
         messages::NavQueryResp report;
         report = data;
         msg.local_flag = report.localFlag;
+        msg.is_response = true;
         cpyFixtoRosmsg(msg, report.acoFix);
         msg.includes_remote_depth    = (report.queryFlags & QRY_DEPTH)?    true:false;
         msg.includes_remote_supply   = (report.queryFlags & QRY_SUPPLY)?   true:false;
@@ -330,6 +337,7 @@ public:
         messages::NavQueryReq report;
         report = data;
         msg.local_flag = report.localFlag;
+        msg.is_response = false;
         msg.packet_len = report.packetLen;
         std::memcpy(&msg.packet_data, report.packetData, report.packetLen);
         cpyFixtoRosmsg(msg, report.acoFix);
