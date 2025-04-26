@@ -12,16 +12,31 @@ import pandas as pd
 
 
 def generate_typestore(
-        msgs_dirs:list[str], 
-        base_version = Stores.ROS2_HUMBLE,
+        msgs_dirs:list[str] = [], 
+        ros_distro = Stores.ROS2_HUMBLE,
         verbose:bool = True
 ):
     """
-    A Typestore 
+    Creates a Typestore that has all the ros messages for a base ros distribution
+    as well as any custom messages you want to add
+
+    args:
+     - msgs_dirs: A list of directories that contain packages with custom ros messages.
+     - ros_distro: The base distribution to generate the Typestore from.
+     - verbose: If true, prints updates as messages are registered
+
+    return:
+     - typestore: The Typestore with the base and custom ros message types
+
+    The method loops through all subdirectories of "msgs_dirs" until it finds a package with a 
+    'msgs' subdirectory. Then it registers all the the "*.msg" files in that directory.
+    It ignores anything found in the "build" and "install" directories.
     """
-    typestore = get_typestore(base_version)
+    typestore = get_typestore(ros_distro)
+    if verbose: print(f"Initialized Typestore with {ros_distro.name} base messages")
     for msgs_dir in msgs_dirs:
         msgs_source = Path(msgs_dir)
+        if verbose: print(f"Searching {os.path.abspath(msgs_dir)} for ROS messages...")
         for root, dirs, files in os.walk(msgs_source):
             # Ignore messages in build and install folders
             if "build" in dirs: dirs.remove("build")
@@ -29,9 +44,7 @@ def generate_typestore(
 
             if os.path.basename(root) == 'msg':
                 if verbose: print(f"Registering Messages in {os.path.abspath(root)}")
-                
                 msg_name_prefix = os.path.basename(Path(root).parent) + "/msg/"
-
                 for file in files:
                     if(file.endswith(".msg")):
                         filepath = Path(root) / file
@@ -43,17 +56,78 @@ def generate_typestore(
     return typestore
 
 
-def convert_rosbags(bags_dirs:list[str], typestore):
+def rosmsg_generator(
+        bags_dir:str, 
+        typestore, 
+        topics:list[str]|None = None, 
+        verbose:bool=True
+):
+    """
+    generates ros messages of the given topics
+    """
+    stack = [os.path.basename(bags_dir)]
+    for root, dirs, files in os.walk(bags_dir):
+        path = Path(root)
+
+        # process rosbag
+        if "metadata.yaml" in files:
+            print(f"Converting {os.path.abspath(path)}")
+            msgs: dict[str, pd.DataFrame] = dict()
+            with AnyReader([path], default_typestore=typestore) as reader:
+                if topics is None:
+                    connections = [x for x in reader.connections]
+                else:
+                    connections = [x for x in reader.connections if x.topic in topics]
+
+                for connection, timestamp, rawdata in reader.messages(connections=connections):
+                    rosmsg = reader.deserialize(rawdata, connection.msgtype)
+                    yield connection, rosmsg, path
+                    
+
+
+def convert_rosbags(bags_dir:str, typestore, verbose:bool=True):
     """
     Converts rosbags into pandas dataframes that can be easily manipulated with a python workflow.
     """
-    dataframes: dict[pd.DataFrame|dict] = []
 
-    for bags_dir in bags_dirs:
-        for root, dirs, files in os.walk(bags_dir):
-            with AnyReader([bagpath], default_typestore=typestore) as reader:
-                pass    
+    dataframes: dict[str, pd.DataFrame|dict] = dict()
+    path=Path()
+    bag_dfs = dataframes
+    for connection, msg, newpath in rosmsg_generator(bags_dir, typestore):        
+        if path != newpath:
+            # add path to dataframes tree
+            path = newpath
+            bag_dfs = dataframes
+            dirs = path.relative_to(bags_dir).parts
+            for dir in dirs[:-1]:
+                if dir not in bag_dfs:
+                    bag_dfs[dir] = dict()
+                bag_dfs = bag_dfs[dir]
+            converted_name = "converted_" + dirs[-1]
+            if converted_name not in bag_dfs:
+                bag_dfs[converted_name] = dict()
+            bag_dfs = bag_dfs[converted_name]
 
+        topicname = connection.topic.replace('/', '.')
+        if topicname[0]=='.': topicname = topicname[1:]
+        msgtype = connection.msgtype
+
+        if topicname not in bag_dfs:
+            # print(msg)
+            def headers_generator(msg, prefix=""):
+                for attr, val in msg.__dict__.items():
+                    if attr=='__msgtype__': continue
+                    name = f"{prefix}.{attr}"
+                    if name[0]=='.': name = name[1:]
+                    if hasattr(val, "__dict__"):
+                        yield from headers_generator(val, name)
+                    else:
+                        yield name
+            headers = [name for name in headers_generator(msg)]
+            bag_dfs[topicname] = pd.DataFrame(columns=headers)
+
+        dataframe = bag_dfs[topicname]
+        
     return dataframes
 
 
@@ -78,5 +152,8 @@ if __name__ == '__main__':
             out_dir = arg[8:]    
 
     typestore = generate_typestore([msgs_dir])
+
+    dataframes = convert_rosbags(rosbags_dir, typestore)
+    print(dataframes)
 
 
