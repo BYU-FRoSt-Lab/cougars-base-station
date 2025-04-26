@@ -101,22 +101,21 @@ def convert_rosbags(bags_dir:str, typestore, verbose:bool=False):
 
     dataframes: dict[str, dict[str, pd.DataFrame]] = dict()
     topics = None
-    for connection, msg, path in rosmsg_generator(bags_dir, typestore, verbose=verbose):        
-        if path not in dataframes.keys():
-            dataframes[path] = dict()
-            topics = dataframes[path]
-        topicname = connection.topic.replace('/', '.')
-        if topicname[0]=='.': topicname = topicname[1:]
-        if topicname not in topics:
-            topics[topicname] = list()
-        data = topics[topicname]
+    for connection, msg, path in rosmsg_generator(bags_dir, typestore, verbose=verbose):
+        relpath = path.relative_to(bags_dir)       
+        if relpath not in dataframes.keys():
+            dataframes[relpath] = dict()
+            topics = dataframes[relpath]
+        topic = connection.topic
+        if topic not in topics:
+            topics[topic] = list()
+        data = topics[topic]
         data.append(dict(values_generator(msg)))
 
     for path, topics in dataframes.items():
-        print(f"Converting {os.path.abspath(Path(bags_dir)/path)}")
+        print(f"Converting {path}")
         for topic in topics.keys():
             topics[topic] = pd.DataFrame(topics[topic])
-            # print(topics[topic])
 
     return dataframes
 
@@ -135,29 +134,46 @@ def convert_rosbags(bags_dir:str, typestore, verbose:bool=False):
         #         bag_dfs[converted_name] = dict()
         #     bag_dfs = bag_dfs[converted_name]
 
-def save_as_csv(dataframes, target):
+def save_to_csv(
+        dataframes:dict[str, dict[str, pd.DataFrame]],
+        out_dir:str,
+        verbose:bool = False
+):
     """
     Saves pandas dataframes into csv files
     """
+    outpath = Path(out_dir)
+    for relpath, topics in dataframes.items():
+        relpath = relpath.parent / ("converted_"+os.path.basename(relpath))
+        if verbose: print(f"Saving {os.path.abspath(outpath / relpath)}")
+        for topic, dataframe in topics.items():
+            topicname = topic.replace('/', '.') + ".csv"
+            if topicname[0]=='.': topicname = topicname[1:]
+            fullpath = outpath / relpath / topicname
+            fullpath.parent.mkdir(parents=True, exist_ok=True)
+            dataframe.to_csv(os.path.abspath(fullpath))
 
 
 
 if __name__ == '__main__':
 
-    rosbags_dir = ""
-    msgs_dir = ""
-    out_dir = ""
+    rosbags_dir = "."
+    msgs_dir = "."
+    out_dir = None
     for arg in argv:
         if arg.startswith("bagsDir:="):
             rosbags_dir = arg[9:]
         elif arg.startswith("msgsDir:="):
             msgs_dir = arg[9:]
         elif arg.startswith("outDir:="):
-            out_dir = arg[8:]    
+            out_dir = arg[8:]
+
+    if out_dir == None:
+        out_dir = Path(rosbags_dir) / "converted_bags"
 
     typestore = generate_typestore([msgs_dir], verbose=True)
 
     dataframes = convert_rosbags(rosbags_dir, typestore, verbose=True)
-    # print(dataframes)
+    save_to_csv(dataframes, out_dir, verbose=True)
 
 
