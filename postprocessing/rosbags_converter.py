@@ -74,18 +74,18 @@ def rosmsg_generator(
             if verbose: print(f"Unpacking {os.path.abspath(path)}")
             msgs: dict[str, pd.DataFrame] = dict()
             with AnyReader([path], default_typestore=typestore) as reader:
+                print(topics)
                 if topics is None:
                     connections = [x for x in reader.connections]
                 else:
                     connections = [x for x in reader.connections if x.topic in topics]
-
                 for connection, timestamp, rawdata in reader.messages(connections=connections):
                     rosmsg = reader.deserialize(rawdata, connection.msgtype)
                     yield connection, rosmsg, path
                     
 
 
-def convert_rosbags(bags_dir:str, typestore, verbose:bool=False):
+def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
     """
     Converts rosbags into pandas dataframes that can be easily manipulated with a python workflow.
     """
@@ -100,22 +100,23 @@ def convert_rosbags(bags_dir:str, typestore, verbose:bool=False):
                 yield name, val
 
     dataframes: dict[str, dict[str, pd.DataFrame]] = dict()
-    topics = None
-    for connection, msg, path in rosmsg_generator(bags_dir, typestore, verbose=verbose):
+    topic_data = None
+    for connection, msg, path in rosmsg_generator(bags_dir, typestore, topics=topics, verbose=verbose):
+        if connection.topic=='/rosout': continue
         relpath = path.relative_to(bags_dir)       
         if relpath not in dataframes.keys():
             dataframes[relpath] = dict()
-            topics = dataframes[relpath]
+            topic_data = dataframes[relpath]
         topic = connection.topic
-        if topic not in topics:
-            topics[topic] = list()
-        data = topics[topic]
+        if topic not in topic_data:
+            topic_data[topic] = list()
+        data = topic_data[topic]
         data.append(dict(values_generator(msg)))
 
-    for path, topics in dataframes.items():
+    for path, topic_data in dataframes.items():
         print(f"Converting {path}")
-        for topic in topics.keys():
-            topics[topic] = pd.DataFrame(topics[topic])
+        for topic in topic_data.keys():
+            topic_data[topic] = pd.DataFrame(topic_data[topic])
 
     return dataframes
 
@@ -160,6 +161,7 @@ if __name__ == '__main__':
     rosbags_dir = "."
     msgs_dir = "."
     out_dir = None
+    topics = None
     for arg in argv:
         if arg.startswith("bagsDir:="):
             rosbags_dir = arg[9:]
@@ -167,13 +169,16 @@ if __name__ == '__main__':
             msgs_dir = arg[9:]
         elif arg.startswith("outDir:="):
             out_dir = arg[8:]
+        elif arg.startswith("topics:="):
+            topics = arg[8:].split(',')
+
+    print(topics)
 
     if out_dir == None:
         out_dir = Path(rosbags_dir) / "converted_bags"
 
     typestore = generate_typestore([msgs_dir], verbose=True)
-
-    dataframes = convert_rosbags(rosbags_dir, typestore, verbose=True)
+    dataframes = convert_rosbags(rosbags_dir, typestore, topics=topics, verbose=True)
     save_to_csv(dataframes, out_dir, verbose=True)
 
 
