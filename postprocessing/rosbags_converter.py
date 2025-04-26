@@ -60,7 +60,7 @@ def rosmsg_generator(
         bags_dir:str, 
         typestore, 
         topics:list[str]|None = None, 
-        verbose:bool=True
+        verbose:bool=False
 ):
     """
     generates ros messages of the given topics
@@ -71,7 +71,7 @@ def rosmsg_generator(
 
         # process rosbag
         if "metadata.yaml" in files:
-            print(f"Converting {os.path.abspath(path)}")
+            if verbose: print(f"Unpacking {os.path.abspath(path)}")
             msgs: dict[str, pd.DataFrame] = dict()
             with AnyReader([path], default_typestore=typestore) as reader:
                 if topics is None:
@@ -85,51 +85,55 @@ def rosmsg_generator(
                     
 
 
-def convert_rosbags(bags_dir:str, typestore, verbose:bool=True):
+def convert_rosbags(bags_dir:str, typestore, verbose:bool=False):
     """
     Converts rosbags into pandas dataframes that can be easily manipulated with a python workflow.
     """
+    def values_generator(msg, prefix=""):
+        for attr, val in msg.__dict__.items():
+            if attr=='__msgtype__': continue
+            name = f"{prefix}.{attr}"
+            if name[0]=='.': name = name[1:]
+            if hasattr(val, "__dict__"):
+                yield from values_generator(val, name)
+            else:
+                yield name, val
 
-    dataframes: dict[str, pd.DataFrame|dict] = dict()
-    path=Path()
-    bag_dfs = dataframes
-    for connection, msg, newpath in rosmsg_generator(bags_dir, typestore):        
-        if path != newpath:
-            # add path to dataframes tree
-            path = newpath
-            bag_dfs = dataframes
-            dirs = path.relative_to(bags_dir).parts
-            for dir in dirs[:-1]:
-                if dir not in bag_dfs:
-                    bag_dfs[dir] = dict()
-                bag_dfs = bag_dfs[dir]
-            converted_name = "converted_" + dirs[-1]
-            if converted_name not in bag_dfs:
-                bag_dfs[converted_name] = dict()
-            bag_dfs = bag_dfs[converted_name]
-
+    dataframes: dict[str, dict[str, pd.DataFrame]] = dict()
+    topics = None
+    for connection, msg, path in rosmsg_generator(bags_dir, typestore, verbose=verbose):        
+        if path not in dataframes.keys():
+            dataframes[path] = dict()
+            topics = dataframes[path]
         topicname = connection.topic.replace('/', '.')
         if topicname[0]=='.': topicname = topicname[1:]
-        msgtype = connection.msgtype
+        if topicname not in topics:
+            topics[topicname] = list()
+        data = topics[topicname]
+        data.append(dict(values_generator(msg)))
 
-        if topicname not in bag_dfs:
-            # print(msg)
-            def headers_generator(msg, prefix=""):
-                for attr, val in msg.__dict__.items():
-                    if attr=='__msgtype__': continue
-                    name = f"{prefix}.{attr}"
-                    if name[0]=='.': name = name[1:]
-                    if hasattr(val, "__dict__"):
-                        yield from headers_generator(val, name)
-                    else:
-                        yield name
-            headers = [name for name in headers_generator(msg)]
-            bag_dfs[topicname] = pd.DataFrame(columns=headers)
+    for path, topics in dataframes.items():
+        print(f"Converting {os.path.abspath(Path(bags_dir)/path)}")
+        for topic in topics.keys():
+            topics[topic] = pd.DataFrame(topics[topic])
+            # print(topics[topic])
 
-        dataframe = bag_dfs[topicname]
-        
     return dataframes
 
+
+        # if path != newpath:
+        #     # add path to dataframes tree
+        #     path = newpath
+        #     bag_dfs = dataframes
+        #     dirs = path.relative_to(bags_dir).parts
+        #     for dir in dirs[:-1]:
+        #         if dir not in bag_dfs:
+        #             bag_dfs[dir] = dict()
+        #         bag_dfs = bag_dfs[dir]
+        #     converted_name = "converted_" + dirs[-1]
+        #     if converted_name not in bag_dfs:
+        #         bag_dfs[converted_name] = dict()
+        #     bag_dfs = bag_dfs[converted_name]
 
 def save_as_csv(dataframes, target):
     """
@@ -151,9 +155,9 @@ if __name__ == '__main__':
         elif arg.startswith("outDir:="):
             out_dir = arg[8:]    
 
-    typestore = generate_typestore([msgs_dir])
+    typestore = generate_typestore([msgs_dir], verbose=True)
 
-    dataframes = convert_rosbags(rosbags_dir, typestore)
-    print(dataframes)
+    dataframes = convert_rosbags(rosbags_dir, typestore, verbose=True)
+    # print(dataframes)
 
 
