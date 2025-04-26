@@ -3,7 +3,7 @@ from sys import argv
 from pathlib import Path
 
 from rosbags.highlevel import AnyReader
-from rosbags.typesys import Stores, get_typestore, get_types_from_msg
+import rosbags.typesys as ts
 
 import pandas as pd
 
@@ -31,8 +31,8 @@ You can also import this module and use it directly in your code.
 
 
 def generate_typestore(
-        msgs_dirs:list[str] = [], 
-        ros_distro = Stores.ROS2_HUMBLE,
+        msgs_dirs:list[str]|str = [], 
+        ros_distro = ts.Stores.ROS2_HUMBLE,
         verbose:bool = True
 ):
     """
@@ -51,10 +51,11 @@ def generate_typestore(
     'msgs' subdirectory. Then it registers all the the "*.msg" files in that directory.
     It ignores "build" and "install" directories.
     """
-    typestore = get_typestore(ros_distro)
+    if isinstance(msgs_dirs, str): msgs_dirs = [msgs_dirs]
+    typestore = ts.get_typestore(ros_distro)
     if verbose: print(f"Initialized Typestore with {ros_distro.name} base messages")
     for msgs_dir in msgs_dirs:
-        msgs_source = Path(msgs_dir)
+        msgs_source = pathof(msgs_dir)
         if verbose: print(f"Searching {os.path.abspath(msgs_dir)} for ROS messages...")
         for root, dirs, files in os.walk(msgs_source):
             # Ignore messages in build and install folders
@@ -70,7 +71,7 @@ def generate_typestore(
                         # if verbose: print(f"\t{os.path.abspath(filepath)}")
                         text = filepath.read_text()
                         name = msg_name_prefix + file[:-4]
-                        typestore.register(get_types_from_msg(text, name))
+                        typestore.register(ts.get_types_from_msg(text, name))
                         if verbose: print(f"\tRegistered {name}")
     return typestore
 
@@ -100,9 +101,9 @@ def rosmsg_generator(
         path (pathlib.Path): the path to the rosbag from which this message was unpacked
     """
     for bags_dir in bags_dirs:
-        for root, dirs, files in os.walk(bags_dir):
+        for root, dirs, files in os.walk(pathof(bags_dir)):
             path = Path(root)
-            if keywords is not None:
+            if keywords:
                 basename = os.path.basename(root)
                 has_keyword=False
                 for keyword in keywords:
@@ -158,6 +159,8 @@ def convert_rosbags(
             else:
                 yield name, val
 
+    bags_dir = pathof(bags_dir)
+
     dataframes: dict[Path, dict[str, pd.DataFrame]] = dict()
     topic_data = None
     for connection, msg, path in rosmsg_generator([bags_dir], 
@@ -194,8 +197,11 @@ def save_to_csv(
             topics is a dictionary from topic names to pandas DataFrames.
         out_dir: the directory to save the csv files to
         verbose: if true, prints updates as dataframes are saved
+
+    topics are converted to file names like so:
+    /my/ros/topic --> my.ros.topic.csv
     """
-    outpath = Path(out_dir)
+    outpath = pathof(out_dir)
     for relpath, topics in dataframes.items():
         relpath = relpath.parent / ("converted__"+os.path.basename(relpath))
         if verbose: print(f"Saving {os.path.abspath(outpath / relpath)}")
@@ -204,7 +210,7 @@ def save_to_csv(
             if topicname[0]=='.': topicname = topicname[1:]
             fullpath = outpath / relpath / topicname
             fullpath.parent.mkdir(parents=True, exist_ok=True)
-            dataframe.to_csv(os.path.abspath(fullpath))
+            dataframe.to_csv(os.path.abspath(fullpath), index=False)
 
 def load_dataframes(
         csv_dir:Path|str, 
@@ -222,11 +228,14 @@ def load_dataframes(
     returns:
         dataframes: a dictionary from relative rosbag paths to topics, where 
             topics is a dictionary from topic names to pandas DataFrames
+
+    Topics are converted from file names like so:
+    my.ros.topic.csv --> /my/ros/topic
     """
-    csv_dir = Path(csv_dir)
+    csv_dir = pathof(csv_dir)
     dataframes:dict[Path, dict[str, pd.DataFrame]] = dict()
     for root, dirs, files in os.walk(csv_dir):
-        if keywords is not None:
+        if keywords:
             basename = os.path.basename(root)
             has_keyword=False
             for keyword in keywords:
@@ -239,20 +248,22 @@ def load_dataframes(
             dir = Path(root)
             if verbose: print(f"Loading {os.path.abspath(dir)}")
             reldir = dir.relative_to(csv_dir)
-            dataframes[reldir] = dict()
+            topics = dict()
+            dataframes[reldir] = topics
             for file in files:
                 if file.endswith(".csv"):
-                    dataframes[file[:-4]] = pd.read_csv(dir/file)
+                    topic_name = "/"+file[:-4].replace(".", "/")
+                    topics[topic_name] = pd.read_csv(dir/file)
     return dataframes
             
 
-
+def pathof(p:str|Path):
+    """Lets user use ~ in paths as a shortcut for home dir"""
+    if isinstance(p,Path): return p
+    else: return Path.home()/p[2:] if p[0]=='~' else Path(p)
 
 
 if __name__ == '__main__':
-
-    def pathof(string:str):
-        return Path.home()/string[2:] if string[0]=='~' else Path(string)
 
     rosbags_dir = Path.cwd()
     msgs_dirs = [Path.cwd()]
