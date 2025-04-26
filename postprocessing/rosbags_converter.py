@@ -193,14 +193,14 @@ if __name__ == '__main__':
         return Path.home()/string[2:] if string[0]=='~' else Path(string)
 
     rosbags_dir = Path.cwd()
-    msgs_dir = Path.cwd()
+    msgs_dirs = [Path.cwd()]
     out_dir = None
     topics = None
     for arg in argv:
         if arg.startswith("bagsDir:="):
             rosbags_dir = pathof(arg[9:])
         elif arg.startswith("msgsDir:="):
-            msgs_dir = pathof(arg[9:])
+            msgs_dirs = [pathof(s) for s in arg[9:].split(',')]
         elif arg.startswith("outDir:="):
             out_dir = pathof(arg[8:])
         elif arg.startswith("topics:="):
@@ -209,7 +209,7 @@ if __name__ == '__main__':
     if out_dir == None:
         out_dir = Path(rosbags_dir) / "converted_bags"
 
-    typestore = generate_typestore([msgs_dir], verbose=True)
+    typestore = generate_typestore(msgs_dirs, verbose=True)
     dataframes = convert_rosbags(rosbags_dir, typestore, topics=topics, verbose=True)
     save_to_csv(dataframes, out_dir, verbose=True)
 
