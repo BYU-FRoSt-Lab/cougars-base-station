@@ -1,14 +1,34 @@
-
 import os
-
 from sys import argv
-
 from pathlib import Path
+
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore, get_types_from_msg
 
 import pandas as pd
 
+
+"""
+converts rosbags into pandas DataFrames and csv files.
+
+Usage:
+python3 rosbags_converter.py bagsDir:=/path/to/rosbags msgsDir:=/path/to/custom/message/definitions outDir:=/path/to/output/dir topics:=/list,/of,/topics
+
+required libraries:
+    rosbags
+    pandas
+
+Make sure the list of topics has no spaces.
+'msgsDir' is typically the src directory of your ros workspace.
+If 'topics' is undefined, all topics will be converted.
+If 'outDir' is undefined, it defaults to <bagsDir>/converted_bags.
+'bagsDir' and 'msgsDir' defaults to the current working directory.
+For easy batch processing, rosbags_converter recursively searches for 
+rosbags in 'bagsDir' and keeps the same file structure in 'outDir'.
+You can use relative paths (such as ~/mydir, ../../mydir, etc.)
+
+You can also import this module and use it directly in your code.
+"""
 
 
 def generate_typestore(
@@ -17,16 +37,16 @@ def generate_typestore(
         verbose:bool = True
 ):
     """
-    Creates a Typestore that has all the ros messages for a base ros distribution
+    Creates a Typestore that includes all the ros messages for a base ros distribution
     as well as any custom messages you want to add
 
     args:
-     - msgs_dirs: A list of directories that contain packages with custom ros messages.
-     - ros_distro: The base distribution to generate the Typestore from.
-     - verbose: If true, prints updates as messages are registered
+        msgs_dirs: A list of directories that contain packages with custom ros messages.
+        ros_distro: The base distribution to generate the Typestore from.
+        verbose: If true, prints updates as messages are registered
 
     return:
-     - typestore: The Typestore with the base and custom ros message types
+        typestore: The Typestore with the base and custom ros message types
 
     The method loops through all subdirectories of "msgs_dirs" until it finds a package with a 
     'msgs' subdirectory. Then it registers all the the "*.msg" files in that directory.
@@ -57,51 +77,70 @@ def generate_typestore(
 
 
 def rosmsg_generator(
-        bags_dir:str, 
+        bags_dirs:list[str|Path], 
         typestore, 
         topics:list[str]|None = None, 
         verbose:bool=False
 ):
     """
-    generates ros messages of the given topics
-    """
-    stack = [os.path.basename(bags_dir)]
-    for root, dirs, files in os.walk(bags_dir):
-        path = Path(root)
+    Generates ros messages from a directory containing rosbags.
 
-        # process rosbag
-        if "metadata.yaml" in files:
-            if verbose: print(f"Unpacking {os.path.abspath(path)}")
-            msgs: dict[str, pd.DataFrame] = dict()
-            with AnyReader([path], default_typestore=typestore) as reader:
-                print(topics)
-                if topics is None:
-                    connections = [x for x in reader.connections]
-                else:
-                    connections = [x for x in reader.connections if x.topic in topics]
-                for connection, timestamp, rawdata in reader.messages(connections=connections):
-                    rosmsg = reader.deserialize(rawdata, connection.msgtype)
-                    yield connection, rosmsg, path
-                    
+    args:
+        bags_dirs: a list of directorys containing rosbags
+        typestore: the typestore of the message types in your rosbags
+        topics: the list of topics to report. If 'None', reports all topics
+        verbose: if true, prints updates as rosbags are unpacked
+    
+    yields:
+        connection: metadata for the ros message
+        msg: a ros message
+        path (pathlib.Path): the path to the rosbag from which this message was unpacked
+    """
+    for bags_dir in bags_dirs:
+        for root, dirs, files in os.walk(bags_dir):
+            path = Path(root)
+
+            # process rosbag
+            if "metadata.yaml" in files:
+                if verbose: print(f"Unpacking {os.path.abspath(path)}")
+                msgs: dict[str, pd.DataFrame] = dict()
+                with AnyReader([path], default_typestore=typestore) as reader:
+                    if topics is None:
+                        connections = [x for x in reader.connections]
+                    else:
+                        connections = [x for x in reader.connections if x.topic in topics]
+                    for connection, timestamp, rawdata in reader.messages(connections=connections):
+                        msg = reader.deserialize(rawdata, connection.msgtype)
+                        yield connection, msg, path
+                        
 
 
 def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
     """
-    Converts rosbags into pandas dataframes that can be easily manipulated with a python workflow.
+    Converts rosbags into pandas DataFrames.
+
+    args:
+        bags_dir: a directory containing rosbags
+        typestore: the typestore of the message types in your rosbags
+        topics: the list of topics to report. If 'None', reports all topics
+        verbose: if true, prints updates as rosbags are unpacked
+
+    returns:
+        dataframes: a dictionary from relative rosbag paths to topics, where 
+            topics is a dictionary from topic names to pandas DataFrames
     """
-    def values_generator(msg, prefix=""):
+    def values_generator(msg, prefix=None):
         for attr, val in msg.__dict__.items():
             if attr=='__msgtype__': continue
-            name = f"{prefix}.{attr}"
-            if name[0]=='.': name = name[1:]
+            name = attr if prefix is None else f"{prefix}.{attr}"
             if hasattr(val, "__dict__"):
                 yield from values_generator(val, name)
             else:
                 yield name, val
 
-    dataframes: dict[str, dict[str, pd.DataFrame]] = dict()
+    dataframes: dict[Path, dict[str, pd.DataFrame]] = dict()
     topic_data = None
-    for connection, msg, path in rosmsg_generator(bags_dir, typestore, topics=topics, verbose=verbose):
+    for connection, msg, path in rosmsg_generator([bags_dir], typestore, topics=topics, verbose=verbose):
         if connection.topic=='/rosout': continue
         relpath = path.relative_to(bags_dir)       
         if relpath not in dataframes.keys():
@@ -121,27 +160,19 @@ def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
     return dataframes
 
 
-        # if path != newpath:
-        #     # add path to dataframes tree
-        #     path = newpath
-        #     bag_dfs = dataframes
-        #     dirs = path.relative_to(bags_dir).parts
-        #     for dir in dirs[:-1]:
-        #         if dir not in bag_dfs:
-        #             bag_dfs[dir] = dict()
-        #         bag_dfs = bag_dfs[dir]
-        #     converted_name = "converted_" + dirs[-1]
-        #     if converted_name not in bag_dfs:
-        #         bag_dfs[converted_name] = dict()
-        #     bag_dfs = bag_dfs[converted_name]
-
 def save_to_csv(
         dataframes:dict[str, dict[str, pd.DataFrame]],
         out_dir:str,
         verbose:bool = False
 ):
     """
-    Saves pandas dataframes into csv files
+    Saves pandas DataFrames generate from rosmsgs to csv files. 
+
+    args:
+        dataframes: a dictionary from relative rosbag paths to topics, where 
+            topics is a dictionary from topic names to pandas DataFrames.
+        out_dir: the directory to save the csv files to
+        verbose: if true, prints updates as dataframes are saved
     """
     outpath = Path(out_dir)
     for relpath, topics in dataframes.items():
@@ -158,21 +189,22 @@ def save_to_csv(
 
 if __name__ == '__main__':
 
-    rosbags_dir = "."
-    msgs_dir = "."
+    def pathof(string:str):
+        return Path.home()/string[2:] if string[0]=='~' else Path(string)
+
+    rosbags_dir = Path.cwd()
+    msgs_dir = Path.cwd()
     out_dir = None
     topics = None
     for arg in argv:
         if arg.startswith("bagsDir:="):
-            rosbags_dir = arg[9:]
+            rosbags_dir = pathof(arg[9:])
         elif arg.startswith("msgsDir:="):
-            msgs_dir = arg[9:]
+            msgs_dir = pathof(arg[9:])
         elif arg.startswith("outDir:="):
-            out_dir = arg[8:]
+            out_dir = pathof(arg[8:])
         elif arg.startswith("topics:="):
             topics = arg[8:].split(',')
-
-    print(topics)
 
     if out_dir == None:
         out_dir = Path(rosbags_dir) / "converted_bags"
