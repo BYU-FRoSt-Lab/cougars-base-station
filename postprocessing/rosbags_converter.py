@@ -7,12 +7,11 @@ from rosbags.typesys import Stores, get_typestore, get_types_from_msg
 
 import pandas as pd
 
-
 """
 converts rosbags into pandas DataFrames and csv files.
 
 Usage:
-python3 rosbags_converter.py bagsDir:=/path/to/rosbags msgsDir:=/path/to/custom/message/definitions outDir:=/path/to/output/dir topics:=/list,/of,/topics
+    python3 rosbags_converter.py bagsDir:=/path/to/rosbags msgsDir:=/path/to/custom/message/definitions outDir:=/path/to/output/dir topics:=/list,/of,/topics
 
 required libraries:
     rosbags
@@ -50,7 +49,7 @@ def generate_typestore(
 
     The method loops through all subdirectories of "msgs_dirs" until it finds a package with a 
     'msgs' subdirectory. Then it registers all the the "*.msg" files in that directory.
-    It ignores anything found in the "build" and "install" directories.
+    It ignores "build" and "install" directories.
     """
     typestore = get_typestore(ros_distro)
     if verbose: print(f"Initialized Typestore with {ros_distro.name} base messages")
@@ -79,7 +78,9 @@ def generate_typestore(
 def rosmsg_generator(
         bags_dirs:list[str|Path], 
         typestore, 
-        topics:list[str]|None = None, 
+        topics:list[str]|None = None,
+        excluded_topics:list[str]|None = None,
+        keywords:list[str]|None = None, 
         verbose:bool=False
 ):
     """
@@ -88,7 +89,9 @@ def rosmsg_generator(
     args:
         bags_dirs: a list of directorys containing rosbags
         typestore: the typestore of the message types in your rosbags
-        topics: the list of topics to report. If 'None', reports all topics
+        topics: the list of topics to report. If None, reports all topics
+        excluded_topics: a list of topics to exclude. If None, no topics are excluded
+        keywords: if not None, only bags whose name contains a keyword will be processed
         verbose: if true, prints updates as rosbags are unpacked
     
     yields:
@@ -99,14 +102,22 @@ def rosmsg_generator(
     for bags_dir in bags_dirs:
         for root, dirs, files in os.walk(bags_dir):
             path = Path(root)
-
+            if keywords is not None:
+                basename = os.path.basename(root)
+                has_keyword=False
+                for keyword in keywords:
+                    if keyword in basename: has_keyword=True
+                if not has_keyword: continue
             # process rosbag
             if "metadata.yaml" in files:
                 if verbose: print(f"Unpacking {os.path.abspath(path)}")
                 msgs: dict[str, pd.DataFrame] = dict()
                 with AnyReader([path], default_typestore=typestore) as reader:
                     if topics is None:
-                        connections = [x for x in reader.connections]
+                        if excluded_topics is None:
+                            connections = [x for x in reader.connections]
+                        else:
+                            connections = [x for x in reader.connections if x.topic not in excluded_topics]
                     else:
                         connections = [x for x in reader.connections if x.topic in topics]
                     for connection, timestamp, rawdata in reader.messages(connections=connections):
@@ -115,14 +126,23 @@ def rosmsg_generator(
                         
 
 
-def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
+def convert_rosbags(
+        bags_dir:str|Path, 
+        typestore, 
+        topics:list[str]|None = None,
+        excluded_topics:list[str]|None = None,
+        keywords:list[str]|None = None, 
+        verbose:bool=False
+):
     """
     Converts rosbags into pandas DataFrames.
 
     args:
         bags_dir: a directory containing rosbags
         typestore: the typestore of the message types in your rosbags
-        topics: the list of topics to report. If 'None', reports all topics
+        topics: the list of topics to convert. If None, converts all topics
+        excluded_topics: a list of topics to exclude. If None, no topics are excluded
+        keywords: If not None, only bags whose name contains a keyword will be processed
         verbose: if true, prints updates as rosbags are unpacked
 
     returns:
@@ -140,7 +160,8 @@ def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
 
     dataframes: dict[Path, dict[str, pd.DataFrame]] = dict()
     topic_data = None
-    for connection, msg, path in rosmsg_generator([bags_dir], typestore, topics=topics, verbose=verbose):
+    for connection, msg, path in rosmsg_generator([bags_dir], 
+    typestore, topics, excluded_topics, keywords, verbose=verbose):
         if connection.topic=='/rosout': continue
         relpath = path.relative_to(bags_dir)       
         if relpath not in dataframes.keys():
@@ -161,12 +182,12 @@ def convert_rosbags(bags_dir:str, typestore, topics, verbose:bool=False):
 
 
 def save_to_csv(
-        dataframes:dict[str, dict[str, pd.DataFrame]],
+        dataframes:dict[Path, dict[str, pd.DataFrame]],
         out_dir:str,
         verbose:bool = False
 ):
     """
-    Saves pandas DataFrames generate from rosmsgs to csv files. 
+    Saves pandas DataFrames generated from rosmsgs to csv files. 
 
     args:
         dataframes: a dictionary from relative rosbag paths to topics, where 
@@ -176,7 +197,7 @@ def save_to_csv(
     """
     outpath = Path(out_dir)
     for relpath, topics in dataframes.items():
-        relpath = relpath.parent / ("converted_"+os.path.basename(relpath))
+        relpath = relpath.parent / ("converted__"+os.path.basename(relpath))
         if verbose: print(f"Saving {os.path.abspath(outpath / relpath)}")
         for topic, dataframe in topics.items():
             topicname = topic.replace('/', '.') + ".csv"
@@ -184,6 +205,47 @@ def save_to_csv(
             fullpath = outpath / relpath / topicname
             fullpath.parent.mkdir(parents=True, exist_ok=True)
             dataframe.to_csv(os.path.abspath(fullpath))
+
+def load_dataframes(
+        csv_dir:Path|str, 
+        keywords:list[str]=None, 
+        verbose:bool=False
+):
+    """
+    Reads csvs into dataframes with the same structure rosbags are saved.
+
+    args:
+        csv_dir: the directories with csv files converted from rosbags
+        keywords: If not None, only converted bags with the keyword will be processed
+        verbose: if True, prints updates as files are loaded
+
+    returns:
+        dataframes: a dictionary from relative rosbag paths to topics, where 
+            topics is a dictionary from topic names to pandas DataFrames
+    """
+    csv_dir = Path(csv_dir)
+    dataframes:dict[Path, dict[str, pd.DataFrame]] = dict()
+    for root, dirs, files in os.walk(csv_dir):
+        if keywords is not None:
+            basename = os.path.basename(root)
+            has_keyword=False
+            for keyword in keywords:
+                if keyword in basename: has_keyword=True
+            if not has_keyword: continue
+        contains_csv = False
+        for file in files:
+            if file.endswith(".csv"): contains_csv = True
+        if contains_csv:
+            dir = Path(root)
+            if verbose: print(f"Loading {os.path.abspath(dir)}")
+            reldir = dir.relative_to(csv_dir)
+            dataframes[reldir] = dict()
+            for file in files:
+                if file.endswith(".csv"):
+                    dataframes[file[:-4]] = pd.read_csv(dir/file)
+    return dataframes
+            
+
 
 
 
@@ -196,6 +258,8 @@ if __name__ == '__main__':
     msgs_dirs = [Path.cwd()]
     out_dir = None
     topics = None
+    excluded_topics = None
+    keywords = None
     for arg in argv:
         if arg.startswith("bagsDir:="):
             rosbags_dir = pathof(arg[9:])
@@ -205,12 +269,25 @@ if __name__ == '__main__':
             out_dir = pathof(arg[8:])
         elif arg.startswith("topics:="):
             topics = arg[8:].split(',')
+        elif arg.startswith("excludedTopics:="):
+            excluded_topics = arg[16:].split(',')
+        elif arg.startswith("keywords:="):
+            keywords = arg[10:].split(',')
+
+    print(excluded_topics)
 
     if out_dir == None:
         out_dir = Path(rosbags_dir) / "converted_bags"
 
     typestore = generate_typestore(msgs_dirs, verbose=True)
-    dataframes = convert_rosbags(rosbags_dir, typestore, topics=topics, verbose=True)
+    dataframes = convert_rosbags(
+        rosbags_dir, 
+        typestore, 
+        topics, 
+        excluded_topics,
+        keywords,
+        verbose=True
+    )
     save_to_csv(dataframes, out_dir, verbose=True)
 
 
