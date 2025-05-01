@@ -5,10 +5,10 @@
 # - Make sure the router is powered on before running this script
 
 # Check if sshpass is installed, and install it if it isn't
+# TODO create a script to work on ssh keys
 if ! command -v sshpass &> /dev/null; then
     echo "sshpass could not be found, installing..."
-    sudo apt update
-    sudo apt install -y sshpass
+    exit
 fi
 
 # Define device variables
