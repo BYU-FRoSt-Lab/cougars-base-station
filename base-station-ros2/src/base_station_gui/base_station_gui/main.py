@@ -13,11 +13,6 @@ log = logging.getLogger("MainWindow")
 loggerInit(log)
 log.setLevel(logging.DEBUG)
 
-# Set to log to the console
-consoleHandler = logging.StreamHandler()
-consoleHandler.setLevel(logging.DEBUG)
-format = logging.Formatter("[%(asctime)s] [%(levelname)s] %(name)s: %(msg)s")
-
 '''------------------------------
 
 Temporary Testing Info
