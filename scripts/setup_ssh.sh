@@ -6,7 +6,7 @@ read -p "Enter your choice: " choice
 
 # Check if the input is a number between 0 and 9
 if [[ "$choice" =~ ^[0-9]$ ]]; then
-    IP_ADDRESS="192.168.0.${choice}"
+    IP_ADDRESS="192.168.0.10${choice}"
 else
     IP_ADDRESS="$choice"
 fi
