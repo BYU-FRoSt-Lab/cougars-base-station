@@ -9,10 +9,10 @@
       },
       {
         "name": "turn_phase", 
-        "time_seconds": 5.0,
+        "time_seconds": 2.0,
         "depth": 2.0,
         "heading": 90.0,
-        "speed": 0.0
+        "speed": 15.0
       }
 
     ]

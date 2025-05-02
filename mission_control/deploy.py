@@ -14,11 +14,15 @@ def load_config():
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)["vehicles"]
 
-def deploy_file(file_path, remote_user, remote_host, remote_path, label):
-    remote = f"{remote_user}@{remote_host}:{remote_path}"
-    cmd = ["rsync", "-avz", file_path, remote]
-    print(f"📤 Deploying {label} ({os.path.basename(file_path)}) to {remote_host}...")
-    result = subprocess.run(cmd)
+def scp_file(file_path, remote_user, remote_host, remote_path, remote_filename):
+    """Deletes existing file then copies a new one via SCP."""
+    delete_cmd = f"rm -f {os.path.join(remote_path, remote_filename)}"
+    print(f"🗑️ Deleting {remote_filename} on {remote_host}...")
+    subprocess.run(["ssh", f"{remote_user}@{remote_host}", delete_cmd])
+
+    destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
+    print(f"📤 Copying {file_path} to {destination}...")
+    result = subprocess.run(["scp", file_path, destination])
     return result.returncode == 0
 
 def log_deployment(vehicle, files_sent):
@@ -39,16 +43,18 @@ def main():
         param_path = os.path.join(PARAM_DIR, vehicle["param_file"])
         fleet_path = os.path.join(PARAM_DIR, vehicle["fleet_param_file"])
 
-        for label, file_path in [("Mission File", mission_path),
-                                 ("Vehicle Params", param_path),
-                                 ("Fleet Params", fleet_path)]:
+        for label, file_path, remote_filename in [
+            ("Mission File", mission_path, "mission_states.json"),
+            ("Vehicle Params", param_path, os.path.basename(param_path)),
+            ("Fleet Params", fleet_path, os.path.basename(fleet_path)),
+        ]:
             if os.path.exists(file_path):
-                success = deploy_file(
+                success = scp_file(
                     file_path,
                     vehicle["remote_user"],
                     vehicle["remote_host"],
                     vehicle["remote_path"],
-                    label
+                    remote_filename
                 )
                 if success:
                     files_sent.append((label, file_path))
