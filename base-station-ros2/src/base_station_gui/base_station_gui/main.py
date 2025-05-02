@@ -7,6 +7,8 @@ from base_station_gui.modemSubscriber import ModemStatus, ModemSubscriber, CougM
 import logging
 from base_station_gui.loggerInit import loggerInit
 
+import rclpy
+
 # Set up the logger
 
 log = logging.getLogger("MainWindow")
@@ -141,11 +143,13 @@ class MainWindow(QWidget):
 
     
 def main(args=None) -> None:
+    rclpy.init(args=args)
     log.info("Launching the window")
     app = QApplication([])
     window = MainWindow()
     app.exec()
     log.info("Closing")
+    rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
