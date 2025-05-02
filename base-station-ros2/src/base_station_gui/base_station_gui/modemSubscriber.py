@@ -41,16 +41,14 @@ class CougModemInfo():
 
 dataLock = Lock()
 modemData: list[CougModemInfo] = []
+dataUpdated = False
 
 def findModemIndex(id: int) -> int:
     dataLock.acquire()
-    log.debug("Scanning the modem to find modem %d", id)
-    log.debug("Length of the modems is: %d", len(modemData))
 
     retVal = -1
 
     for i in range(len(modemData)):
-        log.debug("\tid at index %d is: %d", i, modemData[i].id)
         if modemData[i].id == id:
             retVal = i
 
@@ -91,13 +89,6 @@ class SubNode(Node):
             return
 
         log.debug("Pinging modem %d\n\tCID: %X", sendData.dest_id, sendData.msg_id)
-
-        index = findModemIndex(sendData.dest_id)
-        if (index == -1):
-            log.error("Unable to find data on modem %d", sendData.dest_id)
-            return
-        
-
         return
     
     def cmdUpdateHandler(self, updateData: ModemCmdUpdate):
@@ -106,6 +97,45 @@ class SubNode(Node):
             return
         
         log.debug("Received command update about modem %d,\n\tCID: %X", updateData.target_id, updateData.msg_id)
+
+        index = findModemIndex(updateData.target_id)
+        if (index == -1):
+            log.error("Unable to find data on modem %d", updateData.target_id)
+            return
+
+        currentModem: CougModemInfo = modemData[index]
+
+        dataLock.acquire()
+
+        # Check for the status
+        if updateData.msg_id == 0x60:
+            # The modem was just pinged      
+            currentModem.status = ModemStatus.TURN_WAITING
+            currentModem.numPings += 1
+        elif updateData.msg_id == 0x63:
+            # The modem missed a response
+            currentModem.numFailedResponses += 1
+            currentModem.numFailedSinceSuccess += 1
+
+            if (currentModem.numFailedResponses >= NUM_FAILS_FOR_UNRESPONSIVE):
+                currentModem.status = ModemStatus.UNRESPONSIVE
+            else:
+                currentModem.status = ModemStatus.WARNING
+        else:
+            # Any other status
+            log.warning("Cast for CID %X is not handled", updateData.msg_id)
+
+        # Set all other modems to not their turn
+        for i in range(len(modemData)):
+            if i == index:
+                continue
+            if modemData[i].status == ModemStatus.TURN_RESPONDED:
+                modemData[i].status = ModemStatus.RESPONDING
+
+        dataLock.release()
+
+        global dataUpdated
+        dataUpdated = True
         return
     
     def recHandler(self, recData: ModemRec):
@@ -114,6 +144,20 @@ class SubNode(Node):
             return
 
         log.debug("Received response.\n\tSource id: %d\n\tDest id: %d\n\tCID: %X", recData.src_id, recData.dest_id, recData.msg_id)
+
+        index = findModemIndex(recData.src_id)
+        if (index == -1):
+            log.error("Unable to find data on modem %d", recData.src_id)
+            return
+
+        currentModem: CougModemInfo = modemData[index]
+        dataLock.acquire()
+        currentModem.numFailedSinceSuccess = 0
+        currentModem.status = ModemStatus.TURN_RESPONDED
+        dataLock.release()
+
+        global dataUpdated
+        dataUpdated = True
         return
 
 
@@ -126,7 +170,6 @@ class ModemSubscriber(QObject):
         log.debug("Initalizing the Modem Subscriber with %d modems", len(modemInfo))
 
         # Set up the class information
-        modemData: list[CougModemInfo] = []
         self.currentModemIndex: int = 0
 
         # Load in all of the modem info
@@ -143,64 +186,14 @@ class ModemSubscriber(QObject):
         log.info("Beginning to spin")
         while self.keepRunning and rclpy.ok():
             rclpy.spin_once(self.subNode)
-            
+            global dataUpdated
+            if (dataUpdated):
+                self.sig_ModemSubscriberUpdate.emit()
+                log.info("Sending signal to update the diagram")
+                dataUpdated = False
+        # End while loop
+
         log.info("Shutting down")
-
-    def nextTurn(self) -> bool:
-
-        log.debug("Simulating the next modem's turn")
-
-        # Reset the information for the current modem
-        dataLock.acquire()
-        currModem = modemData[self.currentModemIndex]
-
-        currModem.numPings += 1
-
-        currModemState = currModem.status
-
-        if (currModemState == ModemStatus.TURN_RESPONDED):
-            nextState = ModemStatus.RESPONDING
-            currModem.numFailedSinceSuccess = 0
-        elif (currModemState == ModemStatus.TURN_WAITING):
-            currModem.numFailedResponses += 1
-            currModem.numFailedSinceSuccess += 1
-            if (currModem.numFailedSinceSuccess >= NUM_FAILS_FOR_UNRESPONSIVE):
-                nextState = ModemStatus.UNRESPONSIVE
-                log.warning("Modem %d has been unresponsive for %d cycles", currModem.id, currModem.numFailedSinceSuccess)
-            else:
-                nextState = ModemStatus.WARNING
-        else:
-            nextState = ModemStatus.UNRESPONSIVE
-
-        currModem.status = nextState
-        log.debug("Modem %d is set to %s", currModem.id, nextState)
-
-        # Set the values for the next modem
-        self.currentModemIndex += 1
-        self.currentModemIndex %= len(modemData)
-        currModem = modemData[self.currentModemIndex]
-        currModem.status = ModemStatus.TURN_WAITING
-
-        # Determine if the modem will respond or not
-        probabilityOfResponse = PROB_OF_RESPONSE[currModem.id]
-        rolledVal = random.randint(1, 100)
-        doesRespond = rolledVal <= probabilityOfResponse
-        log.debug("Modem %d has a %d%% chance of response.  Rolled %d.  Modem will respond: %s",
-                  currModem.id, PROB_OF_RESPONSE[currModem.id], rolledVal, doesRespond)
-
-        dataLock.release()
-
-        self.sig_ModemSubscriberUpdate.emit()
-
-        return doesRespond
-
-    def processResponse(self) -> None:
-        dataLock.acquire()
-        currModem = modemData[self.currentModemIndex]
-        log.debug("Processing response for modem %d", currModem.id)
-        currModem.status = ModemStatus.TURN_RESPONDED
-        self.sig_ModemSubscriberUpdate.emit()
-        dataLock.release()
 
     def getModemInfo(self) -> list[CougModemInfo]:
         dataLock.acquire()

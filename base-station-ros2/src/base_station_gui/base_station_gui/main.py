@@ -25,8 +25,6 @@ Cougs: list[tuple[str, int]] = [
     ("Coug 1", 1),
     ("Coug 2", 2),
     ("Coug 3", 3),
-    ("Coug 4", 4),
-    ("Coug 5", 5)
 ]
 
 
