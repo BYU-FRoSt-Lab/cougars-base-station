@@ -61,6 +61,11 @@ public:
             std::bind(&ComsNode::init_coug_callback, this, _1, _2)
         );
 
+        init_controls_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "init_controls_service",
+            std::bind(&ComsNode::init_controls_callback, this, _1, _2)
+        );
+
 
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
