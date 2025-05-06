@@ -4,6 +4,8 @@
 #include "std_srvs/srv/set_bool.hpp"
 #include "seatrac_interfaces/msg/modem_rec.hpp"
 #include "seatrac_interfaces/msg/modem_send.hpp"
+#include "base_station_interfaces/srv/beacon_id.hpp"
+
 
 #include "base_station_coms/coms_protocol.hpp"
 #include "base_station_coms/seatrac_enums.hpp"
@@ -39,14 +41,24 @@ public:
         this->modem_publisher_ = this->create_publisher<seatrac_interfaces::msg::ModemSend>("modem_send", 10);
 
 
-        emergency_kill_service_ = this->create_service<std_srvs::srv::SetBool>(
+        emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "emergency_kill_service",
             std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
         );
 
-        start_mission_service_ = this->create_service<std_srvs::srv::SetBool>(
+        emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "emergency_surface_service",
+            std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
+        );
+
+        start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "start_mission_service",
             std::bind(&ComsNode::start_mission_callback, this, _1, _2)
+        );
+
+        init_controls_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "init_controls_service",
+            std::bind(&ComsNode::init_controls_callback, this, _1, _2)
         );
 
 
@@ -70,18 +82,35 @@ public:
         }
     }
 
-    void emergency_kill_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                                    std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
+    void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
     {
         EmergencyKill e_kill_msg;
-        send_acoustic_message(BEACON_ALL, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent");
+        send_acoustic_message(request->beacon_id, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent to Coug %i", request->beacon_id);
         response->success = true;
     }
 
+    void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
+    {
+        EmergencySurface e_surface_msg;
+        send_acoustic_message(request->beacon_id, sizeof(e_surface_msg), (uint8_t*)&e_surface_msg, MSG_OWAY);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Surface Signal Sent to Coug %i", request->beacon_id);
+        response->success = true;
+    }
 
-    void start_mission_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
-                                    std::shared_ptr<std_srvs::srv::SetBool::Response> response) 
+    void init_controls_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
+    {
+        InitControls init_controls_msg;
+        send_acoustic_message(request->beacon_id, sizeof(init_controls_msg), (uint8_t*)&init_controls_msg, MSG_OWAY);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Initialization Signal Sent to Coug %i", request->beacon_id);
+        response->success = true;
+    }
+
+    void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
     {
         
     }
@@ -119,8 +148,10 @@ private:
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
 
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr emergency_kill_service_;
-    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr start_mission_service_;
+    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
+    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
+    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr start_mission_service_;
+    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr init_controls_service_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
