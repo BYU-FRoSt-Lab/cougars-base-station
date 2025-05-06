@@ -51,6 +51,7 @@ struct ConfirmVerifyLaunch {
     static const COUG_MSG_ID msg_id = CONFIRM_VERIFY;
     bool ready;
 }__attribute__((packed));
+<<<<<<< HEAD
 
 struct RequestStatus {
     static const COUG_MSG_ID msg_id = REQUEST_STATUS;
@@ -70,8 +71,6 @@ struct VehicleStatus {
     uint16_t heading;
 
 }__attribute__((packed));
-
-
 
 } // cougars_coms
 #endif //_COUGARS_COMS_PROTOCOL_
