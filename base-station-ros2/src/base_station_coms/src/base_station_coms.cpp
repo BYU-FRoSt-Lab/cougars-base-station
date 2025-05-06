@@ -89,7 +89,6 @@ public:
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent to Coug %i", request->beacon_id);
         response->success = true;
     }
-
     // Sends emergency surface signal to coug specified in request
     void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
@@ -167,7 +166,6 @@ private:
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
-    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr init_coug_service_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
