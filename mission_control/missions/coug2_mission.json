@@ -1,0 +1,41 @@
+{
+  "states": [
+    {
+      "name": "init_forward", 
+      "time_seconds": 10.0,
+      "depth": 0.0,
+      "heading": 70.0,
+      "speed": 20.0
+    },
+    {
+      "name": "forward", 
+      "time_seconds": 30.0,
+      "depth": 1.5,
+      "heading": 70.0,
+      "speed": 50.0
+    },
+    {
+      "name": "resurface", 
+      "time_seconds": 30.0,
+      "depth": -1.0,
+      "heading": 0.0,
+      "speed": 70.0
+    },
+    {
+      "name": "return", 
+      "time_seconds": 30.0,
+      "depth": -1.0,
+      "heading": -110.0,
+      "speed": 30.0
+    },
+    {
+      "name": "stop", 
+      "time_seconds": 5.0,
+      "depth": -1.0,
+      "heading": -110.0,
+      "speed": 0.0
+    }
+  ]
+}
+
+
