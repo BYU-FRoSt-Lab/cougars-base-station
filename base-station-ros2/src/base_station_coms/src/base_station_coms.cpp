@@ -51,14 +51,14 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
-        start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+        /*start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "start_mission_service",
             std::bind(&ComsNode::start_mission_callback, this, _1, _2)
-        );
+        );*/
 
-        init_controls_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "init_controls_service",
-            std::bind(&ComsNode::init_controls_callback, this, _1, _2)
+        init_coug_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "init_coug_service",
+            std::bind(&ComsNode::init_coug_callback, this, _1, _2)
         );
 
 
@@ -79,9 +79,13 @@ public:
         switch(id) {
             default: break;
             case EMPTY: break;
+            case VEHICLE_STATUS:{
+                recieve_status();
+            } break;
         }
     }
 
+    // Sends emergency kill signal to coug specified in request
     void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
     {
@@ -91,6 +95,7 @@ public:
         response->success = true;
     }
 
+    // Sends emergency surface signal to coug specified in request
     void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
     {
@@ -100,22 +105,23 @@ public:
         response->success = true;
     }
 
-    void init_controls_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+    // Sends initialization command to coug specified in request
+    void init_coug_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
     {
-        InitControls init_controls_msg;
-        send_acoustic_message(request->beacon_id, sizeof(init_controls_msg), (uint8_t*)&init_controls_msg, MSG_OWAY);
+        InitCoug init_coug_msg;
+        send_acoustic_message(request->beacon_id, sizeof(init_coug_msg), (uint8_t*)&init_coug_msg, MSG_OWAY);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Initialization Signal Sent to Coug %i", request->beacon_id);
         response->success = true;
     }
 
-    void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+    /*void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
     {
         
-    }
+    }*/
 
-
+    // periodically requests status of cougs
     void request_status_callback() {
         
         modem_coms_schedule_turn_index += 1;
@@ -126,9 +132,15 @@ public:
         int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
+        
+    }
+
+    void recieve_status() {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "recieved status");
     }
 
 
+    //used by the service callback functions to publish messages to the cougs
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
 
         auto request = seatrac_interfaces::msg::ModemSend();
@@ -151,7 +163,7 @@ private:
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr start_mission_service_;
-    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr init_controls_service_;
+    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr init_coug_service_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
