@@ -61,9 +61,9 @@ public:
             std::bind(&ComsNode::init_coug_callback, this, _1, _2)
         );
 
-        init_controls_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "init_controls_service",
-            std::bind(&ComsNode::init_controls_callback, this, _1, _2)
+        init_coug_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "init_coug_service",
+            std::bind(&ComsNode::init_coug_callback, this, _1, _2)
         );
 
 
