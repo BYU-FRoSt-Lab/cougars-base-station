@@ -50,7 +50,7 @@ public:
             "emergency_surface_service",
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
-
+        
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
@@ -89,6 +89,7 @@ public:
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent to Coug %i", request->beacon_id);
         response->success = true;
     }
+
     // Sends emergency surface signal to coug specified in request
     void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
@@ -141,8 +142,6 @@ public:
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_waypoint: %i", status->moos_waypoint);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_behavior_number: %i", status->moos_behavior_number);
-    }
-
 
     //used by the service callback functions to publish messages to the cougs
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
