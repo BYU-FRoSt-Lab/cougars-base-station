@@ -80,7 +80,7 @@ public:
             default: break;
             case EMPTY: break;
             case VEHICLE_STATUS:{
-                recieve_status();
+                recieve_status(msg);
             } break;
         }
     }
@@ -135,8 +135,16 @@ public:
         
     }
 
-    void recieve_status() {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "recieved status");
+    void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
+        
+        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Coug %i Status:", msg.dest_id);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "x pos: %i", status->x);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "y pos: %i", status->y);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Depth: %i", status->depth);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_waypoint: %i", status->moos_waypoint);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_behavior_number: %i", status->moos_behavior_number);
     }
 
 
