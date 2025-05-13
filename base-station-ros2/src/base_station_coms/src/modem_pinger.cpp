@@ -162,6 +162,7 @@ private:
 
     void send_ping()
     {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Pinging");
         auto request = ModemSend();
         request.msg_id = CID_E::CID_DAT_SEND;
         request.dest_id = target_id_;

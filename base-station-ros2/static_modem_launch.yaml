@@ -1,0 +1,26 @@
+/**:
+  ros__parameters:
+    mission_start_time: 1739302061
+    
+
+
+/modem_pinger:
+  ros__parameters:
+    ping_delay_seconds: 1
+
+    number_of_vehicles: 2
+
+    vehicle_ID: 15
+
+    request_response: true
+
+    target_id: 14
+
+
+
+
+/modem:
+  ros__parameters:
+    base_station_modem_id: 15
+
+    logging_verbosity: 3
