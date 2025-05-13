@@ -121,9 +121,13 @@ def rosmsg_generator(
                             connections = [x for x in reader.connections if x.topic not in excluded_topics]
                     else:
                         connections = [x for x in reader.connections if x.topic in topics]
-                    for connection, timestamp, rawdata in reader.messages(connections=connections):
-                        msg = reader.deserialize(rawdata, connection.msgtype)
-                        yield connection, msg, path
+                    for connection, timestamp, rawdata in reader.messages(connections=connections): 
+                        try:
+                            msg = reader.deserialize(rawdata, connection.msgtype) 
+                            yield connection, msg, path
+                        except KeyError:
+                            if verbose: print(f"{connection.msgtype} isn't in typestore, skipping message")
+
                         
 
 
