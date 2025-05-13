@@ -1,8 +1,6 @@
 # Import statements
 import argparse
 import sys
-
-import src.inputparse as inputparse
 import numpy as np
 import math
 import os
@@ -10,22 +8,27 @@ import yaml
 import re
 from datetime import date
 
+# Assuming src.inputparse exists and is correctly structured
+import src.inputparse as inputparse
+
 
 EARTH_CIRCUMFRENCE_METERS = 40075000
 EARTH_RADIUS_METERS       = 6371000
-METERS_PER_DEGREE_LON     = EARTH_CIRCUMFRENCE_METERS / 360
+METERS_PER_DEGREE_LON     = EARTH_CIRCUMFRENCE_METERS / 360 # Not used in Haversine directly
 POINTS_LINE_BASE          = "	           points = "
-DEPTH_LINE                = "             depth = "
-DEFAULT_HEADING_LINE      = "                heading = "
-DEFAULT_DEPTH_LINE        = "                depth = "
+DEPTH_LINE                = "             depth = " # Not used directly, but good constant
+DEFAULT_HEADING_LINE      = "                heading = " # Not used
+DEFAULT_DEPTH_LINE        = "                depth = " # Not used
 MOOS_COMMUNITY_LINE       = "Community    = "
-OUTPUTS_DIR               = 'outputs/'
-LONG_ORIGIN = 40.23849638603186
-LAT_ORIGIN  = -111.73956745065406
+OUTPUTS_DIR               = 'moos_converter_output/'
+# Default origins (will be overridden by mission_params.yaml)
+# LONG_ORIGIN = 40.23849638603186 # Example: This seems like LAT
+# LAT_ORIGIN  = -111.73956745065406 # Example: This seems like LON
+# These will be loaded from YAML
 
 # Converts a point's lat/long into meters using Haversine's formula
-# Input:  The set of reference cordinates, the set of point cordinates
-# Output: The x & y cordinates of the point
+# Input:  The set of reference cordinates (refLong, refLat), the set of point cordinates (pointLong, pointLat)
+# Output: The x & y cordinates of the point in meters relative to the reference
 def CalculateHaversine(refLong, refLat, pointLong, pointLat):
     # convert GPS coordinates to radians
     ref_lat_rad     = math.radians(float(refLat))
@@ -38,227 +41,287 @@ def CalculateHaversine(refLong, refLat, pointLong, pointLat):
     delta_lat = point_lat_rad - ref_lat_rad
     a = math.sin(delta_lat/2)**2 + math.cos(ref_lat_rad) * math.cos(point_lat_rad) * math.sin(delta_lon/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    d = EARTH_RADIUS_METERS * c
-    theta = math.atan2(math.sin(delta_lon) * math.cos(point_lat_rad), math.cos(ref_lat_rad) * math.sin(point_lat_rad) - math.sin(ref_lat_rad) * math.cos(point_lat_rad) * math.cos(delta_lon))
+    d = EARTH_RADIUS_METERS * c # Distance in meters
 
-    # convert distance and direction to xy MOOS coordinates in meters
-    x = d * math.cos(theta)
-    y = -d * math.sin(theta)
-    return x, y
+    # Calculate bearing (theta)
+    # Adjusted for standard Cartesian coordinates where X is East, Y is North
+    # MOOS often uses X as forward/East, Y as port/North from an East-facing start if not georeferenced
+    # However, for geodetic to local tangent plane, a common convention is X=East, Y=North
+    y_intermediate = math.sin(delta_lon) * math.cos(point_lat_rad)
+    x_intermediate = math.cos(ref_lat_rad) * math.sin(point_lat_rad) - \
+                     math.sin(ref_lat_rad) * math.cos(point_lat_rad) * math.cos(delta_lon)
+    theta = math.atan2(y_intermediate, x_intermediate) # Angle from North, positive eastward
 
-def CopyTemplateFile(args, template_file_name, printingString = '', mission_name = ''):
-    # Split the file name and get the extension
-    base_name, extension = os.path.splitext(template_file_name)
+    # Convert polar (d, theta) to Cartesian (x, y)
+    # x = East, y = North
+    x_local = d * math.sin(theta)
+    y_local = d * math.cos(theta)
     
+    # Your original code had:
+    # x = d * math.cos(theta)
+    # y = -d * math.sin(theta)
+    # This implies a different coordinate system for theta or the final axes.
+    # If MOOS expects X forward, Y left (NED-like from a specific heading), then further rotation might be needed.
+    # For now, using standard X=East, Y=North. If MOOS expects X,Y differently (e.g. pMarineViewer default view),
+    # ensure the points align with that. Typically, MOOS waypoints are (x,y) in a local Cartesian grid.
+    return x_local, y_local
+
+
+def CopyTemplateFile(args, template_file_name, printingString='', mission_name_hint='', mission_output_dir=''):
+    base_template_name, template_extension = os.path.splitext(template_file_name)
+    target_file_name_only = ""
+
+    if template_file_name.endswith('_deploy.sh'):
+        target_file_name_only = mission_name_hint + '_deploy.sh'
+    elif template_file_name.endswith('description.txt'):
+        target_file_name_only = mission_name_hint + '_description.txt'
+    else: # For .bhv, .moos, etc.
+        if args.output: # User specified an output name via -o
+            target_file_name_only = os.path.splitext(os.path.basename(args.output))[0] + template_extension
+        else: # Default: use input file's basename + template's extension
+            input_base = os.path.splitext(os.path.basename(args.input))[0]
+            target_file_name_only = input_base + template_extension
+            if not target_file_name_only: # Failsafe if input had no extension somehow
+                 target_file_name_only = args.input + template_extension
     
-    if not template_file_name.endswith('.sh') and not template_file_name.endswith('.txt'):
-        template_file_name = 'template_files/' + template_file_name
-        # First, read in the template file
-        templateFile = open(template_file_name)
-        lines = []
-        for currentLine in templateFile:
-            lines.append(currentLine)
-        templateFile.close()
+    if not mission_output_dir:
+        print("FATAL ERROR: mission_output_dir not provided to CopyTemplateFile!")
+        return None # Critical failure
 
-        # Set up the output file name
-        outputFileName = args.output
-        # if template_file_name.endswith(".bhv"):
-        if outputFileName == "":
-            inputWithoutExtension = args.input[0:-10]
-            outputFileName = inputWithoutExtension + extension
-            del inputWithoutExtension
-        elif not outputFileName.endswith(extension):
-            outputFileName = outputFileName + extension
+    outputFilePath = os.path.join(mission_output_dir, target_file_name_only)
+
+    # Determine full path to the template file itself
+    full_template_path = ""
+    if template_file_name.startswith('template_') and (template_file_name.endswith('.sh') or template_file_name.endswith('.txt')):
+        # These are special template files (e.g., 'template_deploy.sh') that are not in 'template_files/' folder
+        # And their content is entirely replaced by printingString
+        full_template_path = template_file_name # Assuming it's directly accessible or path is complete
+    elif not template_file_name.endswith('.sh') and not template_file_name.endswith('.txt'):
+        full_template_path = os.path.join('template_files', template_file_name)
+    else: # For other .sh or .txt files not prefixed with 'template_' or if path is already full
+        full_template_path = template_file_name
 
 
-        # Open the file and Check if the output file already exists
-        try:
-            outputStream = open(OUTPUTS_DIR + outputFileName, "x")
-        except FileExistsError:
-            print(outputFileName + " already exists.  Override? (y/n)")
-            while True:
-                c = sys.stdin.read(1)
-                if c == "y" or c == "Y":
-                    print("Overwriting")
-                    outputStream = open(OUTPUTS_DIR + outputFileName, "w")
-                    break
-                if c == "n" or c == "N":
-                    print("Canceling operation")
-                    return 3
-
-        for currentLine in lines:
-            if template_file_name.endswith(".bhv") and currentLine.find("points") != -1:
-                outputStream.write(printingString + '\n')
-            elif template_file_name.endswith(".moos") and currentLine.find("behaviors") != -1:
-                outputStream.write(printingString + '\n')
-            elif template_file_name.endswith(".moos") and currentLine.find("COMMUNITY_NAME") != -1:
-                outputStream.write(MOOS_COMMUNITY_LINE + input('What is the name of this moos community (example: coug1) ') + '\n\n')
+    outputStream = None
+    try:
+        outputStream = open(outputFilePath, "x") # Try exclusive creation
+    except FileExistsError:
+        print(f"{outputFilePath} already exists. Override? (y/n)")
+        while True:
+            user_choice = sys.stdin.readline().strip().lower()
+            if user_choice == "y":
+                print("Overwriting")
+                outputStream = open(outputFilePath, "w") # Open in write mode
+                break
+            elif user_choice == "n":
+                print(f"Skipping overwrite for {outputFilePath}.")
+                return outputFilePath # Return path, but indicate it wasn't (re)written
             else:
-                outputStream.write(currentLine)
-        
-        #Close up
-        outputStream.close()
-    else:
-        # create a simple deploy script
-        if template_file_name.endswith('_deploy.sh'):
-            outputFileName =  mission_name + '_deploy.sh'
+                print("Invalid input. Please enter 'y' or 'n'.")
+    except Exception as e:
+        print(f"Error opening file {outputFilePath} for writing: {e}")
+        return None
 
-        elif template_file_name.endswith('description.txt'):
-            outputFileName = mission_name + '_description.txt'
-        try:
-            outputStream = open(OUTPUTS_DIR + outputFileName, "x")
-        except FileExistsError:
-            print(outputFileName + " already exists.  Override? (y/n)")
-            while True:
-                c = sys.stdin.read(1)
-                if c == "y" or c == "Y":
-                    print("Overwriting")
-                    outputStream = open(OUTPUTS_DIR + outputFileName, "w")
-                    break
-                if c == "n" or c == "N":
-                    print("Canceling operation")
-                    return 3
-        outputStream.write(printingString)
-        outputStream.close()
+    if outputStream is None: # Means user chose 'n' for overwrite
+        return outputFilePath
 
-    
-    return outputFileName
+    # Write content based on template type
+    try:
+        if template_file_name.startswith('template_') and (template_file_name.endswith('.sh') or template_file_name.endswith('.txt')):
+            outputStream.write(printingString)
+        else: # Files based on a template from 'template_files/'
+            try:
+                with open(full_template_path, 'r') as templateFile:
+                    lines = templateFile.readlines()
+            except FileNotFoundError:
+                print(f"ERROR: Template file '{full_template_path}' not found.")
+                outputStream.close()
+                # Clean up the file created by 'x' mode if template is missing and file is empty
+                if os.path.exists(outputFilePath):
+                    try:
+                        if os.stat(outputFilePath).st_size == 0:
+                            os.remove(outputFilePath)
+                            print(f"Removed empty file: {outputFilePath}")
+                    except OSError as e_rem:
+                        print(f"Error removing empty file {outputFilePath}: {e_rem}")
+                return None
 
+            for currentLine in lines:
+                if template_file_name.endswith(".bhv") and "points =" in currentLine:
+                    outputStream.write(printingString + '\n')
+                elif template_file_name.endswith(".moos") and "behaviors" in currentLine and "pShare" not in currentLine: # Avoid pShare line
+                    outputStream.write(printingString + '\n') # printingString is the behavior_file_line
+                elif template_file_name.endswith(".moos") and "COMMUNITY_NAME" in currentLine:
+                    moos_community = input(f'What is the name of this moos community for {target_file_name_only} (example: coug1)? ')
+                    outputStream.write(MOOS_COMMUNITY_LINE + moos_community + '\n\n')
+                else:
+                    outputStream.write(currentLine)
+    finally:
+        if outputStream:
+            outputStream.close()
+
+    print(f"Successfully wrote to {outputFilePath}")
+    return outputFilePath
 
 
 def main():
-
     today = date.today()
 
+    answer = input('Have you updated your shared origin in mission_params.yaml for this multi-agent mission? (y/n) ')
+    if answer.lower() != 'y':
+        print('Please update the mission_params.yaml file, then try running this script again.')
+        return 1
 
-    # Set up the argument parsing
+    lat_origin = None
+    long_origin = None
+    try:
+        with open('../mission_params.yaml', 'r') as file:
+            parameters = yaml.safe_load(file)
+        lat_origin = float(parameters['/**']['ros__parameters']['origin.latitude'])
+        long_origin = float(parameters['/**']['ros__parameters']['origin.longitude'])
+        print(f"Using origin: Latitude={lat_origin}, Longitude={long_origin}")
+    except FileNotFoundError:
+        print("ERROR: ../mission_params.yaml not found. Cannot determine origin.")
+        return 1
+    except (KeyError, TypeError) as e:
+        print(f"ERROR: Could not read origin from mission_params.yaml. Check format. Details: {e}")
+        return 1
 
-    answer = input('Have you updated your shared origin in for this multi-agent mission? This script should only be run if you have. (y/n) ')
-    if answer.lower() == 'n':
-        ('please update the parameter files for this mission, then try running this script again')
-        return
-
-    # get origin for the mission
-    with open('../mission_params.yaml', 'r') as file:
-        parameters = yaml.safe_load(file)
-    lat_origin = float(parameters['/**']['ros__parameters']['origin.latitude'])
-    long_origin = float(parameters['/**']['ros__parameters']['origin.longitude'])
-    print(lat_origin, long_origin)
-
-
-    parser = argparse.ArgumentParser(description="A simple script that converts a .waypoints file (made by Ardupilot) to a put into a moos behavior file")
-    parser.add_argument("input", help="The .waypoints file")
-    parser.add_argument("-o", "--output", help="A specified name of the output file.  If no name is specified, then the same name will be used as the input file.  If the name given doesn't end with .wpt, the .wpt will be appended", default="")
+    parser = argparse.ArgumentParser(description="Converts a .waypoints file to MOOS mission files (.bhv, .moos, scripts).")
+    parser.add_argument("input", help="The .waypoints file (e.g., myroute.waypoints)")
+    parser.add_argument("-o", "--output", help="Base name for the output files and mission directory (e.g., 'MyMission1'). Extensions are added automatically.", default="")
     args = parser.parse_args()
-  
+
+    # Determine base output name for the directory and files
+    if args.output:
+        mission_base_name = os.path.splitext(args.output)[0] # Remove extension if user accidentally added one
+    else:
+        mission_base_name = os.path.splitext(os.path.basename(args.input))[0]
+
+    # Ensure the main output directory (e.g., moos_converter_output/) exists
+    if not os.path.exists(OUTPUTS_DIR):
+        try:
+            os.makedirs(OUTPUTS_DIR)
+            print(f"Created base output directory: {OUTPUTS_DIR}")
+        except OSError as e:
+            print(f"Error creating base output directory {OUTPUTS_DIR}: {e}")
+            return 1
+            
+    # Create the specific mission directory (e.g., moos_converter_output/MyMission1)
+    mission_specific_output_path = os.path.join(OUTPUTS_DIR, mission_base_name)
+    if not os.path.exists(mission_specific_output_path):
+        try:
+            os.makedirs(mission_specific_output_path)
+            print(f"Created mission directory: {mission_specific_output_path}")
+        except OSError as e:
+            print(f"Error creating mission directory {mission_specific_output_path}: {e}")
+            return 1
+    else:
+        print(f"Mission directory {mission_specific_output_path} already exists. Files may be overwritten if you choose 'y'.")
+
     #================#
     # PHASE 1: INPUT #
     #================#
+    Waypoints = inputparse.parseInputs(args) # Ensure parseInputs can handle args object
+    if not Waypoints:
+        print("Failed to parse waypoints from input file. Exiting.")
+        return 1
+    description_text = input('Please type up a sufficient description for this mission: ')
 
-    Waypoints = inputparse.parseInputs(args)
-    description = input('Please type up a sufficient description for this mission: ')
-    
     #====================================#
-    # PHASE 2: Convertor LAT/LONG to X/Y #
+    # PHASE 2: Convert LAT/LONG to X/Y   #
     #====================================#
-
-    numCoords = 0
     coords = []
-    for waypoint in Waypoints:
-        x, y = CalculateHaversine(lat_origin, long_origin, waypoint.latitude, waypoint.longitude)
-        x = round(x)
-        y = round(y)
-        coords.append([x, y, waypoint.depth])
-        numCoords += 1
+    for waypoint_obj in Waypoints: # Assuming Waypoints is a list of objects
+        # Ensure waypoint_obj has attributes: latitude, longitude, depth
+        try:
+            x, y = CalculateHaversine(long_origin, lat_origin, waypoint_obj.longitude, waypoint_obj.latitude)
+            x = round(x)
+            y = round(y)
+            coords.append([x, y, waypoint_obj.depth])
+        except AttributeError as e:
+            print(f"Error accessing waypoint attributes (latitude, longitude, depth): {e}. Please check your .waypoints parser.")
+            return 1
+        except ValueError as e:
+            print(f"Error converting waypoint data (lat/lon/depth probably not numbers): {e}")
+            return 1
 
-    # Creating the string
-    printingString = POINTS_LINE_BASE
-    numCoordsRead = 0
-    # x-y part
-    for currentCoord in coords:
-        numCoordsRead += 1
-        printingString += str(currentCoord[0]) + "," + str(currentCoord[1])
-        if not numCoordsRead == numCoords:
-            printingString += ":"
-    printingString += '\n             depths = '
-    numCoordsRead = 0
-    for currentCoord in coords:
-        numCoordsRead +=1
-        printingString += str(currentCoord[2])
-        if not numCoordsRead == numCoords:
-            printingString += ":"
+
+    numCoords = len(coords)
+    if numCoords == 0:
+        print("No coordinates were processed. Exiting.")
+        return 1
+
+    # Creating the MOOS behavior string for waypoints
+    waypoint_printing_string = POINTS_LINE_BASE
+    for i, currentCoord in enumerate(coords):
+        waypoint_printing_string += str(currentCoord[0]) + "," + str(currentCoord[1])
+        if i < numCoords - 1:
+            waypoint_printing_string += ":"
+    
+    # Align depths string under points string for readability in the .bhv file
+    depth_string_padding = ' ' * (len(POINTS_LINE_BASE) - len("depths = ") -1) # Adjust padding as needed
+    waypoint_printing_string += '\n' + depth_string_padding + 'depths = '
+    for i, currentCoord in enumerate(coords):
+        waypoint_printing_string += str(currentCoord[2]) # Assuming depth is the third element
+        if i < numCoords - 1:
+            waypoint_printing_string += ":"
 
     #=================#
     # PHASE 3: OUTPUT #
     #=================#
+    print(f"\nGenerating mission files in: {mission_specific_output_path}")
 
+    # Create .bhv file
+    # The 'args' object is passed to CopyTemplateFile; its 'output' attribute guides the naming.
+    generated_bhv_filepath = CopyTemplateFile(args, "template.bhv", printingString=waypoint_printing_string, mission_output_dir=mission_specific_output_path)
+    if not generated_bhv_filepath:
+        print("Failed to generate .bhv file. Aborting further file generation.")
+        return 1
+    
+    mission_name_for_scripts = os.path.splitext(os.path.basename(generated_bhv_filepath))[0]
 
-    # first create directory to store files
+    # Create .moos file
+    behavior_file_line_for_moos = f'  behaviors  = {os.path.basename(generated_bhv_filepath)}\n'
+    generated_moos_filepath = CopyTemplateFile(args, "template.moos", printingString=behavior_file_line_for_moos, mission_name_hint=mission_name_for_scripts, mission_output_dir=mission_specific_output_path)
+    if not generated_moos_filepath:
+        print("Failed to generate .moos file.")
+        # Decide if you want to continue or return, e.g., return 1
 
-    # create .bhv, .moos file, and a handy deploy script
+    # Create deploy script
+    # The mission_name_hint ensures the script is named after the primary mission file (e.g., MyMission1_deploy.sh)
+    moos_file_basename_for_script = os.path.basename(generated_moos_filepath) if generated_moos_filepath else mission_name_for_scripts + '.moos'
+    deploy_moos_str = f"#!/bin/bash\n\n# Deploy script for {mission_name_for_scripts}\n# Generated on {today.strftime('%Y-%m-%d')}\n\nuPokeDB {moos_file_basename_for_script} DEPLOY=true MOOS_MANUAL_OVERRIDE=false\n"
+    CopyTemplateFile(args, "template_deploy.sh", printingString=deploy_moos_str, mission_name_hint=mission_name_for_scripts, mission_output_dir=mission_specific_output_path)
 
-    # The way this works is that we read in the template.bhv file in the src directory.
-    behaviorFileName = CopyTemplateFile(args, "template.bhv", printingString=printingString)
-    mission_name, extension = os.path.splitext(behaviorFileName)
+    # Create description file
+    full_description_content = f"Mission Description for: {mission_name_for_scripts}\n"
+    full_description_content += f"Generated on: {today.strftime('%Y-%m-%d')}\n"
+    full_description_content += f"Input .waypoints file: {args.input}\n"
+    full_description_content += f"Origin Latitude: {lat_origin}\nOrigin Longitude: {long_origin}\n\n"
+    full_description_content += f"User-provided description:\n{description_text}\n"
+    CopyTemplateFile(args, "template_description.txt", printingString=full_description_content, mission_name_hint=mission_name_for_scripts, mission_output_dir=mission_specific_output_path)
 
-    # add a mission file - template.moos
-    # currently, we are just using the same template .moos file for every mission
-    # so only copying each line exactly is happening below
-    beahvior_file_line = f'  behaviors  = {behaviorFileName}\n' 
-    missionFileName = CopyTemplateFile(args, "template.moos", printingString= beahvior_file_line, mission_name=mission_name)
+    print(f"\nAll mission files generated in: {mission_specific_output_path}")
 
-    # copy the deploy script
-    deploy_moos_str = f"#!/bin/bash\n\nuPokeDB {missionFileName} DEPLOY=true, MOOS_MANUAL_OVERIDE=false"
-    # deploy_script_name = f'{mission_name}_deploy.sh'
-    # create_file_command = f'echo \'{deploy_moos_str}\' >outputs/{deploy_script_name}'
-    # os.system(create_file_command)
-
-    deploy_script_name = CopyTemplateFile(args, "template_deploy.sh", printingString=deploy_moos_str, mission_name=mission_name)
-
-    description_file_name = CopyTemplateFile(args, "template_description.txt", printingString=description, mission_name=mission_name)
-   
-    # #=================#
-    # # PHASE 4: Copy New Mission
-    # #          Directory to Docker 
-    # #          Container
-    # #=================#
-
-    # create a new mission directory
-    new_directory_name = mission_name + '_mission'
-    mkdir = 'mkdir ' + new_directory_name
-    os.system(mkdir)
-
-    # put .bhv, .moos, deploy script, and a picture if you want
-    list_of_file_strings = []
-    list_of_file_strings.append(OUTPUTS_DIR + behaviorFileName)
-    list_of_file_strings.append(OUTPUTS_DIR + missionFileName)
-    list_of_file_strings.append(OUTPUTS_DIR + deploy_script_name)
-    list_of_file_strings.append(OUTPUTS_DIR + description_file_name)
-    # answer = input("do you have a picture to send over also? y/n ")
-    # if answer == 'y' or answer == 'Y':
-    #     picture_name = input("what is the file name of the picture that you placed in the pictures/ directory (example: waypoints.png) ")
-
-    #     picture_dir = os.path.dirname(os.path.abspath(__file__)) + '/pictures/'
-    #     file_path = os.path.join(picture_dir, picture_name)
-    #     # Check if the file exists
-    #     if os.path.isfile(file_path):
-    #         print(f"Found file:'{picture_name}' -- SUCCESS.")
-    #         list_of_file_strings.append('pictures/' + picture_name)
-    #     else:
-    #         print(f"The file '{picture_name}' does NOT exist in the directory: {picture_dir}")
-
-    mv_new_dir_command = 'echo \'Cleaning Up\''
-    for file in list_of_file_strings:
-        mv_new_dir_command += f' && cp {file} {new_directory_name}' 
-
-    os.system(mv_new_dir_command) 
-
-    # docker_cp_directory = f'docker cp {new_directory_name}/ {name_of_container}:{path_in_container}' 
-    # os.system(docker_cp_directory)
+    # #=========================================#
+    # # PHASE 4: Docker Operations (Optional) #
+    # #=========================================#
+    # # If you need to copy this directory to Docker:
+    # # name_of_container = "your_docker_container_name"  # Define this
+    # # path_in_container = "/path/inside/container"      # Define this
+    # # docker_cp_command = f'docker cp "{mission_specific_output_path}" "{name_of_container}:{path_in_container}"'
+    # # print(f"\nTo copy the mission directory to Docker, you can run:\n{docker_cp_command}")
+    # # # print("Attempting to copy to Docker...")
+    # # # status = os.system(docker_cp_command)
+    # # # if status == 0:
+    # # #     print("Successfully copied to Docker.")
+    # # # else:
+    # # #     print(f"Failed to copy to Docker. Exit status: {status}")
 
     return 0
 
 
 if __name__ == "__main__":
     exitCode = main()
-    print("Process finished with code " + str(exitCode))
+    print(f"\nProcess finished with code {str(exitCode)}")
