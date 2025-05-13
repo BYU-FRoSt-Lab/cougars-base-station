@@ -50,7 +50,7 @@ public:
             "emergency_surface_service",
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
-        
+
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
@@ -114,6 +114,7 @@ public:
         
     }
 
+<<<<<<< HEAD
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
         bool success = msg.packet_data[0];
         if (success){
@@ -121,6 +122,18 @@ public:
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
         }
+=======
+    void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
+        
+        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Coug %i Status:", msg.dest_id);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "x pos: %i", status->x);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "y pos: %i", status->y);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Depth: %i", status->depth);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_waypoint: %i", status->moos_waypoint);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_behavior_number: %i", status->moos_behavior_number);
+>>>>>>> 735c674 (Made status recpetion print out status data)
     }
 
     void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
