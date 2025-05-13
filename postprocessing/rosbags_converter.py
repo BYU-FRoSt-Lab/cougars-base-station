@@ -127,10 +127,9 @@ def rosmsg_generator(
                                 msg = reader.deserialize(rawdata, connection.msgtype)
                                 yield connection, msg, path
                             except KeyError as e:
-                                print(f"Could not find {e}. Skipping")
+                                print(f"Could not find {e} in typestore. Skipping message")
                     except RuntimeError as e:
-                        print(f"stopiteration error {e}")
-                        
+                        print(f"Error reading rosbag at {path}. Skipping Bag. Error msg: {e}")
 
 
 def convert_rosbags(
