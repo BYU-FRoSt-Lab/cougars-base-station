@@ -90,8 +90,8 @@ def rosmsg_generator(
     args:
         bags_dirs: a list of directorys containing rosbags
         typestore: the typestore of the message types in your rosbags
-        topics: the list of topics to report. If None, reports all topics
-        excluded_topics: a list of topics to exclude. If None, no topics are excluded
+        topics: the list of topics to report independant of namespace. If None, reports all topics.
+        excluded_topics: a list of topics to exclude independant of namespace. If None, no topics are excluded.
         keywords: if not None, only bags whose name contains a keyword will be processed
         verbose: if true, prints updates as rosbags are unpacked
     
@@ -118,9 +118,11 @@ def rosmsg_generator(
                         if excluded_topics is None:
                             connections = [x for x in reader.connections]
                         else:
-                            connections = [x for x in reader.connections if x.topic not in excluded_topics]
+                            connections = [x for x in reader.connections if 
+                                           any(t.endswith(x.topic) for t in excluded_topics)]
                     else:
-                        connections = [x for x in reader.connections if x.topic in topics]
+                        connections = [x for x in reader.connections if 
+                                       any(t.endswith(x.topic) for t in topics)]
                     try:
                         for connection, timestamp, rawdata in reader.messages(connections=connections):
                             try:
