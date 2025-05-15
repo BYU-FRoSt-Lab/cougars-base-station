@@ -1,0 +1,8 @@
+Mission Description for: waypoint_planner_test
+Generated on: 2025-05-13
+Input .waypoints file: waypoint_planner_test.waypoints
+Origin Latitude: 40.238833
+Origin Longitude: -111.742249
+
+User-provided description:
+

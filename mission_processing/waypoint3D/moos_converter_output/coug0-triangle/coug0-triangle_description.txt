@@ -1,0 +1,8 @@
+Mission Description for: coug0-triangle
+Generated on: 2025-05-13
+Input .waypoints file: mission-example/coug0-triangle.waypoints
+Origin Latitude: 40.238833
+Origin Longitude: -111.742249
+
+User-provided description:
+

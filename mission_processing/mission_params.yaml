@@ -20,11 +20,12 @@
 
 
 # the origin should be shared between base station and all robots
-    origin.latitude: 40.238833 # 40.2735 for Utah Lake
-    origin.longitude: -111.742249 # -111.7126 for Utah Lake
-    origin.altitude: 1367.00 # from testing
-
-
+    #origin.latitude: 40.238833        # 40.2735 for Utah Lake
+    #origin.longitude: -111.742249     # -111.7126 for Utah Lake
+    #origin.altitude: 1367.00          # from testing
+    origin.latitude: 40.07174400      #Spanish Oaks
+    origin.longitude: -111.60013100   #Spanish Oaks
+    origin.altitude: 0.00
 
 
 
