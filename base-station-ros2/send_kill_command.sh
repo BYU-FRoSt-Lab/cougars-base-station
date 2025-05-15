@@ -1,7 +1,6 @@
 
 source install/setup.bash
 
-
 # user inputs the target vehicle 
 echo ""
 echo "Enter Target Vehicle (0 for all vehicles):"
