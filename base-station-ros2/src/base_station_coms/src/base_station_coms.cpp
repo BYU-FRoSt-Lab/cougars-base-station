@@ -82,6 +82,12 @@ public:
             case VEHICLE_STATUS:{
                 recieve_status(msg);
             } break;
+            case CONFIRM_EMERGENCY_KILL: {
+                emergency_kill_confirmed(msg);
+            } break;
+            case CONFIRM_EMERGENCY_SURFACE: {
+                emergency_surface_confirmed(msg);
+            } break;
         }
     }
 
@@ -133,6 +139,24 @@ public:
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
         
+    }
+
+    void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
+        const ConfirmEmergencyKill* confirm = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        if (confirm.success){
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful.");
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
+        }
+    }
+
+    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
+        const ConfirmEmergencySurface* confirm = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        if (confirm.success){
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful.");
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed.");
+        }
     }
 
     void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
