@@ -141,7 +141,7 @@ public:
 
         RequestStatus request;
         int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
+        // RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
         
     }
