@@ -115,14 +115,34 @@ public:
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
         bool success = msg.packet_data[0];
         if (success){
+=======
+    void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
+        const ConfirmEmergencyKill* confirm = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        if (confirm.success){
+>>>>>>> 5b62062 (Comfirmation messages for all commands sent from modem)
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful.");
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
         }
+<<<<<<< HEAD
 =======
+=======
+    }
+
+    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
+        const ConfirmEmergencySurface* confirm = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        if (confirm.success){
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful.");
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed.");
+        }
+    }
+
+>>>>>>> 5b62062 (Comfirmation messages for all commands sent from modem)
     void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
         
         const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
