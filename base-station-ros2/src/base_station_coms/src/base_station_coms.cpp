@@ -116,21 +116,15 @@ public:
         response->success = true;
     }
 
-    // Sends initialization command to coug specified in request
-    void init_coug_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
-                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
-    {
-        InitCoug init_coug_msg;
-        send_acoustic_message(request->beacon_id, sizeof(init_coug_msg), (uint8_t*)&init_coug_msg, MSG_OWAY);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Initialization Signal Sent to Coug %i", request->beacon_id);
-        response->success = true;
-    }
-
-    /*void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
+    void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
     {
-        
-    }*/
+        StartMission start_mission_msg;
+        start_mission_msg->folder = request->folder
+        send_acoustic_message(request->beacon_id, sizeof(start_mission_msg), (uint8_t*)&start_mission_msg, MSG_OWAY);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Mission Start Signal Sent to Coug %i", request->beacon_id);
+        response->success = true;
+    }
 
     // periodically requests status of cougs
     void request_status_callback() {
