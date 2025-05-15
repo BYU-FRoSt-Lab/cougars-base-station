@@ -23,7 +23,7 @@
 
 /modem:
   ros__parameters:
-    base_station_modem_id: 15
+    vehicle_ID: 15
 
     logging_verbosity: 3
     
