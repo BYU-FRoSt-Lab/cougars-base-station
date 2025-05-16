@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import chi2
+from scipy.spatial.transform import Rotation as R
 
 def get_dataframes(
         rosbags_dir:str,
@@ -31,10 +32,14 @@ def insert_timestamps(dataframes):
                     + df["header.stamp.nanosec"], unit='ns'
                 )
 
-def get_topic(bag:dict[str,pd.DataFrame], topic_name:str):
-    for topic in bag.keys():
-        if topic.endswith(topic_name):
-            return bag[topic]
+def get_topic(bag:dict[str,pd.DataFrame], topic_name:str, ns=None):
+    if ns is None:
+        for topic in bag.keys():
+            if topic.endswith(topic_name):
+                return bag[topic]
+    else:
+        if (ns+topic_name) in bag.keys(): return bag[ns+topic_name]
+        else: return None
     return None
 
 
@@ -92,29 +97,48 @@ def cov_from_str(cov_str:str):
 def plot_pose_w_cov(
         pose_df,
         seconds_between_cov=2,
-        ax=None,
         confidence=.95,
+        plot_direction_line=False,
+        ax=None,
         **kwargs
 ):
     if ax is None:
         fig, ax = plt.subplots()
+
+    x_dist = pose_df["pose.pose.position.x"].max() - pose_df["pose.pose.position.x"].min()
+    y_dist = pose_df["pose.pose.position.y"].max() - pose_df["pose.pose.position.y"].min()
+    dist = 0.04*max(x_dist, y_dist) # Used to calculate the length of orientation lines
+
+    delta = pd.to_timedelta(seconds_between_cov, unit='s')
+    last_time = pose_df["timestamp"].iloc[0]
+    for idx, row in pose_df.iterrows():
+    
+        timestamp = row["timestamp"]
+        if timestamp - last_time > delta:
+            last_time = timestamp
+            x = row["pose.pose.position.x"]
+            y = row["pose.pose.position.y"]
+
+
+            if plot_direction_line:
+                R_ = R.from_quat([
+                    row["pose.pose.orientation.x"],
+                    row["pose.pose.orientation.y"],
+                    row["pose.pose.orientation.z"],
+                    row["pose.pose.orientation.w"]
+                ])
+                yaw = R_.as_euler('zyx', degrees=False)[0]
+                plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-')
+    
+            cov = cov_from_str(row["pose.covariance"])
+            xy_cov = cov[:2,:2]
+            plot_mahalanobis_ellipse(x,y,xy_cov,confidence,ax)
+            
     pose_x = pose_df["pose.pose.position.x"]
     pose_y = pose_df["pose.pose.position.y"]
     ax.plot(pose_x,pose_y, **kwargs)
     ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
 
-    delta = pd.to_timedelta(seconds_between_cov, unit='s')
-    last_time = pose_df["timestamp"].iloc[0]
-    for idx, row in pose_df.iterrows():
-        timestamp = row["timestamp"]
-        if timestamp - last_time > delta:
-            # print("plotting elipse")
-            last_time = timestamp
-            x = row["pose.pose.position.x"]
-            y = row["pose.pose.position.y"]
-            cov = cov_from_str(row["pose.covariance"])
-            xy_cov = cov[:2,:2]
-            plot_mahalanobis_ellipse(x,y,xy_cov,confidence,ax)
     ax.axis('equal')
     return ax
 
