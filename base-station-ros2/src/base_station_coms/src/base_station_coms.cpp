@@ -51,14 +51,9 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
-        /*start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+        start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "start_mission_service",
             std::bind(&ComsNode::start_mission_callback, this, _1, _2)
-        );*/
-
-        init_coug_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "init_coug_service",
-            std::bind(&ComsNode::init_coug_callback, this, _1, _2)
         );
 
         init_coug_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
@@ -116,11 +111,12 @@ public:
         response->success = true;
     }
 
-    void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
-                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response) 
+    void start_mission_callback(const std::shared_ptr<base_station_interfaces::srv::StartMission::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::StartMission::Response> response) 
     {
         StartMission start_mission_msg;
         start_mission_msg->folder = request->folder
+        start_mission_msg->record = request->record
         send_acoustic_message(request->beacon_id, sizeof(start_mission_msg), (uint8_t*)&start_mission_msg, MSG_OWAY);
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Mission Start Signal Sent to Coug %i", request->beacon_id);
         response->success = true;
