@@ -2,7 +2,7 @@
 #ifndef _COUGARS_COMS_PROTOCOL_
 #define _COUGARS_COMS_PROTOCOL_
 
-
+#include <string>
 #include <cstdint>
 
 namespace cougars_coms {
@@ -60,7 +60,8 @@ struct ConfirmVerifyLaunch {
 
 struct StartMission {
     static const COUG_MSG_ID msg_id = START_MISSION;
-    uint32_t start_time;
+    bool record;
+    string folder
 }__attribute__((packed));
 
 struct ConfirmStartMission {
