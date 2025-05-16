@@ -53,6 +53,26 @@ struct ConfirmVerifyLaunch {
     bool ready;
 }__attribute__((packed));
 
+<<<<<<< HEAD
+=======
+
+
+
+struct StartMission {
+    static const COUG_MSG_ID msg_id = START_MISSION;
+    bool record;
+    string folder
+}__attribute__((packed));
+
+struct ConfirmStartMission {
+    static const COUG_MSG_ID msg_id = CONFIRM_START_MISSION;
+    bool success;
+}__attribute__((packed));
+
+
+
+
+>>>>>>> 7b8be68 (Started working on start mission)
 struct RequestStatus {
     COUG_MSG_ID msg_id = REQUEST_STATUS;
 }__attribute__((packed));
