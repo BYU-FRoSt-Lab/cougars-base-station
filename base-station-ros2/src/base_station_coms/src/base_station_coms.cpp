@@ -51,6 +51,15 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
+<<<<<<< HEAD
+=======
+        start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "start_mission_service",
+            std::bind(&ComsNode::start_mission_callback, this, _1, _2)
+        );
+
+
+>>>>>>> 7b8be68 (Started working on start mission)
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 

@@ -51,7 +51,6 @@ struct ConfirmVerifyLaunch {
     static const COUG_MSG_ID msg_id = CONFIRM_VERIFY;
     bool ready;
 }__attribute__((packed));
-<<<<<<< HEAD
 
 struct RequestStatus {
     static const COUG_MSG_ID msg_id = REQUEST_STATUS;
