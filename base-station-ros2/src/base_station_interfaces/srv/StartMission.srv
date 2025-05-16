@@ -1,4 +1,5 @@
 uint8 beacon_id
+bool record
 string folder
 ---
 bool success
