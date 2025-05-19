@@ -17,9 +17,6 @@ enum COUG_MSG_ID : uint8_t {
     VERIFY_LAUNCH = 0x20,        
     CONFIRM_VERIFY = 0x21,
 
-    START_MISSION = 0x30,
-    CONFIRM_START_MISSION = 0x31,
-
     EMERGENCY_KILL = 0x40,
     CONFIRM_EMERGENCY_KILL = 0x41,
 
@@ -54,23 +51,6 @@ struct ConfirmVerifyLaunch {
     static const COUG_MSG_ID msg_id = CONFIRM_VERIFY;
     bool ready;
 }__attribute__((packed));
-
-
-
-
-struct StartMission {
-    static const COUG_MSG_ID msg_id = START_MISSION;
-    bool record;
-    string folder
-}__attribute__((packed));
-
-struct ConfirmStartMission {
-    static const COUG_MSG_ID msg_id = CONFIRM_START_MISSION;
-    bool success;
-}__attribute__((packed));
-
-
-
 
 struct RequestStatus {
     static const COUG_MSG_ID msg_id = REQUEST_STATUS;
