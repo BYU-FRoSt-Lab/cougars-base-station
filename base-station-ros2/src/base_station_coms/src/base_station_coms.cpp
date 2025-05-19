@@ -115,8 +115,13 @@ public:
     }
 
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
+<<<<<<< HEAD
         bool success = msg.packet_data[0];
         if (success){
+=======
+        const ConfirmEmergencyKill* confirm = reinterpret_cast<const ConfirmEmergencyKill*>(msg.packet_data.data());
+        if (confirm.success){
+>>>>>>> f851f03 (fixed bug casting to wrong message types)
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful.");
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
@@ -125,8 +130,13 @@ public:
     }
 
     void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
+<<<<<<< HEAD
         bool success = msg.packet_data[0];
         if (success){
+=======
+        const ConfirmEmergencySurface* confirm = reinterpret_cast<const ConfirmEmergencySurface*>(msg.packet_data.data());
+        if (confirm.success){
+>>>>>>> f851f03 (fixed bug casting to wrong message types)
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful.");
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed.");
