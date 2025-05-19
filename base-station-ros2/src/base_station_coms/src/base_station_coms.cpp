@@ -51,15 +51,6 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
-<<<<<<< HEAD
-=======
-        start_mission_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "start_mission_service",
-            std::bind(&ComsNode::start_mission_callback, this, _1, _2)
-        );
-
-
->>>>>>> 7b8be68 (Started working on start mission)
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
@@ -131,29 +122,6 @@ public:
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
         }
 
-    }
-
-    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        const ConfirmEmergencySurface* confirm = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
-        if (confirm.success){
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful.");
-        } else {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed.");
-        }
-    }
-
->>>>>>> 5b62062 (Comfirmation messages for all commands sent from modem)
-    void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
-        
-        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Coug %i Status:", msg.dest_id);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "x pos: %i", status->x);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "y pos: %i", status->y);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Depth: %i", status->depth);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_waypoint: %i", status->moos_waypoint);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_behavior_number: %i", status->moos_behavior_number);
->>>>>>> 735c674 (Made status recpetion print out status data)
     }
 
     void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
