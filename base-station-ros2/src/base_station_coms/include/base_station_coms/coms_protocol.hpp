@@ -26,11 +26,11 @@ enum COUG_MSG_ID : uint8_t {
 
 
 struct EmergencyKill {
-    static const COUG_MSG_ID msg_id = EMERGENCY_KILL;
+    COUG_MSG_ID msg_id = EMERGENCY_KILL;
 }__attribute__((packed));
 
 struct ConfirmEmergencyKill {
-    static const COUG_MSG_ID msg_id = CONFIRM_EMERGENCY_KILL;
+    COUG_MSG_ID msg_id = CONFIRM_EMERGENCY_KILL;
     bool success;
 }__attribute__((packed));
 
@@ -44,20 +44,20 @@ struct ConfirmEmergencySurface {
 }__attribute__((packed));
 
 struct VerifyLaunch {
-    static const COUG_MSG_ID msg_id = VERIFY_LAUNCH;
+    COUG_MSG_ID msg_id = VERIFY_LAUNCH;
 }__attribute__((packed));
 
 struct ConfirmVerifyLaunch {
-    static const COUG_MSG_ID msg_id = CONFIRM_VERIFY;
+    COUG_MSG_ID msg_id = CONFIRM_VERIFY;
     bool ready;
 }__attribute__((packed));
 
 struct RequestStatus {
-    static const COUG_MSG_ID msg_id = REQUEST_STATUS;
+    COUG_MSG_ID msg_id = REQUEST_STATUS;
 }__attribute__((packed));
 
 struct VehicleStatus {
-    static const COUG_MSG_ID msg_id = VEHICLE_STATUS;
+    COUG_MSG_ID msg_id = VEHICLE_STATUS;
 
     uint32_t timestamp;
 
