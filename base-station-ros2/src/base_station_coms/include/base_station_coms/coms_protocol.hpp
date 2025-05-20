@@ -19,7 +19,10 @@ enum COUG_MSG_ID : uint8_t {
 
     EMERGENCY_KILL = 0x40,
     CONFIRM_EMERGENCY_KILL = 0x41,
+<<<<<<< HEAD
 
+=======
+>>>>>>> 5362d26453781a5ce1ffeec04108e5f9bb401ee3
 
     EMERGENCY_SURFACE = 0x50,
     CONFIRM_EMERGENCY_SURFACE = 0x51,
