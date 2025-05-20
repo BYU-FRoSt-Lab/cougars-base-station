@@ -7,8 +7,13 @@ read beacon_id
 
 # makes a service call to the base station to send an emergency surface command to specified vehicle
 <<<<<<< HEAD
+<<<<<<< HEAD
 ros2 service call "/emergency_surface_service" "base_station_interfaces/srv/BeaconId" "{beacon_id: $beacon_id}"
 
 =======
 ros2 service call "/emergency_surface_service" "base_station_interfaces/srv/BeaconId" "{beacon_id: $beacon_id}"
 >>>>>>> 86613fb (made commands ask for target input)
+=======
+ros2 service call "/emergency_surface_service" "base_station_interfaces/srv/BeaconId" "{beacon_id: $beacon_id}"
+
+>>>>>>> 3b76c70244068d1f3c8e5e72bccb8babba74fa08
