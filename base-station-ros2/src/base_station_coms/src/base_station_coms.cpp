@@ -156,7 +156,6 @@ public:
         request.dest_id = (uint8_t)target_id;
         request.msg_type = msg_type;
         request.packet_len = (uint8_t)std::min(message_len, 31);
-        request.insert_timestamp = true;
         std::memcpy(&request.packet_data, message, request.packet_len);
         
         this->modem_publisher_->publish(request);
