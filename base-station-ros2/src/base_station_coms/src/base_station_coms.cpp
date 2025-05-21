@@ -124,13 +124,13 @@ public:
     void request_status_callback() {
        
         modem_coms_schedule_turn_index += 1;
-        if (modem_coms_schedule_turn_index>=vehicles_in_mission_.size())
+        if (modem_coms_schedule_turn_index+1>=vehicles_in_mission_.size())
             modem_coms_schedule_turn_index = 0;
 
 
         RequestStatus request;
         int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
-        // RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from coug %i", vehicle_turn_id);
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i", vehicle_turn_id);
         send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
        
     }
@@ -185,7 +185,7 @@ public:
         request.dest_id = (uint8_t)target_id;
         request.msg_type = msg_type;
         request.packet_len = (uint8_t)std::min(message_len, 31);
-        request.insert_timestamp = true;
+        // request.insert_timestamp = true;
         std::memcpy(&request.packet_data, message, request.packet_len);
        
         this->modem_publisher_->publish(request);
@@ -211,7 +211,7 @@ private:
     std::vector<int64_t> vehicles_in_mission_;
 
 
-    int modem_coms_schedule_turn_index = -1;  
+    size_t modem_coms_schedule_turn_index = 0;  
 
 
     int status_request_frequency;
