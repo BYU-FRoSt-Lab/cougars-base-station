@@ -31,10 +31,6 @@ public:
     ComsNode() : Node("base_station_coms") {
 
 
-        this->declare_parameter<int>("base_station_beacon_id", 15);
-        this->base_station_beacon_id_ = this->get_parameter("base_station_beacon_id").as_int();
-
-
         this->declare_parameter<int>("status_request_frequency_seconds", 15);
         this->status_request_frequency = this->get_parameter("status_request_frequency_seconds").as_int();
 
@@ -43,26 +39,59 @@ public:
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
 
-        this->modem_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
-            "modem_rec", 10,
-            std::bind(&ComsNode::listen_to_modem, this, _1)
+        // client for the base_station_radio node. Requests that the radio sends an emergency kill command to a specific coug
+        radio_e_kill_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "radio_e_kill",
+            std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
         );
-        this->modem_publisher_ = this->create_publisher<seatrac_interfaces::msg::ModemSend>("modem_send", 10);
-
-
-
-
-        emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "emergency_kill_service",
+        
+        // client for the base_station_modem node. Requests that the modem sends an emergency kill command to a specific coug
+        modem_e_kill_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "modem_e_kill",
             std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
         );
 
+        // client for the base_station_modem node. Requests that the modem sends an emergency surface command to a specific coug
+        modem_e_surface_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "modem_e_surface",
+            std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
+        );
 
-        emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
-            "emergency_surface_service",
+        // client for the base_station_modem node. Requests that the modem gets the status of a coug
+        modem_status_request_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "modem_status_request",
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
+        // client for the base_station_radio node. Requests that the radio gets the status of a coug
+        radio_status_request_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "radio_status_request",
+            std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
+        );
+
+        // service for sending e_kill message. Decides whether to send over radio or modem
+        emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "e_kill_service",
+            std::bind(&ComsNode::emergency_kill_callback, this, _1, _2)
+        );
+
+        // service for sending e_surface message. Decides whether to send over radio or modem
+        emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "e_surface_service",
+            std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
+        );
+
+        // service for sending e_kill message. Decides whether to send over radio or modem
+        confirm_emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "confirm_e_kill_service",
+            std::bind(&ComsNode::confirm_e_kill_callback, this, _1, _2)
+        );
+
+        // service for sending e_surface message. Decides whether to send over radio or modem
+        confirm_emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
+            "confirm_e_surface_service",
+            std::bind(&ComsNode::confirm_e_surface_callback, this, _1, _2)
+        );
 
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
@@ -71,7 +100,7 @@ public:
         std::ostringstream ss;
         ss << "Vehicle ids in mission: ";
         for(int64_t i: vehicles_in_mission_) ss << i << ", ";
-        RCLCPP_INFO(this->get_logger(), "base station coms node started");
+        RCLCPP_INFO(this->get_logger(), "base station started");
         RCLCPP_INFO(this->get_logger(), ss.str().c_str());
 
 
@@ -79,130 +108,95 @@ public:
 
     }
 
+    void request_status_callback(){
+       
+        coug_id_index += 1;
+        if (coug_id_index+1>=vehicles_in_mission_.size())
+            coug_id_index = 0;
+        
+        auto request = std::make_shared<base_station_interfaces::srv::BeaconId::Request>();
+        request->beacon_id = vehicles_in_mission_[coug_id_index];
 
-    void listen_to_modem(seatrac_interfaces::msg::ModemRec msg) {
-        COUG_MSG_ID id = (COUG_MSG_ID)msg.packet_data[0];
-        switch(id) {
-            default: break;
-            case EMPTY: break;
-            case VEHICLE_STATUS:{
-                recieve_status(msg);
-            } break;
-            case CONFIRM_EMERGENCY_KILL: {
-                emergency_kill_confirmed(msg);
-            } break;
-            case CONFIRM_EMERGENCY_SURFACE: {
-                emergency_surface_confirmed(msg);
-            } break;
+        if (radio_connection[request->beacon_id]){
+
+            radio_status_request_client_->async_send_request(request,
+                [this](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
+                    auto response = future.get();
+                    if (response->success)
+                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through radio", vehicle_turn_id);
+                    else
+                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through radio failed", vehicle_turn_id);
+                });
+
+        } else if (modem_connection[request->beacon_id]) {
+            
+            modem_status_request_client_->async_send_request(request,
+                [this](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
+                    auto response = future.get();
+                    if (response->success)
+                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through modem", vehicle_turn_id);
+                    else
+                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through modem failed", vehicle_turn_id);
+                });
+
+        } else {
+            // error message, no connection to coug
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot request status from Coug %i because there is no connection", vehicle_turn_id);
         }
     }
 
 
-    // Sends emergency kill signal to coug specified in request
     void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
-                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
-    {
-        EmergencyKill e_kill_msg;
-        send_acoustic_message(request->beacon_id, sizeof(e_kill_msg), (uint8_t*)&e_kill_msg, MSG_OWAY);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Kill Signal Sent to Coug %i", request->beacon_id);
-        response->success = true;
-    }
+                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response){
+        if (radio_connection[request->beacon_id]){
 
+            radio_e_kill_client_->async_send_request(request,
+                [this](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
+                    auto response = future.get();
+                    if (response->success)
+                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Kill command sent to Coug %i through radio", vehicle_turn_id);
+                    else
+                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Kill command sent to Coug %i through radio failed", vehicle_turn_id);
+                });
 
-    // Sends emergency surface signal to coug specified in request
-    void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
-                                    std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)      
-    {
-        EmergencySurface e_surface_msg;
-        send_acoustic_message(request->beacon_id, sizeof(e_surface_msg), (uint8_t*)&e_surface_msg, MSG_OWAY);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency Surface Signal Sent to Coug %i", request->beacon_id);
-        response->success = true;
-    }
+        } else if (modem_connection[request->beacon_id]) {
+            
+            modem_e_kill_client_->async_send_request(request,
+                [this](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
+                    auto response = future.get();
+                    if (response->success)
+                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Kill command sent to Coug %i through modem", vehicle_turn_id);
+                    else
+                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Kill command sent to Coug %i through modem failed", vehicle_turn_id);
+                });
 
-
-    // periodically requests status of cougs
-    void request_status_callback() {
-       
-        modem_coms_schedule_turn_index += 1;
-        if (modem_coms_schedule_turn_index+1>=vehicles_in_mission_.size())
-            modem_coms_schedule_turn_index = 0;
-
-
-        RequestStatus request;
-        int vehicle_turn_id = vehicles_in_mission_[modem_coms_schedule_turn_index];
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i", vehicle_turn_id);
-        send_acoustic_message(vehicle_turn_id, sizeof(request), (uint8_t*)&request, MSG_REQX);
-       
-    }
-
-
-    void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        bool success = msg.packet_data[0];
-        if (success){
-
-
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful.");
         } else {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed.");
-        }
-
-
-    }
-
-
-    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        bool success = msg.packet_data[0];
-        if (success){
-
-
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful.");
-        } else {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed.");
+            // error message, no connection to coug
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send e_kill command to Coug %i because there is no connection", vehicle_turn_id);
         }
     }
 
+    void emergency_surface_callback(){
+        if (modem_connection[request->beacon_id]){
 
-    void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
-       
-        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Coug %i Status:", msg.src_id);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "x pos: %i", status->x);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "y pos: %i", status->y);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Depth: %i", status->depth);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_waypoint: %i", status->moos_waypoint);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Moos_behavior_number: %i", status->moos_behavior_number);
+            modem_e_surface_client_->async_send_request(request,
+                [this](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
+                    auto response = future.get();
+                    if (response->success)
+                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Surface command sent to Coug %i through radio", vehicle_turn_id);
+                    else
+                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Surface command sent to Coug %i through radio failed", vehicle_turn_id);
+                });
 
-
+        } else {
+            // error message, no connection to coug
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send surface command to Coug %i because there is no connection", vehicle_turn_id);
+        }
     }
-   
-    //used by the service callback functions to publish messages to the cougs
-    void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
-
-
-        auto request = seatrac_interfaces::msg::ModemSend();
-        request.msg_id = CID_DAT_SEND;
-        request.dest_id = (uint8_t)target_id;
-        request.msg_type = msg_type;
-        request.packet_len = (uint8_t)std::min(message_len, 31);
-        // request.insert_timestamp = true;
-        std::memcpy(&request.packet_data, message, request.packet_len);
-       
-        this->modem_publisher_->publish(request);
-    }
-
 
 
 
 private:
-
-
-    rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
-    rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
-
-
-    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
-    rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
 
 
     rclcpp::TimerBase::SharedPtr timer_;
@@ -215,12 +209,6 @@ private:
 
 
     int status_request_frequency;
-
-
-    int base_station_beacon_id_;
-
-
-
 
 };
 
