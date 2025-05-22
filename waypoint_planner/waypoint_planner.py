@@ -1,3 +1,5 @@
+# Interactive Waypoint Mission Planner Created by Brighton Anderson May 2025
+
 import tkinter
 import tkinter.messagebox
 import tkinter.simpledialog
@@ -5,228 +7,372 @@ from tkinter import ttk
 from tkinter import filedialog
 import tkintermapview
 import os
+import math
+import yaml # Added for YAML saving
+
+# --- Constants for Presets ---
+PRESET_ORIGINS = {
+    "UL Provo Marina": {"lat": 40.238947, "lon": -111.739538, "alt": 1365.4333},
+    "Spanish Oaks": {"lat": 40.0717592, "lon": -111.6001751, "alt": 1564.568},
+}
 
 class App:
     def __init__(self, root_widget):
         self.root_widget = root_widget
-        self.root_widget.title("Waypoint Mission Planner")
-        self.root_widget.geometry("1000x700")
+        self.root_widget.title("Waypoint Mission Planner (ENU & Depth)")
+        self.root_widget.geometry("1100x750") # Increased size slightly for more info
 
         # --- Data Storage ---
-        self.origin_data = None  # Will store {'lat': float, 'lon': float, 'alt': float, 'heading': float, 'marker': TkinterMapView.Marker}
-        self.waypoints = []      # List of {'lat': float, 'lon': float, 'marker': TkinterMapView.Marker, 'map_marker_object': object}
+        self.origin_data = None  # Will store {'lat': float, 'lon': float, 'alt': float, 'map_marker_object': object}
+        self.waypoints = []      # List of {'east': float, 'north': float, 'up': float, 'depth': float,
+                                 #         'original_lat': float, 'original_lon': float, 'map_marker_object': object}
 
         # --- UI Elements ---
-        # Left Frame for Controls and Waypoint List
         self.control_frame = ttk.Frame(self.root_widget, padding=10)
         self.control_frame.pack(side=tkinter.LEFT, fill=tkinter.Y)
 
-        # Origin Section
         ttk.Label(self.control_frame, text="Mission Origin", font=("Arial", 14, "bold")).pack(pady=(0, 5))
-        self.set_origin_button = ttk.Button(self.control_frame, text="Set Origin", command=self.prompt_origin)
+        self.set_origin_button = ttk.Button(self.control_frame, text="Set Origin", command=self.prompt_origin_choice)
         self.set_origin_button.pack(pady=5, fill=tkinter.X)
-        self.origin_info_label = ttk.Label(self.control_frame, text="Origin not set.", wraplength=280)
+        self.origin_info_label = ttk.Label(self.control_frame, text="Origin not set.", wraplength=320) # Increased wraplength
         self.origin_info_label.pack(pady=5)
 
-        # Waypoints Section
-        ttk.Label(self.control_frame, text="Waypoints", font=("Arial", 14, "bold")).pack(pady=(10, 5))
-        self.waypoints_listbox = tkinter.Listbox(self.control_frame, height=15)
+        ttk.Label(self.control_frame, text="Waypoints (ENU relative to Origin)", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        self.waypoints_listbox = tkinter.Listbox(self.control_frame, height=15, width=50) # Increased width
         self.waypoints_listbox.pack(pady=5, fill=tkinter.BOTH, expand=True)
         
-        self.clear_waypoints_button = ttk.Button(self.control_frame, text="Clear All Waypoints", command=self.clear_mission_confirmation)
+        self.clear_waypoints_button = ttk.Button(self.control_frame, text="Clear All Waypoints & Origin", command=self.clear_mission_confirmation)
         self.clear_waypoints_button.pack(pady=5, fill=tkinter.X)
 
-        # Mission Actions Section
         ttk.Label(self.control_frame, text="Mission Actions", font=("Arial", 14, "bold")).pack(pady=(10, 5))
-        self.save_mission_button = ttk.Button(self.control_frame, text="Save Mission to .waypoints File", command=self.save_mission_to_file)
+        self.save_mission_button = ttk.Button(self.control_frame, text="Save Mission to .yaml File", command=self.save_mission_to_yaml)
         self.save_mission_button.pack(pady=5, fill=tkinter.X)
 
-        # Right Frame for Map
         self.map_frame = ttk.Frame(self.root_widget)
         self.map_frame.pack(side=tkinter.RIGHT, fill=tkinter.BOTH, expand=True)
 
         self.map_widget = tkintermapview.TkinterMapView(self.map_frame, width=700, height=700, corner_radius=0)
         self.map_widget.pack(fill=tkinter.BOTH, expand=True)
-        # Set initial position (e.g., Provo, Utah or a global view)
-        self.map_widget.set_position(40.2338, -111.6585) # Provo, UT
-        self.map_widget.set_zoom(5)
 
-        # Add right-click menu for adding waypoints
+        # Set to Google Satellite tile server
+        # IMPORTANT: Please be aware of the Terms of Service for any tile server you use, including Google's.
+        # Direct tile access may be against their ToS if not used with their official APIs.
+        # This URL is commonly used in tkintermapview examples.
+        self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s&hl=en&x={x}&y={y}&z={z}&s=Ga", max_zoom=22)
+
+
+        self.map_widget.set_position(40.2338, -111.6585) # Provo, UT
+        self.map_widget.set_zoom(10) # Adjusted default zoom
+
         self.map_widget.add_right_click_menu_command(label="Add Waypoint Here",
                                                      command=self.add_waypoint_on_map_click,
                                                      pass_coords=True)
         
         self._update_ui_state()
 
+    def _geodetic_to_enu(self, lat_wp_deg, lon_wp_deg, alt_wp, lat_origin_deg, lon_origin_deg, alt_origin):
+        """
+        Converts Geodetic coordinates (latitude, longitude, altitude) to local ENU (East, North, Up)
+        coordinates relative to a given origin.
+        Assumes WGS84 ellipsoid.
+        """
+        R_EARTH = 6378137.0  # WGS84 major axis
+        F_INV = 298.257223563 # WGS84 inverse flattening
+        E_SQ = 1 - (1 - 1/F_INV)**2 # Square of eccentricity
+
+        lat_wp_rad = math.radians(lat_wp_deg)
+        lon_wp_rad = math.radians(lon_wp_deg)
+        lat_origin_rad = math.radians(lat_origin_deg)
+        lon_origin_rad = math.radians(lon_origin_deg)
+
+        # Convert LLA to ECEF
+        def lla_to_ecef(lat_r, lon_r, h):
+            sin_lat = math.sin(lat_r)
+            cos_lat = math.cos(lat_r)
+            N = R_EARTH / math.sqrt(1 - E_SQ * sin_lat**2)
+            
+            x = (N + h) * cos_lat * math.cos(lon_r)
+            y = (N + h) * cos_lat * math.sin(lon_r)
+            z = (N * (1 - E_SQ) + h) * sin_lat
+            return x, y, z
+
+        x_origin_ecef, y_origin_ecef, z_origin_ecef = lla_to_ecef(lat_origin_rad, lon_origin_rad, alt_origin)
+        x_wp_ecef, y_wp_ecef, z_wp_ecef = lla_to_ecef(lat_wp_rad, lon_wp_rad, alt_wp)
+
+        # Vector difference in ECEF
+        dx = x_wp_ecef - x_origin_ecef
+        dy = y_wp_ecef - y_origin_ecef
+        dz = z_wp_ecef - z_origin_ecef
+
+        # Rotate ECEF difference vector to ENU
+        sin_lat_o = math.sin(lat_origin_rad)
+        cos_lat_o = math.cos(lat_origin_rad)
+        sin_lon_o = math.sin(lon_origin_rad)
+        cos_lon_o = math.cos(lon_origin_rad)
+
+        east = -sin_lon_o * dx + cos_lon_o * dy
+        north = -sin_lat_o * cos_lon_o * dx - sin_lat_o * sin_lon_o * dy + cos_lat_o * dz
+        up = cos_lat_o * cos_lon_o * dx + cos_lat_o * sin_lon_o * dy + sin_lat_o * dz
+        
+        return east, north, up
+
     def _update_ui_state(self):
-        """Enable/disable buttons based on current state."""
         if self.origin_data:
             self.save_mission_button.config(state=tkinter.NORMAL)
-            self.clear_waypoints_button.config(state=tkinter.NORMAL)
+            self.clear_waypoints_button.config(state=tkinter.NORMAL) # Enable clearing if origin or waypoints exist
         else:
             self.save_mission_button.config(state=tkinter.DISABLED)
-            self.clear_waypoints_button.config(state=tkinter.DISABLED)
+            if not self.waypoints: # Only disable clear if both origin and waypoints are empty
+                self.clear_waypoints_button.config(state=tkinter.DISABLED)
+            else: # If there are waypoints (e.g. from a loaded file in future), allow clearing.
+                 self.clear_waypoints_button.config(state=tkinter.NORMAL)
 
 
-    def prompt_origin(self):
-        """Prompts the user for origin details."""
+    def prompt_origin_choice(self):
+        """Prompts user to choose an origin source (preset or manual)."""
+        dialog = tkinter.Toplevel(self.root_widget)
+        dialog.title("Set Mission Origin")
+        dialog.geometry("350x200")
+        dialog.transient(self.root_widget) # Make it modal
+        dialog.grab_set() # Ensure input focus
+
+        ttk.Label(dialog, text="Select an origin source:").pack(pady=10)
+
+        var = tkinter.StringVar(value="Manual Entry") # Default selection
+
+        options = list(PRESET_ORIGINS.keys()) + ["Manual Entry"]
+        for option_text in options:
+            rb = ttk.Radiobutton(dialog, text=option_text, variable=var, value=option_text)
+            rb.pack(anchor=tkinter.W, padx=20)
+        
+        def on_ok():
+            choice = var.get()
+            dialog.destroy()
+            if choice == "Manual Entry":
+                self.prompt_manual_origin()
+            else:
+                preset_data = PRESET_ORIGINS[choice]
+                self._set_origin(preset_data['lat'], preset_data['lon'], preset_data['alt'], choice)
+
+        ok_button = ttk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=10)
+        
+        # Center dialog
+        self.root_widget.eval(f'tk::PlaceWindow {str(dialog)} center')
+
+
+    def prompt_manual_origin(self):
+        """Prompts the user for manual origin LLA details."""
+        lla_str = tkinter.simpledialog.askstring(
+            "Manual Origin Input",
+            "Enter Origin Latitude, Longitude, Altitude (comma-separated):\n(e.g., 40.2385,-111.7390,1400.0)",
+            parent=self.root_widget
+        )
+        if lla_str is None: return
+
         try:
-            lat_str = tkinter.simpledialog.askstring("Origin Latitude", "Enter Origin Latitude (e.g., 40.23851040):", parent=self.root_widget)
-            if lat_str is None: return
-            lat = float(lat_str)
-
-            lon_str = tkinter.simpledialog.askstring("Origin Longitude", "Enter Origin Longitude (e.g., -111.73908950):", parent=self.root_widget)
-            if lon_str is None: return
-            lon = float(lon_str)
-
-            alt_str = tkinter.simpledialog.askstring("Origin Altitude (meters)", "Enter Origin Altitude (e.g., 1400.0):", parent=self.root_widget)
-            if alt_str is None: return
-            alt = float(alt_str)
-
-            head_str = tkinter.simpledialog.askstring("Origin Heading (degrees)", "Enter Origin Heading (0-360, e.g., 0.0):", parent=self.root_widget)
-            if head_str is None: return
-            heading = float(head_str)
-            if not (0 <= heading <= 360):
-                tkinter.messagebox.showerror("Invalid Input", "Heading must be between 0 and 360 degrees.")
-                return
-
-        except ValueError:
-            tkinter.messagebox.showerror("Invalid Input", "Please enter valid numbers for all fields.")
+            parts = lla_str.split(',')
+            if len(parts) != 3:
+                raise ValueError("Input must be three comma-separated values.")
+            lat = float(parts[0].strip())
+            lon = float(parts[1].strip())
+            alt = float(parts[2].strip())
+        except ValueError as e:
+            tkinter.messagebox.showerror("Invalid Input", f"Please enter valid numbers for Lat, Lon, Alt.\nError: {e}")
             return
         except Exception as e:
             tkinter.messagebox.showerror("Error", f"An unexpected error occurred: {e}")
             return
-
-        # Clear existing origin and waypoints if setting a new origin
-        if self.origin_data or self.waypoints:
-            self.clear_mission_data(show_confirmation=False)
-
-
-        self.origin_data = {'lat': lat, 'lon': lon, 'alt': alt, 'heading': heading}
         
-        # Add marker for origin
-        origin_marker = self.map_widget.set_marker(lat, lon, text="H (Origin)", text_color="red", marker_color_circle="red")
-        self.origin_data['map_marker_object'] = origin_marker
+        self._set_origin(lat, lon, alt, "Manual")
 
+    def _set_origin(self, lat, lon, alt, origin_name="Origin"):
+        if self.origin_data or self.waypoints:
+            if not tkinter.messagebox.askyesno("Confirm New Origin",
+                                               "Setting a new origin will clear all existing waypoints. Continue?"):
+                return
+            self.clear_mission_data(show_confirmation=False) # Clear without extra message
 
-        self.origin_info_label.config(text=f"Origin: Lat={lat:.6f}, Lon={lon:.6f}, Alt={alt:.2f}m, Head={heading:.1f}°")
+        self.origin_data = {'lat': lat, 'lon': lon, 'alt': alt, 'name': origin_name}
+        
+        origin_marker_text = f"{origin_name}\nLat:{lat:.4f}\nLon:{lon:.4f}\nAlt:{alt:.1f}m"
+        if origin_name in PRESET_ORIGINS: # Shorter text for known presets on map
+            origin_marker_text = origin_name
+
+        origin_map_marker = self.map_widget.set_marker(lat, lon, text=origin_marker_text, text_color="blue", marker_color_circle="blue", font=("Arial", 8, "bold"))
+        self.origin_data['map_marker_object'] = origin_map_marker
+
+        self.origin_info_label.config(text=f"Origin ({origin_name}):\nLat={lat:.6f}, Lon={lon:.6f}, Alt={alt:.2f}m")
         self.map_widget.set_position(lat, lon)
-        self.map_widget.set_zoom(15)
+        self.map_widget.set_zoom(16) # Zoom closer for origin
         
         self._update_waypoint_display()
         self._update_ui_state()
-        tkinter.messagebox.showinfo("Origin Set", "Origin set successfully. You can now right-click on the map to add waypoints.")
+        tkinter.messagebox.showinfo("Origin Set", f"Origin '{origin_name}' set successfully. Right-click map to add waypoints.")
 
 
     def add_waypoint_on_map_click(self, coords):
-        """Adds a waypoint when the map is clicked."""
         if not self.origin_data:
             tkinter.messagebox.showwarning("Set Origin First", "Please set the mission origin before adding waypoints.")
             return
 
-        lat, lon = coords
+        clicked_lat, clicked_lon = coords
         wp_index = len(self.waypoints) + 1
+
+        depth_str = tkinter.simpledialog.askstring("Waypoint Depth", f"Enter Depth for Waypoint {wp_index} (meters, positive down):", parent=self.root_widget)
+        if depth_str is None: return # User cancelled
+        try:
+            depth = float(depth_str)
+            if depth < 0:
+                tkinter.messagebox.showerror("Invalid Input", "Depth must be a non-negative number.")
+                return
+        except ValueError:
+            tkinter.messagebox.showerror("Invalid Input", "Please enter a valid number for depth.")
+            return
+
+        # For ENU calculation, assume waypoint is at the same altitude as origin. 'up_enu' will be 0.
+        # The 'depth' is an additional parameter.
+        origin_lat = self.origin_data['lat']
+        origin_lon = self.origin_data['lon']
+        origin_alt = self.origin_data['alt']
+
+        east, north, up_enu = self._geodetic_to_enu(clicked_lat, clicked_lon, origin_alt, # wp alt = origin alt for this
+                                                    origin_lat, origin_lon, origin_alt)
+
+        map_marker = self.map_widget.set_marker(clicked_lat, clicked_lon, text=f"WP{wp_index}\nD:{depth:.1f}m")
         
-        # Add marker for waypoint
-        # Note: tkintermapview doesn't directly return the marker object from set_marker in all versions in a way that's easy to delete individually without custom tracking.
-        # We'll store the coordinates and re-add markers if clearing. For simplicity, we'll clear all and re-add.
-        # A more robust way would be to extend tkintermapview or manage marker objects carefully.
-        map_marker = self.map_widget.set_marker(lat, lon, text=f"WP{wp_index}")
-        
-        self.waypoints.append({'lat': lat, 'lon': lon, 'map_marker_object': map_marker})
+        self.waypoints.append({
+            'id': wp_index,
+            'x': east, 
+            'y': north, 
+            'z': up_enu, 
+            'depth': depth,
+            'original_lat': clicked_lat, 
+            'original_lon': clicked_lon,
+            'map_marker_object': map_marker
+        })
         self._update_waypoint_display()
         self._update_ui_state()
 
     def _update_waypoint_display(self):
-        """Updates the listbox showing waypoints."""
         self.waypoints_listbox.delete(0, tkinter.END)
         if self.origin_data:
-            self.waypoints_listbox.insert(tkinter.END, f"HOME: Lat={self.origin_data['lat']:.6f}, Lon={self.origin_data['lon']:.6f}, Alt={self.origin_data['alt']:.2f}m, Hdg={self.origin_data['heading']:.1f}°")
-        
-        for i, wp in enumerate(self.waypoints):
-            # Altitude for subsequent waypoints is relative (0) to home's altitude.
-            self.waypoints_listbox.insert(tkinter.END, f"WP {i+1}: Lat={wp['lat']:.6f}, Lon={wp['lon']:.6f} (Alt: Home + 0.0m)")
+            self.waypoints_listbox.insert(tkinter.END, 
+                f"ORIGIN ({self.origin_data.get('name', 'N/A')}): Lat={self.origin_data['lat']:.6f}, Lon={self.origin_data['lon']:.6f}, Alt={self.origin_data['alt']:.2f}m")
+            self.waypoints_listbox.itemconfig(tkinter.END, {'fg': 'blue'})
+
+
+        for wp in self.waypoints:
+            display_text = (f"WP {wp['id']}: X={wp['x']:.2f}, Y={wp['y']:.2f}, Z={wp['z']:.2f}m | D={wp['depth']:.1f}m "
+                            f"(Geo: {wp['original_lat']:.5f}, {wp['original_lon']:.5f})")
+            self.waypoints_listbox.insert(tkinter.END, display_text)
     
     def clear_mission_confirmation(self):
-        if tkinter.messagebox.askyesno("Confirm Clear", "Are you sure you want to clear the current origin and all waypoints?"):
+        if not self.origin_data and not self.waypoints:
+            tkinter.messagebox.showinfo("No Data", "Nothing to clear.")
+            return
+        if tkinter.messagebox.askyesno("Confirm Clear", "Clear current origin and all waypoints? This cannot be undone."):
             self.clear_mission_data(show_confirmation=True)
 
     def clear_mission_data(self, show_confirmation=True):
-        """Clears all mission data."""
-        # Clear map markers
         self.map_widget.delete_all_marker()
-        # Potentially re-add origin marker if it was cleared by delete_all_marker and we still have origin data
-        # However, standard flow is to clear data first.
 
         self.origin_data = None
         self.waypoints = []
         
         self.origin_info_label.config(text="Origin not set.")
-        self.map_widget.set_position(40.2338, -111.6585) # Reset to default view
-        self.map_widget.set_zoom(5)
+        self.map_widget.set_position(40.2338, -111.6585) 
+        self.map_widget.set_zoom(10)
         
         self._update_waypoint_display()
         self._update_ui_state()
-        if show_confirmation: # Avoid double message if called internally
-             tkinter.messagebox.showinfo("Cleared", "Mission data cleared.")
+        if show_confirmation:
+             tkinter.messagebox.showinfo("Cleared", "Mission data and waypoints cleared.")
 
 
-    def save_mission_to_file(self):
-        """Saves the mission to a .waypoints file."""
+    def save_mission_to_yaml(self):
         if not self.origin_data:
             tkinter.messagebox.showerror("Error", "Cannot save mission. Origin not set.")
             return
+        if not self.waypoints:
+            tkinter.messagebox.showwarning("No Waypoints", "Mission has an origin but no waypoints. Save anyway?")
+            # Or decide to prevent saving if no waypoints:
+            # tkinter.messagebox.showerror("Error", "No waypoints to save.")
+            # return
+
 
         filepath = filedialog.asksaveasfilename(
-            defaultextension=".waypoints",
-            filetypes=[("Waypoint Files", "*.waypoints"), ("All Files", "*.*")],
-            title="Save Mission File"
+            defaultextension=".yaml",
+            filetypes=[("YAML Mission Files", "*.yaml"), ("All Files", "*.*")],
+            title="Save Mission YAML File",
+            initialfile="mission_plan.yaml" # Suggest a default name
         )
 
         if not filepath:
             return # User cancelled
 
+        # Derive mission name from filename
+        base_name = os.path.basename(filepath)
+        mission_name = base_name.lower().replace("_mission.yaml", "").replace(".yaml", "")
+        if not mission_name: # if somehow ended up with just ".yaml" or "_mission.yaml"
+            mission_name = "default_mission"
+
+        # Ensure the filename ends with _mission.yaml if it's not already
+        if not filepath.lower().endswith("_mission.yaml"):
+            if filepath.lower().endswith(".yaml"):
+                filepath = filepath[:-5] + "_mission.yaml"
+            else:
+                filepath = filepath + "_mission.yaml"
+
+
+        mission_content = {
+            "mission_name": mission_name,
+            "origin_lla": {
+                "latitude": self.origin_data['lat'],
+                "longitude": self.origin_data['lon'],
+                "altitude": self.origin_data['alt'], # WGS84 altitude
+                "name": self.origin_data.get('name', "Manual")
+            },
+            "reference_frame_for_waypoints": "ENU_at_origin_LLA",
+            "waypoints": []
+        }
+
+        for wp in self.waypoints:
+            mission_content["waypoints"].append({
+                "id": wp['id'],
+                "position_enu": { # Relative to origin_lla
+                    "x": round(wp['x'], 3),  # meters
+                    "y": round(wp['y'], 3), # meters
+                    "z": round(wp['z'], 3)      # meters (height relative to origin's altitude)
+                },
+                "depth": round(wp['depth'], 2),    # meters (positive downwards from waypoint's ENU position)
+                "original_map_click_lla": { # For reference
+                    "latitude": round(wp['original_lat'], 7),
+                    "longitude": round(wp['original_lon'], 7)
+                }
+            })
+            
         try:
             with open(filepath, 'w') as f:
-                f.write("QGC WPL 110\n")
-
-                # Home position (Index 0)
-                # Format: INDEX CURRENT_WP COORD_FRAME COMMAND PARAM1 PARAM2 PARAM3 PARAM4 LATITUDE LONGITUDE ALTITUDE AUTOCONTINUE
-                # Home: Index 0, Current 1, Frame 0 (Global), Command 0 (special handling for home)
-                # Param4 for home is heading. Altitude is absolute.
-                home_line = (
-                    f"0\t1\t0\t0\t"  # Index, Current, Frame, Command
-                    f"0.00000000\t0.00000000\t0.00000000\t"  # Param1, Param2, Param3
-                    f"{self.origin_data['heading']:.8f}\t"  # Param4 (Heading)
-                    f"{self.origin_data['lat']:.8f}\t"      # Latitude
-                    f"{self.origin_data['lon']:.8f}\t"      # Longitude
-                    f"{self.origin_data['alt']:.6f}\t"      # Altitude (Absolute for Home)
-                    f"1\n"                                  # Autocontinue
-                )
-                f.write(home_line)
-
-                # Subsequent Waypoints (Index 1 onwards)
-                # Frame 3 (Global Relative Alt), Command 16 (NAV_WAYPOINT)
-                # Altitude for these waypoints is 0.0, meaning relative to Home's altitude.
-                for i, wp in enumerate(self.waypoints):
-                    wp_index = i + 1
-                    wp_line = (
-                        f"{wp_index}\t0\t3\t16\t"  # Index, Current, Frame, Command
-                        f"0.00000000\t0.00000000\t0.00000000\t0.00000000\t"  # Param1-4 (Param4 Yaw is 0)
-                        f"{wp['lat']:.8f}\t"      # Latitude
-                        f"{wp['lon']:.8f}\t"      # Longitude
-                        f"0.000000\t"             # Altitude (Relative to Home, 0 means same alt as home)
-                        f"1\n"                    # Autocontinue
-                    )
-                    f.write(wp_line)
-            
+                yaml.dump(mission_content, f, sort_keys=False, indent=2, default_flow_style=False)
             tkinter.messagebox.showinfo("Success", f"Mission saved to {os.path.basename(filepath)}")
-
         except Exception as e:
-            tkinter.messagebox.showerror("File Save Error", f"Could not save mission file: {e}")
+            tkinter.messagebox.showerror("File Save Error", f"Could not save mission YAML file: {e}")
 
 
 if __name__ == "__main__":
     root = tkinter.Tk()
+    # Attempt to set a theme for a more modern look (optional)
+    try:
+        style = ttk.Style(root)
+        # Available themes: 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
+        # 'clam' or 'alt' are often good cross-platform choices. 'vista'/'xpnative'/'winnative' for Windows.
+        if os.name == 'nt': # Windows
+            style.theme_use('vista') 
+        else:
+            style.theme_use('clam') # A common one for Linux/Mac
+    except Exception:
+        print("ttk theme not available or failed to set. Using default.")
+        
     app = App(root)
     root.mainloop()
