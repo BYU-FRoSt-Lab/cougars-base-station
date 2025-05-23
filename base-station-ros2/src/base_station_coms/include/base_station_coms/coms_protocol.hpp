@@ -53,8 +53,14 @@ struct VehicleStatus {
 
     uint32_t timestamp;
 
-    uint8_t moos_waypoint;
-    uint8_t moos_behavior_number;
+    uint8_t waypoint;
+    uint8_t dvl_vel;
+
+    uint8_t battery_voltage;
+
+    bool dvl_running;
+    bool gps_connection;
+    bool leak_detection;
 
     int16_t x;
     int16_t y;

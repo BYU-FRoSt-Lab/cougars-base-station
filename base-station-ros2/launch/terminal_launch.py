@@ -34,6 +34,12 @@ def generate_launch_description():
             name='base_station_coms',
             parameters=[param_file]
         ),
+        launch_ros.actions.Node(
+            package='base_station_coms',
+            executable='base_station_modem',
+            name='base_station_modem',
+            parameters=[param_file]
+        ),
     ])
 
 if __name__ == '__main__':

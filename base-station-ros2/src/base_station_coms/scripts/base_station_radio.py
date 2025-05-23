@@ -71,6 +71,9 @@ class RFBridge(Node):
         # self.latest_battery = "NO_DATA"
         # self.latest_dvl_velocity = "NO_DATA"
         # self.latest_dvl_position = "NO_DATA"
+        self.declare_parameter('vehicles_in_mission', [1, 2, 3])
+        self.vehicles_in_mission = self.get_parameter('vehicles_in_mission').get_parameter_value().integer_array_value
+
 
         # XBee configuration
         self.xbee_port = self.declare_parameter('xbee_port', '/dev/ttyUSB0').value
@@ -87,6 +90,7 @@ class RFBridge(Node):
         self.publisher = self.create_publisher(String, 'rf_received', 10)
         self.init_publisher = self.create_publisher(String, 'init', 10)
         self.status_publisher = self.create_publisher(Status, 'status', 10)
+        self.rf_connection_publisher = self.create_publisher(Connected, 'rf_connection', 10)
         self.confirm_e_kill_publisher = self.create_publisher(Bool, 'confirm_e_kill', 10)
 
         self.subscription = self.create_subscription(
@@ -94,6 +98,8 @@ class RFBridge(Node):
             'rf_transmit',
             self.tx_callback,
             10)
+        
+        self.check_connections_timer = self.create_timer(2.0, self.check_connections)
 
         # Register XBee data receive callback
         self.device.add_data_received_callback(self.data_receive_callback)
@@ -144,7 +150,7 @@ class RFBridge(Node):
         status.battery_voltage = msg.battery_voltage
         status.dvl_running = msg.dvl_running
         status.gps_connection = msg.gps_connection
-        status.leak_detection = msg.gps_connection
+        status.leak_detection = msg.leak_detection
         self.status_publisher.publish(status)
 
         self.get_logger().info(f"Coug {status.vehicle_id}'s Status")
@@ -157,6 +163,9 @@ class RFBridge(Node):
         self.get_logger().info(f"Gps {"is" if status.gps_connection else "not"} connected")
         self.get_logger().info(f"{"No" if not status.leak_detection else ""} Leak Detected")
 
+    def check_connections(self):
+        for vehicle in self.vehicles_in_mission:
+            # make ping message
 
 
     def confirm_e_kill(self, msg):
