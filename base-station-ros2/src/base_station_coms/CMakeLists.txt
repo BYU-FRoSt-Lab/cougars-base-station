@@ -11,6 +11,7 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(seatrac_interfaces REQUIRED)
 find_package(base_station_interfaces REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 
 
 
@@ -27,6 +28,20 @@ ament_target_dependencies(base_station_modem rclcpp std_srvs std_msgs seatrac_in
 
 install(DIRECTORY include/
 DESTINATION include/${PROJECT_NAME})
+
+install(PROGRAMS
+  scripts/base_station_radio.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Connections.msg"
+)
+
+ament_export_dependencies(rosidl_default_runtime)
+
 
 install(TARGETS
 base_station_coms

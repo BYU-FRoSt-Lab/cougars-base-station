@@ -4,12 +4,15 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 from base_station_interfaces.msg import Status
+from base_station_interfaces.msg import Connections
 from std_msgs.msg import String
 from std_msgs.msg import Bool
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState, FluidPressure
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from dvl_msgs.msg import DVLDR
+import time
+
 
 from digi.xbee.devices import XBeeDevice
 
@@ -74,6 +77,11 @@ class RFBridge(Node):
         self.declare_parameter('vehicles_in_mission', [1, 2, 3])
         self.vehicles_in_mission = self.get_parameter('vehicles_in_mission').get_parameter_value().integer_array_value
 
+        self.declare_parameter('ping_frequency', 1)
+        self.ping_frequency = self.get_parameter('ping_frequency').get_parameter_value().integer_value
+
+        self.declare_parameter('vehicle_id', 15)
+        self.ping_frequency = self.get_parameter('vehicle_id').get_parameter_value().integer_value
 
         # XBee configuration
         self.xbee_port = self.declare_parameter('xbee_port', '/dev/ttyUSB0').value
@@ -90,7 +98,7 @@ class RFBridge(Node):
         self.publisher = self.create_publisher(String, 'rf_received', 10)
         self.init_publisher = self.create_publisher(String, 'init', 10)
         self.status_publisher = self.create_publisher(Status, 'status', 10)
-        self.rf_connection_publisher = self.create_publisher(Connected, 'rf_connection', 10)
+        self.rf_connection_publisher = self.create_publisher(Connections, 'rf_connection', 10)
         self.confirm_e_kill_publisher = self.create_publisher(Bool, 'confirm_e_kill', 10)
 
         self.subscription = self.create_subscription(
@@ -107,6 +115,10 @@ class RFBridge(Node):
 
         # Thread-safe shutdown flag
         self.running = True
+        self.ping_timestamp = {}
+        self.connections = {}
+        for vehicle in self.vehicles_in_mission:
+            self.connections[vehicle] = False
 
 
     def tx_callback(self, msg):
@@ -118,65 +130,103 @@ class RFBridge(Node):
             self.get_logger().error(f"XBee transmission error: {str(e)}")
             self.get_logger().error(traceback.format_exc())
 
+    def send_message(self, msg):
+        try:
+            self.device.send_data_broadcast(msg)
+            self.get_logger().debug(f"Sent via XBee: {msg}")
+        except Exception as e:
+            self.get_logger().error(f"XBee transmission error: {str(e)}")
+            self.get_logger().error(traceback.format_exc())
+
 
     def data_receive_callback(self, xbee_message):
         try:
             payload = xbee_message.data.decode('utf-8', errors='replace')
             self.get_logger().info(f"Received from {xbee_message.remote_device.get_64bit_addr()}: {payload}")
-            msg = String()
-            msg.data = payload
-            self.publisher.publish(msg)
+            
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError:
+                self.get_logger().error("Received invalid JSON payload.")
+                return
 
-            if payload == "STATUS":
-                self.recieve_status(msg)
-            if payload == "E_KILL":
-                self.confirm_e_kill(msg)
-
+            message_type = data.get("Message")
+            if message_type == "STATUS":
+                self.recieve_status(data)
+            elif message_type == "E_KILL":
+                self.confirm_e_kill(data)
+            elif message_type == "PING":
+                self.recieve_ping(data)
+            else:
+                self.get_logger().warn(f"Unknown message type: {message_type}")
         except Exception as e:
             self.get_logger().error(f"Error in data_receive_callback: {e}")
 
 
-    def recieve_status(self, msg):
+
+
+    def check_connections(self):
+        msg = Connections()
+        vehicle_num = 0
+        for vehicle in self.vehicles_in_mission:
+            # make ping message
+            ping = {
+            "target_vehicle_id" : vehicle,
+            "src_id" : self.vehicle_id,
+            "message" : "PING",
+            }
+            self.send_message(json.dumps(ping))
+            if (time.time() - self.ping_timestamp[vehicle] >= self.ping_frequency*2):
+                self.connections[vehicle] = False 
+            msg.connections.append(self.connections[vehicle])
         
-        self.get_logger().info(f"Coug {msg.src_id}'s Status:")
-        self.get_logger().info(f"    Data: {msg.data}")
+        self.rf_connection_publisher.publish(msg)
+
+
+    def recieve_status(self, data):
+        self.get_logger().info(f"Coug {data['vehicle_id']}'s Status:")
+        self.get_logger().info(f"    Data: {data}")
 
         status = Status()
-        status.vehicle_id = msg.vehicle_id
-        status.x = msg.x
-        status.y = msg.y
-        status.heading = msg.heading
-        status.dvl_vel = msg.dvl_vel
-        status.battery_voltage = msg.battery_voltage
-        status.dvl_running = msg.dvl_running
-        status.gps_connection = msg.gps_connection
-        status.leak_detection = msg.leak_detection
+        status.vehicle_id = data['vehicle_id']
+        status.x = data['x']
+        status.y = data['y']
+        status.heading = data['heading']
+        status.dvl_vel = data['dvl_vel']
+        status.battery_voltage = data['battery_voltage']
+        status.dvl_running = data['dvl_running']
+        status.gps_connection = data['gps_connection']
+        status.leak_detection = data['leak_detection']
         self.status_publisher.publish(status)
 
-        self.get_logger().info(f"Coug {status.vehicle_id}'s Status")
         self.get_logger().info(f"X pos: {status.x}")
         self.get_logger().info(f"Y pos: {status.y}")
         self.get_logger().info(f"Heading pos: {status.heading}")
         self.get_logger().info(f"Dvl velocity: {status.dvl_vel}")
         self.get_logger().info(f"Battery voltage: {status.battery_voltage}")
-        self.get_logger().info(f"Dvl {"is" if status.dvl_running else "not" } running: {status.x}")
-        self.get_logger().info(f"Gps {"is" if status.gps_connection else "not"} connected")
-        self.get_logger().info(f"{"No" if not status.leak_detection else ""} Leak Detected")
-
-    def check_connections(self):
-        for vehicle in self.vehicles_in_mission:
-            # make ping message
+        self.get_logger().info(f"Dvl {'is' if status.dvl_running else 'not'} running")
+        self.get_logger().info(f"Gps {'is' if status.gps_connection else 'not'} connected")
+        self.get_logger().info(f"{'No' if not status.leak_detection else ''} Leak Detected")
 
 
-    def confirm_e_kill(self, msg):
-        if msg.success:
-            self.get_logger().info(f"Emergency kill command was successful for Coug {msg.src_id}")
+
+    def recieve_ping(self, msg):
+        vehicle_id = msg["src_id"]
+        self.ping_timestamp[vehicle_id] = time.time()
+        self.connections[vehicle_id] = True
+
+
+
+    def confirm_e_kill(self, data):
+        if data.get("success"):
+            self.get_logger().info(f"Emergency kill command was successful for Coug {data.get('src_id')}")
         else:
-            self.get_logger().warn(f"Emergency kill command failed for Coug {msg.src_id}")
+            self.get_logger().warn(f"Emergency kill command failed for Coug {data.get('src_id')}")
 
         success_msg = Bool()
-        success_msg.data = msg.success
+        success_msg.data = data.get("success", False)
         self.confirm_e_kill_publisher.publish(success_msg)
+
 
 
 
