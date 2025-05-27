@@ -199,7 +199,7 @@ class App:
         if origin_name in PRESET_ORIGINS: # Shorter text for known presets on map
             origin_marker_text = origin_name
 
-        origin_map_marker = self.map_widget.set_marker(lat, lon, text=origin_marker_text, text_color="blue", marker_color_circle="blue", font=("Arial", 8, "bold"))
+        origin_map_marker = self.map_widget.set_marker(lat, lon, text=origin_marker_text, text_color="white", marker_color_circle="blue", font=("Arial", 10, "bold"))
         self.origin_data['map_marker_object'] = origin_map_marker
 
         self.origin_info_label.config(text=f"Origin ({origin_name}):\nLat={lat:.6f}, Lon={lon:.6f}, Alt={alt:.2f}m")
@@ -239,7 +239,11 @@ class App:
         east, north, up_enu = self._geodetic_to_enu(clicked_lat, clicked_lon, origin_alt, # wp alt = origin alt for this
                                                     origin_lat, origin_lon, origin_alt)
 
-        map_marker = self.map_widget.set_marker(clicked_lat, clicked_lon, text=f"WP{wp_index}\nD:{depth:.1f}m")
+        map_marker = self.map_widget.set_marker(clicked_lat, clicked_lon, 
+                                               text=f"WP{wp_index}\nD:{depth:.1f}m",
+                                               text_color="white", 
+                                               marker_color_circle="green",
+                                               font=("Arial", 10, "bold"))
         
         self.waypoints.append({
             'id': wp_index,
