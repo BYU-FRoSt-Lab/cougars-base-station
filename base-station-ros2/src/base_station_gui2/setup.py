@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'base_station_gui'
+package_name = 'base_station_gui2'
 
 setup(
     name=package_name,
@@ -13,16 +13,15 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='tristanhodgins',
-    maintainer_email='tah88@byu.edu',
+    maintainer='frostlab',
+    maintainer_email='frostlab@todo.todo',
     description='TODO: Package description',
-    license='MIT',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'main = base_station_gui.main:main',
-		    'talker = base_station_gui.publisher_member_function:main',
-		    'listener = base_station_gui.subscriber_member_function:main'
+		    'talker = base_station_gui2.publisher_member_function:main',
+		    'listener = base_station_gui2.subscriber_member_function:main'
         ],
     },
 )
