@@ -1,1 +1,10 @@
-Bool[] connections
+std_msgs/Header header
+
+# 0 for acoustic modem, 1 for radio
+uint8 connection_type
+
+# connection status
+bool[] connections
+
+# time since last ping response
+uint8[] last_ping

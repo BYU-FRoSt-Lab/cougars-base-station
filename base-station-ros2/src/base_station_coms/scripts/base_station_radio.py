@@ -81,9 +81,9 @@ class RFBridge(Node):
         self.ping_frequency = self.get_parameter('ping_frequency').get_parameter_value().integer_value
 
         self.declare_parameter('vehicle_id', 15)
-        self.ping_frequency = self.get_parameter('vehicle_id').get_parameter_value().integer_value
+        self.vehicle_id = self.get_parameter('vehicle_id').get_parameter_value().integer_value
 
-        # XBee configuration
+        #XBee configuration
         self.xbee_port = self.declare_parameter('xbee_port', '/dev/ttyUSB0').value
         self.xbee_baud = self.declare_parameter('xbee_baud', 9600).value
         self.device = XBeeDevice(self.xbee_port, self.xbee_baud)
@@ -93,6 +93,7 @@ class RFBridge(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to open XBee device: {e}")
             raise
+
 
         # ROS publishers and subscribers
         self.publisher = self.create_publisher(String, 'rf_received', 10)
@@ -167,6 +168,7 @@ class RFBridge(Node):
 
     def check_connections(self):
         msg = Connections()
+        msg.type 
         vehicle_num = 0
         for vehicle in self.vehicles_in_mission:
             # make ping message
@@ -176,9 +178,12 @@ class RFBridge(Node):
             "message" : "PING",
             }
             self.send_message(json.dumps(ping))
-            if (time.time() - self.ping_timestamp[vehicle] >= self.ping_frequency*2):
+            last_ping = time.time() - self.ping_timestamp[vehicle]
+            if (last_ping >= self.ping_frequency*2):
                 self.connections[vehicle] = False 
             msg.connections.append(self.connections[vehicle])
+            msg.last_ping.append(last_ping)
+
         
         self.rf_connection_publisher.publish(msg)
 
