@@ -4,6 +4,8 @@
 #include "seatrac_interfaces/msg/modem_rec.hpp"
 #include "seatrac_interfaces/msg/modem_send.hpp"
 #include "base_station_interfaces/srv/beacon_id.hpp"
+#include "base_station_interfaces/msg/status.hpp"
+#include "base_station_interfaces/msg/connections.hpp"
 
 
 
@@ -32,7 +34,7 @@ public:
     ComsNode() : Node("base_station_coms") {
 
 
-        this->declare_parameter<int>("status_request_frequency_seconds", 15);
+        this->declare_parameter<int>("status_request_frequency_seconds", 5);
         this->status_request_frequency = this->get_parameter("status_request_frequency_seconds").as_int();
 
 
@@ -80,6 +82,11 @@ public:
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
+        connections_subscriber_ = this->create_subscription<base_station_interfaces::msg::Connections>(
+            "connections",
+            10,
+            std::bind(&ComsNode::listen_to_connections, this, _1)
+        );
 
         std::ostringstream ss;
         ss << "Vehicle ids in mission: ";
@@ -98,6 +105,19 @@ public:
 
 
 
+    }
+
+    void listen_to_connections(const base_station_interfaces::msg::Connections::SharedPtr msg) {
+        // update the connections to the cougs
+        int i = 0;
+        for (const auto& beacon_id : this->vehicles_in_mission_) {
+            if (msg->connection_type == 1) {
+                radio_connection[beacon_id] = msg->connections[i];
+            } else if (msg->connection_type == 0) {
+                modem_connection[beacon_id] = msg->connections[i];
+            }
+            i++;
+        }
     }
 
     void request_status_callback(){
@@ -211,6 +231,8 @@ private:
 
 
     rclcpp::TimerBase::SharedPtr timer_;
+
+    rclcpp::Subscription<base_station_interfaces::msg::Connections>::SharedPtr connections_subscriber_;
 
     rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedPtr radio_e_kill_client_;
     rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedPtr modem_e_kill_client_;

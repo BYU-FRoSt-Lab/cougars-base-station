@@ -5,6 +5,7 @@
 #include "seatrac_interfaces/msg/modem_send.hpp"
 #include "base_station_interfaces/srv/beacon_id.hpp"
 #include "base_station_interfaces/msg/status.hpp"
+#include "base_station_interfaces/msg/connections.hpp"
 #include "std_msgs/msg/bool.hpp"
 
 
@@ -64,6 +65,8 @@ public:
 
         this->status_publisher_ = this->create_publisher<base_station_interfaces::msg::Status>("status", 10);
 
+        this->modem_connections_publisher_ = this->create_publisher<base_station_interfaces::msg::Connections>("connections", 10);
+
         this->confirm_e_kill_publisher_ = this->create_publisher<std_msgs::msg::Bool>("confirm_e_kill", 10);
 
         this->confirm_e_surface_ = this->create_publisher<std_msgs::msg::Bool>("confirm_e_surface", 10);
@@ -77,6 +80,8 @@ public:
     // listens to ModemRec message and processes msg according to the msg id
     void listen_to_modem(seatrac_interfaces::msg::ModemRec msg) {
         COUG_MSG_ID id = (COUG_MSG_ID)msg.packet_data[0];
+        last_message_time_[id] = this->now();
+
         switch(id) {
             default: break;
             case EMPTY: break;
@@ -118,6 +123,8 @@ public:
     void status_request_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
     {
+        check_modem_connections();
+
         RequestStatus request_status_msg;
         send_acoustic_message(request->beacon_id, sizeof(request_status_msg), (uint8_t*)&request_status_msg, MSG_OWAY);
         // RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
@@ -172,6 +179,33 @@ public:
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed for Coug %i", msg.src_id);
         }
     }
+
+
+    void check_modem_connections(double timeout_sec = 10.0) {
+        rclcpp::Time now = this->now();
+        std::vector<bool> connections;
+        std::vector<uint32_t> last_ping;
+
+
+        for (auto vehicle_id : vehicles_in_mission_) {
+            auto it = last_message_time_.find(vehicle_id);
+            if (it != last_message_time_.end()) {
+                double dt = (now - it->second).seconds();
+                connections.push_back(dt < timeout_sec);
+                last_ping.push_back(static_cast<uint32_t>(dt));
+
+            } else {
+                modem_connection[vehicle_id] = false;
+            }
+        }
+            base_station_interfaces::msg::Connections msg;
+            msg.header.stamp = now;
+            msg.connection_type = 0; // 0 for acoustic modem
+            msg.connections = connections;
+            msg.last_ping = last_ping;
+            modem_connections_publisher_->publish(msg);
+
+    }
    
     //used by the service callback functions to publish messages to the cougs
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
@@ -198,6 +232,7 @@ private:
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
 
     rclcpp::Publisher<base_station_interfaces::msg::Status>::SharedPtr status_publisher_;
+    rclcpp::Publisher<base_station_interfaces::msg::Connections>::SharedPtr modem_connections_publisher_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr confirm_e_kill_publisher_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr confirm_e_surface_;
 
@@ -210,6 +245,9 @@ private:
 
 
     std::vector<int64_t> vehicles_in_mission_;
+
+    std::unordered_map<int, rclcpp::Time> last_message_time_;
+
 
 
     size_t modem_coms_schedule_turn_index = 0;  

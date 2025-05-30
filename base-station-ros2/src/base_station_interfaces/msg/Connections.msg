@@ -7,4 +7,4 @@ uint8 connection_type
 bool[] connections
 
 # time since last ping response
-uint8[] last_ping
+uint32[] last_ping
