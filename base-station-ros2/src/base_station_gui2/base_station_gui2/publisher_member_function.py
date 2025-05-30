@@ -6,7 +6,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
 
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
@@ -28,8 +29,7 @@ class MinimalSubscriber(Node):
         self.subscription = self.create_subscription(
             String,
             'topic',
-            # self.listener_callback,
-            window.recieve_message,
+            window.recieve_message,  # assuming this is callable
             10)
         self.subscription  # prevent unused variable warning
 
@@ -40,9 +40,6 @@ def ros_spin_thread(executor):
     executor.spin()
 
 def main():
-    import signal
-    from PyQt5.QtCore import QTimer
-
     rclpy.init()
     pub_node = MinimalPublisher()
 
@@ -56,27 +53,17 @@ def main():
     executor.add_node(pub_node)
     executor.add_node(sub_node)
 
-    # Spin the executor in the background
+    # Spin ROS 2 in a background thread
     ros_thread = threading.Thread(target=ros_spin_thread, args=(executor,), daemon=True)
     ros_thread.start()
-
-
-
-    # pub_thread = threading.Thread(target=ros_spin_thread, args=(pub_node,), daemon=True)
-    # pub_thread.start()
-
-    # sub_thread = threading.Thread(target=ros_spin_thread, args=(sub_node,), daemon=True)
-    # sub_thread.start()
-
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     def start_timer():
         timer = QTimer()
-        timer.timeout.connect(lambda: None)
+        timer.timeout.connect(lambda: None)  # Needed to keep the event loop alive
         timer.start(100)
 
-    # Start timer right after app is fully running
     QTimer.singleShot(0, start_timer)
 
     try:
