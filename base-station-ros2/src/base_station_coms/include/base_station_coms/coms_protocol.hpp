@@ -20,8 +20,15 @@ enum COUG_MSG_ID : uint8_t {
     START_MISSION = 0x30,
     CONFIRM_START_MISSION = 0x31,
 
-    EMERGENCY_KILL = 0xFF,
-    CONFIRM_EMERGENCY_KILL = 0xFC,
+    EMERGENCY_KILL = 0x40,
+    CONFIRM_EMERGENCY_KILL = 0x41,
+
+    EMERGENCY_SURFACE = 0x50,
+    CONFIRM_EMERGENCY_SURFACE = 0x51,
+
+    INIT_COUG = 0x60,
+    CONFIRM_INIT_COUG = 0x61
+
 
 };
 
@@ -35,8 +42,23 @@ struct ConfirmEmergencyKill {
     bool success;
 }__attribute__((packed));
 
+struct EmergencySurface {
+    COUG_MSG_ID msg = EMERGENCY_SURFACE;
+}__attribute__((packed));
 
+struct InitCoug{
+    static const COUG_MSG_ID msg_id = INIT_COUG;
+}__attribute__((packed));
 
+struct ConfirmInitCoug{
+    static const COUG_MSG_ID msg_id = CONFIRM_INIT_COUG;
+    bool success;
+}__attribute__((packed));
+
+struct ConfirmEmergencySurface {
+    COUG_MSG_ID msg_id = CONFIRM_EMERGENCY_SURFACE;
+    bool success;
+}__attribute__((packed));
 
 struct VerifyLaunch {
     static const COUG_MSG_ID msg_id = VERIFY_LAUNCH;
