@@ -17,3 +17,4 @@ source install/setup.bash
 # base-station-ros2
 cd ~/base_station/base-station-ros2
 colcon build --merge-install
+source install/setup.bash

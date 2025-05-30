@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence,QShortcut
 
+from base_station_interfaces.srv import BeaconId
+
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
     def __init__(self, ros_node):
@@ -66,12 +68,12 @@ class MainWindow(QMainWindow):
         }
 
         #This is a dictionary to map the feedback_dict to the correct symbols
-        #"x" symbol -> SP_DialogNoButton
-        #"check" symbol -> SP_DialogYesButton
+        #"x" symbol -> SP_MessageBoxCritical
+        #"check" symbol -> SP_DialogApplyButton
         # "waiting" symbol -> SP_TitleBarContextHelpButton (for now, probably will change)
         self.icons_dict = {
-            0: QStyle.StandardPixmap.SP_DialogNoButton,
-            1: QStyle.StandardPixmap.SP_DialogYesButton,
+            0: QStyle.StandardPixmap.SP_MessageBoxCritical,
+            1: QStyle.StandardPixmap.SP_DialogApplyButton,
             2: QStyle.StandardPixmap.SP_TitleBarContextHelpButton
         }
 
@@ -145,9 +147,11 @@ class MainWindow(QMainWindow):
 
         #create a container widget, and place the main layout inside of it
         self.container = QWidget()
+        self.container.setObjectName("MyContainer")
         self.container.setLayout(self.main_layout)
         #the container with the main layout is set as teh central widget
         self.setCentralWidget(self.container)
+
 
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
@@ -207,6 +211,7 @@ class MainWindow(QMainWindow):
                     layout = getattr(self, f"general_page_C{coug_number}_layout")
                     widget = getattr(self, f"general_page_C{coug_number}_widget")
                     self.replace_label(f"{key}{coug_number}", layout, widget, new_label)
+                    # replace_widget_by_name(self, root_widget, widget_name, new_widget, style=""):
 
     #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
     def replace_label(self, widget_name, parent_layout, parent_widget, new_label, color=""):
@@ -239,6 +244,44 @@ class MainWindow(QMainWindow):
         new_label.setStyleSheet(f"color: {color};")
         #insert the new widget in the same index as the old one was, so the order of the text doesn't
         parent_layout.insertWidget(index, new_label)
+
+    def replace_widget_by_name(self, root_widget, widget_name, new_widget, style=""):
+        """
+        Replaces a widget in the UI tree by its object name, without knowing its layout or container.
+
+        Parameters:
+            root_widget (QWidget): The top-level widget (e.g., main window or central widget).
+            widget_name (str): Object name of the widget to replace.
+            new_widget (QWidget): The new widget to insert.
+            style (str): Optional CSS styling for the new widget.
+        """
+        old_widget = root_widget.findChild(QWidget, widget_name)
+        if not old_widget:
+            print(f"[replace_widget_by_name] Widget '{widget_name}' not found.")
+            return
+
+        parent = old_widget.parent()
+        while parent and not isinstance(parent.layout(), QLayout):
+            parent = parent.parent()
+
+        if not parent:
+            print(f"[replace_widget_by_name] Could not find layout for widget '{widget_name}'.")
+            return
+
+        layout = parent.layout()
+        index = layout.indexOf(old_widget)
+        if index == -1:
+            print(f"[replace_widget_by_name] Widget '{widget_name}' not found in parent layout.")
+            return
+
+        layout.removeWidget(old_widget)
+        old_widget.setParent(None)
+
+        new_widget.setObjectName(widget_name)
+        if style:
+            new_widget.setStyleSheet(style)
+
+        layout.insertWidget(index, new_widget)
 
     def find_label(self, widget_name, parent_layout, parent_widget):
         """
@@ -321,6 +364,24 @@ class MainWindow(QMainWindow):
         self.confirm_reject_label.setText("Starting the missions...")
         self.publish_from_gui("Starting the missions...")
         # print("Starting the missions...")
+
+    def emergency_shutdown_button(self, coug_number):
+        # uint8 beacon_id
+        # ---
+        # bool success
+        message = BeaconId.Request()
+        message.beacon_id = coug_number
+        # print(self.ros_node.cli.call_async(message))
+        return self.ros_node.cli.call_async(message)
+    
+    def emergency_surface_button(self, coug_number):
+        # uint8 beacon_id
+        # ---
+        # bool success
+        message = BeaconId.Request()
+        message.beacon_id = coug_number
+        # print(self.ros_node.cli.call_async(message))
+        return self.ros_node.cli2.call_async(message)
 
     def recallCougs(self):
         #add recall cougs logic
@@ -443,8 +504,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addSpacing(20)
 
-        #"x" symbol -> SP_DialogNoButton
-        #"check" symbol -> SP_DialogYesButton
+        #"x" symbol -> SP_MessageBoxCritical
+        #"check" symbol -> SP_DialogApplyButton
         # "waiting" symbol -> SP_TitleBarContextHelpButton (for now, probably will change)
 
         #section labels
@@ -652,10 +713,10 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         return temp_container
 
-    def create_title_label(self, text):
+    def create_title_label(self, text, set_width=True):
         # Create and style the label
         temp_label = QLabel(text)
-        temp_label.setFixedWidth(300)
+        if set_width: temp_label.setFixedWidth(300)
         temp_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         return temp_label
@@ -675,6 +736,9 @@ class MainWindow(QMainWindow):
         temp_container = QWidget()
         temp_layout = QHBoxLayout(temp_container)
 
+        temp_V_container = QWidget()
+        temp_V_layout = QVBoxLayout(temp_V_container)
+
         #load mission (blue)
         self.create_coug_button(coug_number, "load_mission", "Load Mission", "blue", self.load_missions_button)
         #start mission (blue)
@@ -690,13 +754,13 @@ class MainWindow(QMainWindow):
         #return to base (blue)
         self.create_coug_button(coug_number, "return_to_base", "Return to Base", "blue", self.start_missions_button)
         #system reboot (red)
-        self.create_coug_button(coug_number, "system_reboot", "System Reboot", "red", self.start_missions_button)
+        self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", "red", lambda: self.emergency_surface_button(coug_number))
         #abort mission (red)
         self.create_coug_button(coug_number, "abort_misson", "Abort Mission", "red", self.start_missions_button)
         #emergency shutdown (red)
-        self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", "red", self.start_missions_button)
+        self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", "red", lambda: self.emergency_shutdown_button(coug_number))
 
-        temp_spacing = 80
+        temp_spacing = 50
         #add all the buttons to the layout
         temp_layout1.addWidget(getattr(self, f"load_mission_coug{coug_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
@@ -712,7 +776,7 @@ class MainWindow(QMainWindow):
         temp_layout2.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"restart_RP_coug{coug_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
-        temp_layout2.addWidget(getattr(self, f"system_reboot_coug{coug_number}_button"))
+        temp_layout2.addWidget(getattr(self, f"emergency_surface_coug{coug_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"abort_misson_coug{coug_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
@@ -720,7 +784,19 @@ class MainWindow(QMainWindow):
 
         temp_layout.addWidget(temp_sub_container1)
         temp_layout.addWidget(temp_sub_container2)
-        return temp_container
+
+        temp_V_layout.addWidget(self.create_title_label("Seconds since last connected", set_width=False))
+        self.create_label(temp_V_layout, "Radio: xxx")
+        self.create_label(temp_V_layout, "Accoustics: xxx")
+        temp_V_layout.addWidget(self.make_hline())
+        temp_V_layout.addWidget(temp_container)
+        return temp_V_container
+
+    def create_label(self, temp_layout, text):
+        text_label = QLabel(text)
+        text_label.setFont(QFont("Arial", 13))
+        text_label.setContentsMargins(0, 0, 0, 0)
+        temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
     #Dynamically creates a QPushButton with the given properties and stores it as an attribute.
     def create_coug_button(self, coug_number, name, text, color, callback):
@@ -890,8 +966,9 @@ class MainWindow(QMainWindow):
         self.confirm_reject_label.setText(message.data)
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
-def OpenWindow(ros_node):
+def OpenWindow(ros_node, borders=False):
     app = QApplication(sys.argv)
+    if borders: app.setStyleSheet("""*{border: 1px solid red;}""")
     window = MainWindow(ros_node)
     window.show()
     return app, window  # Return both
