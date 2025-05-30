@@ -152,7 +152,6 @@ class MainWindow(QMainWindow):
         #the container with the main layout is set as teh central widget
         self.setCentralWidget(self.container)
 
-
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
         print("closing the window now...")
@@ -964,6 +963,24 @@ class MainWindow(QMainWindow):
     #currently used as a proof of concept of receiving subscriptions
     def recieve_message(self, message): 
         self.confirm_reject_label.setText(message.data)
+
+    #message: Connections
+        #std_msgs/Header header
+
+        # 0 for acoustic modem, 1 for radio
+        # uint8 connection_type
+
+        # connection status, list of bool, representing connections of Coug1, Coug2, etc
+        # bool[] connections
+
+        # time since last ping response, representing last responses in seconds of Coug1, Coug2, etc
+        # uint8[] last_ping
+    def recieve_connections(self, conn_message):
+        if conn_message.connection_type: print(f"Radio connections:")   
+        else: print(f"Acoustic modem connections:")
+        print(conn_message.connections)
+        print(f"Last ping responses (in seconds):")
+        print(list(conn_message.last_ping))
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
