@@ -4,13 +4,15 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSpacerItem, QGridLayout, QStyle, QWidget, QDialog, QDialogButtonBox
 )
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence,QShortcut
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+
+from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut
 
 from base_station_interfaces.srv import BeaconId
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
+    update_connections_signal = pyqtSignal(object)
     def __init__(self, ros_node):
         """
         Initializes GUI window with a ros node inside
@@ -152,6 +154,10 @@ class MainWindow(QMainWindow):
         #the container with the main layout is set as teh central widget
         self.setCentralWidget(self.container)
 
+        #creates a signal that is sent from recieve_connections, and sent to _update_connections_gui. 
+        #this avoids the error of the gui not working on the main thread
+        self.update_connections_signal.connect(self._update_connections_gui)
+
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
         print("closing the window now...")
@@ -229,6 +235,7 @@ class MainWindow(QMainWindow):
         if temp_widget:
             #the index of the widget in respect to its parent layout
             index = parent_layout.indexOf(temp_widget)
+            print(f"Replacing widget: {widget_name} at index {index}. Parent layout: {parent_layout}. Parent widget: {parent_widget}")
         else:
             print("widget_name not found")
             return
@@ -976,12 +983,26 @@ class MainWindow(QMainWindow):
         # time since last ping response, representing last responses in seconds of Coug1, Coug2, etc
         # uint8[] last_ping
     def recieve_connections(self, conn_message):
-        if conn_message.connection_type: print(f"Radio connections:")   
-        else: print(f"Acoustic modem connections:")
-        print(conn_message.connections)
-        print(f"Last ping responses (in seconds):")
-        print(list(conn_message.last_ping))
+        self.update_connections_signal.emit(conn_message)
 
+    def _update_connections_gui(self, conn_message):
+        try:
+            if conn_message.connection_type:
+                feedback_key = "Radio_connections"
+            else:
+                feedback_key = "Modem_connections"
+
+            for coug_number, data in self.feedback_dict[feedback_key].items():
+                status = 1 if conn_message.connections[coug_number-1] else 0
+                self.feedback_dict[feedback_key][coug_number] = status
+                prefix = feedback_key.split("_")[0]
+                new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
+                layout = getattr(self, f"general_page_C{coug_number}_layout")
+                widget = getattr(self, f"general_page_C{coug_number}_widget")
+                self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+        except Exception as e:
+            print("Exception in update_gui:", e)
+            
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
     app = QApplication(sys.argv)
