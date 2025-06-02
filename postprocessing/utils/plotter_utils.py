@@ -93,6 +93,52 @@ def cov_from_str(cov_str:str):
     size = int(np.sqrt(len(cov_list)))
     return np.array(cov_list).reshape((size,size))
 
+def plot_pose_w_imu(        
+        pose_df,
+        imu_df,
+        seconds_between_imu,
+        confidence=.95,
+        ax=None,
+        **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    x_dist = pose_df["pose.pose.position.x"].max() - pose_df["pose.pose.position.x"].min()
+    y_dist = pose_df["pose.pose.position.y"].max() - pose_df["pose.pose.position.y"].min()
+    dist = 0.04*max(x_dist, y_dist) # Used to calculate the length of orientation lines
+
+    delta = pd.to_timedelta(seconds_between_imu, unit='s')
+    last_time = pose_df["timestamp"].iloc[0]
+    imu_index=0
+    for idx, row in pose_df.iterrows():
+        timestamp = row["timestamp"]
+        imu_stamp=imu_df["timestamp"]
+        if timestamp - last_time > delta:
+            last_time = timestamp
+            x = row["pose.pose.position.x"]
+            y = row["pose.pose.position.y"]
+            #find index of closest entry in imu df
+            while imu_stamp[imu_index]<timestamp:
+                imu_index+=1
+                #print(imu_index," : ",imu_stamp[imu_index])
+            # print(row.keys())
+            # print(imu_df.keys())
+            # print(imu_df["header.stamp.sec"].shape)
+            orient_x=imu_df["orientation.x"][imu_index]
+            orient_y=imu_df["orientation.y"][imu_index]
+            orient_z=imu_df["orientation.z"][imu_index]
+            orient_w=imu_df["orientation.w"][imu_index]
+            yaw=np.atan2(2*(orient_w*orient_z+orient_x*orient_y),1-2*(orient_y*orient_y+orient_z*orient_z))
+            plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-')
+            
+    pose_x = pose_df["pose.pose.position.x"]
+    pose_y = pose_df["pose.pose.position.y"]
+    ax.plot(pose_x,pose_y, **kwargs)
+    ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
+
+    ax.axis('equal')
+    return ax
+
+    
 
 def plot_pose_w_cov(
         pose_df,
