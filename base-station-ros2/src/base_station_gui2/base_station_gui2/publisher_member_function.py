@@ -31,11 +31,11 @@ class GuiNode(Node):
             window.recieve_connections,
             10)   
 
-        # self.stat_subscription = self.create_subscription(
-        #     Status,
-        #     'status',
-        #     window.recieve_message,
-        #     10)
+        self.stat_subscription = self.create_subscription(
+            Status,
+            'status',
+            window.receive_status,
+            10)
             
         # self.srv = self.create_service(Bool, 'e_kill_service', self.add_two_ints_callback)
         self.cli = self.create_client(BeaconId, 'emergency_kill_service')
