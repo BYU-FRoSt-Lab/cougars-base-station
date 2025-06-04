@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-		    'talker = base_station_gui2.publisher_member_function:main'
+		    'talker = base_station_gui2.publisher_member_function:main',
+            'service = base_station_gui2.TEST_service_member:main'
         ],
     },
 )

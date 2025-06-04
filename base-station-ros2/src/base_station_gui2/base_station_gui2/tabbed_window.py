@@ -9,11 +9,13 @@ from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut
 
 from base_station_interfaces.srv import BeaconId
+from functools import partial
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
     update_connections_signal = pyqtSignal(object)
     update_status_signal = pyqtSignal(object)
+    update_console_signal = pyqtSignal(object, int)
     def __init__(self, ros_node):
         """
         Initializes GUI window with a ros node inside
@@ -176,6 +178,7 @@ class MainWindow(QMainWindow):
         #this avoids the error of the gui not working on the main thread
         self.update_connections_signal.connect(self._update_connections_gui)
         self.update_status_signal.connect(self._update_status_gui)
+        self.update_console_signal.connect(self._update_console_gui)
 
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
@@ -188,6 +191,8 @@ class MainWindow(QMainWindow):
             self.close()  
         else:
             self.confirm_reject_label.setText("Canceling Close Window command...")
+            self.recieve_console_update("Canceling Close Window command...", coug_number)
+            for i in range(1, 4): self.recieve_console_update("Canceling Close Window command...", i)
 
     #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
     def replace_label(self, widget_name, parent_layout, parent_widget, new_label, color=""):
@@ -209,6 +214,7 @@ class MainWindow(QMainWindow):
             index = parent_layout.indexOf(temp_widget)
         else:
             print(f"not found. widget_name: {widget_name} : parent_widget: {parent_widget} temp_widget: {temp_widget}")
+            for i in range(1, 4): self.recieve_console_update("GUI error. See terminal.", i)
             return
 
         parent_layout.removeWidget(temp_widget)
@@ -282,66 +288,88 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def load_missions_button(self):
         self.confirm_reject_label.setText("Loading the missions...")
+        for i in range(1, 4): self.recieve_console_update("Loading the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def start_missions_button(self):
         self.confirm_reject_label.setText("Starting the missions...")
+        for i in range(1, 4): self.recieve_console_update("Starting the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def spec_load_missions_button(self, coug_number):
         self.confirm_reject_label.setText(f"Loading Coug {coug_number} mission...")
+        self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
 
     #(NS) -> not yet connected to a signal
     def spec_start_missions_button(self, coug_number):
         self.confirm_reject_label.setText(f"Starting Coug {coug_number} mission...")
+        self.recieve_console_update(f"Starting Coug {coug_number} mission...", coug_number)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, coug_number):
-        # uint8 beacon_id --> coug_number
-        # ---
-        # bool success
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        #pop-up window
         dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self)
-        #if confirm is selected
         if dlg.exec():
             self.confirm_reject_label.setText("Starting Emergency Shutdown...")
-            #send the kill command message
-            return self.ros_node.cli.call_async(message)
-        else: self.confirm_reject_label.setText("Canceling Emergency Shutdown command...")
-    
+            self.recieve_console_update(f"Starting Emergency Shutdown for {coug_number}", coug_number)
+            future = self.ros_node.cli.call_async(message)
+            # Add callback to handle response
+            future.add_done_callback(partial(self.handle_service_response, action="Emergency Shutdown", coug_number=coug_number))
+            return future
+        else:
+            self.confirm_reject_label.setText("Canceling Emergency Shutdown command...")
+            self.recieve_console_update(f"Canceling Emergency Shutdown for Coug {coug_number}", coug_number)
+
     #Connected to the "surface" signal
     def emergency_surface_button(self, coug_number):
-        # uint8 beacon_id --> coug_number
-        # ---
-        # bool success
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        #pop-up window
         dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self)
-        #if confirm is selected
         if dlg.exec():
             self.confirm_reject_label.setText("Starting Emergency Surface...")
-            #send the surface command message
-            return self.ros_node.cli2.call_async(message)
-        else: self.confirm_reject_label.setText("Canceling Emergency Surface command...")
-    
+            self.recieve_console_update(f"Starting Emergency Surface for {coug_number}", coug_number)
+            future = self.ros_node.cli2.call_async(message)
+            # Add callback to handle response
+            future.add_done_callback(partial(self.handle_service_response, action="Emergency Surface", coug_number=coug_number))
+            return future
+        else:
+            self.confirm_reject_label.setText("Canceling Emergency Surface command...")
+            self.recieve_console_update(f"Canceling Emergency Surface for Coug {coug_number}", coug_number)
+
+    #used by various buttons to handle services dynamically
+    def handle_service_response(self, future, action, coug_number):
+        try:
+            response = future.result()
+            if response.success:
+                self.confirm_reject_label.setText(f"{action} succeeded!")
+                self.recieve_console_update(f"{action} succeeded!", coug_number)
+            else:
+                self.confirm_reject_label.setText(f"{action} failed!")
+                self.recieve_console_update(f"{action} failed!", coug_number)
+        except Exception as e:
+            self.confirm_reject_label.setText(f"{action} service call failed: {e}")
+            self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
+
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
         dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self)
         if dlg.exec():
             self.confirm_reject_label.setText("Recalling the Cougs...")
+            for i in range(1, 4): self.recieve_console_update("Recalling the Cougs...", i)
         else:
             self.confirm_reject_label.setText("Canceling Recall All Cougs Command...")
+            for i in range(1, 4): self.recieve_console_update("Canceling Recall All Cougs Command...", i)
     
     #(NS) -> not yet connected to a signal
-    def recall_spec_coug(self):
+    def recall_spec_coug(self, coug_number):
         dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self)
         if dlg.exec():
-            self.confirm_reject_label.setText("Recalling the Coug...")
+            self.confirm_reject_label.setText(f"Recalling Coug {coug_number}...")
+            self.recieve_console_update(f"Recalling Coug {coug_number}...", coug_number)
         else:
             self.confirm_reject_label.setText("Canceling Recall Coug Command...")
+            self.recieve_console_update(f"Canceling Recall Coug {coug_number} Command...", coug_number)
 
     #template to make a vertical line
     def make_vline(self):
@@ -539,6 +567,8 @@ class MainWindow(QMainWindow):
     def create_specific_coug_console_log(self, coug_number): 
         temp_container = QWidget()
         temp_layout = QVBoxLayout(temp_container)
+        setattr(self, f"coug{coug_number}_console_layout", temp_layout)
+        setattr(self, f"coug{coug_number}_console_widget", temp_container)
 
         # First text label (bold title)
         title_text = "Console information/message log"
@@ -549,57 +579,13 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(title_label)
 
         # Second text label (wrapped long message)
-        message_text = (
-            "Welcome to the advanced testing log for your GUI layout system. This message is designed to span a significant "
-            "number of lines to ensure that your scrollable area handles content overflow gracefully. Each sentence contributes "
-            "to building a realistic use case where a developer or end user would need to read through a large volume of text.\n\n"
-
-            "In the world of robotics and embedded systems, message logs often include timestamps, sensor readings, diagnostic "
-            "information, and user feedback. These details can accumulate quickly, especially when a system is under load or when "
-            "multiple subsystems are reporting simultaneously. Properly managing how that data is displayed is essential.\n\n"
-
-            "Let’s consider a scenario where your GUI is being used to monitor a fleet of underwater robots. Each unit might "
-            "send frequent status reports including depth, heading, battery level, leak detection status, sonar returns, and "
-            "environmental sensor data such as temperature, salinity, and pressure. If a fault is detected, additional logs are "
-            "generated to help with troubleshooting.\n\n"
-
-            "This message simulates such an output. We begin with a system check: All modules initialized successfully. "
-            "IMU calibration com bla bla bla"
-
-            "Next, we observe active telemetry: Heading 253.7 degrees. Depth 14.6 meters. Internal temperature: 35.4°C. "
-            "Battery at 83%. Leak sensor nominal. DVL reports bottom lock achieved. Camera feed initialized.\n\n"
-
-            "From here, diagnostics continue: Propulsion test passed. Manipulator test failed: motor controller not responding. "
-            "Fallback routine engaged. Logging full diagnostic traceback for future analysis.\n\n"
-
-            "Users should be aware that any error or warning must be scannable and clearly distinguishable from regular output. "
-            "This can be done through font weight, color, or formatting styles such as indentation and bulleting. For example:\n"
-            "- ERROR: Manipulator arm failed to extend\n"
-            "- WARNING: Depth sensor value out of expected range\n"
-            "- INFO: Waiting for surface command acknowledgment\n\n"
-
-            "In a real interface, the user may copy this text for later use or export logs to a file. Therefore, the interface "
-            "should maintain formatting consistency and avoid cutting off words or lines unexpectedly.\n\n"
-
-            "Scrolling must be vertical only. Horizontal scrolling makes reading long logs a chore and degrades user experience. "
-            "Wrapping should occur at word boundaries to enhance legibility. Margins and line spacing should be adequate but not excessive.\n\n"
-
-            "This is line 30. Still scrolling? Good. If your vertical scrollbar is behaving, you’re seeing this message exactly as intended.\n\n"
-
-            "Let’s push to 40 lines: Data stream stable. Reconnection attempts: 0. Command acknowledgment rate: 99.7%. "
-            "Uplink stable. Downlink stable. Operator status: Connected. Console heartbeat confirmed.\n\n"
-
-            "Final diagnostics: All systems nominal. UI test passed. Scrollbar visible. Text wrapping complete. Layout responsive. "
-            "Mission control ready for deployment.\n\n"
-
-            "End of long message."
-        )
+        message_text = ""
 
         # Create a QLabel from the message_text for displaying the log
         message_label = QLabel(message_text)
         message_label.setWordWrap(True) # Enable word wrapping for readability
-        message_label.setFont(QFont("Arial", 15))
-        message_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        message_label.setFont(QFont("Arial", 13))
+        message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop) 
         message_label.setContentsMargins(0, 0, 0, 0)
         message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         message_label.setObjectName(f"Console_messages{coug_number}")
@@ -714,7 +700,7 @@ class MainWindow(QMainWindow):
         #system reboot (red)
         self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", "red", lambda: self.emergency_surface_button(coug_number))
         #abort mission (red)
-        self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", "red", self.recall_spec_coug)
+        self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", "red", lambda: self.recall_spec_coug(coug_number))
         #emergency shutdown (red)
         self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", "red", lambda: self.emergency_shutdown_button(coug_number))
 
@@ -1043,7 +1029,38 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
+            self.recieve_console_update("Exception in update_connections_gui:", coug_number)
             
+    def recieve_console_update(self, console_message, coug_number):
+        """
+        Slot to receive a console message and emit a signal to update the GUI.
+
+        Parameters:
+            console_message: The console message object.
+        """
+        self.update_console_signal.emit(console_message, coug_number)
+    
+    def _update_console_gui(self, console_message, coug_number):
+        """
+        Appends a new console message to the specific Coug's console log label.
+        """
+        try:
+            label = self.findChild(QLabel, f"Console_messages{coug_number}")
+            if label:
+                current_text = label.text()
+                if current_text:
+                    updated_text = current_text + "\n" + console_message
+                else:
+                    updated_text = console_message
+                label.setText(updated_text)
+            else:
+                print(f"Console log label not found for Coug {coug_number}")
+                self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)
+
+        except Exception as e:
+            print(f"Exception in _update_console_gui: {e}")
+            self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
+
     def receive_status(self, stat_message):
         """
         Slot to receive a Status message and emit a signal to update the GUI.
@@ -1117,6 +1134,8 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
+            self.recieve_console_update(f"Exception in update_connections_gui: {e}", coug_number)
+
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):

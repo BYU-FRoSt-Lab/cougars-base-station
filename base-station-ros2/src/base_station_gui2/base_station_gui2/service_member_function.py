@@ -39,15 +39,15 @@ class GuiNode(Node):
             10)   
 
         # Subscription for receiving Status messages from the 'status' topic
-        self.stat_subscription = self.create_subscription(
+        self.stat_subscription = self.create_subscription( 
             Status,
             'status',
             window.receive_status,  # Calls the GUI's receive_status method
-            10)
+            10) 
             
         # Service clients for emergency kill and surface services
-        self.cli = self.create_client(BeaconId, 'emergency_kill_service')
-        self.cli2 = self.create_client(BeaconId, 'emergency_surface_service')
+        self.cli = self.create_client(BeaconId, 'e_kill_service')
+        self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.subscription  # prevent unused variable warning
 
     def listener_callback(self, msg):
