@@ -312,7 +312,7 @@ class MainWindow(QMainWindow):
         dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self)
         if dlg.exec():
             self.confirm_reject_label.setText("Starting Emergency Shutdown...")
-            self.recieve_console_update(f"Starting Emergency Shutdown for {coug_number}", coug_number)
+            self.recieve_console_update(f"Starting Emergency Shutdown for Coug {coug_number}", coug_number)
             future = self.ros_node.cli.call_async(message)
             # Add callback to handle response
             future.add_done_callback(partial(self.handle_service_response, action="Emergency Shutdown", coug_number=coug_number))
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self)
         if dlg.exec():
             self.confirm_reject_label.setText("Starting Emergency Surface...")
-            self.recieve_console_update(f"Starting Emergency Surface for {coug_number}", coug_number)
+            self.recieve_console_update(f"Starting Emergency Surface for Coug {coug_number}", coug_number)
             future = self.ros_node.cli2.call_async(message)
             # Add callback to handle response
             future.add_done_callback(partial(self.handle_service_response, action="Emergency Surface", coug_number=coug_number))
@@ -342,11 +342,11 @@ class MainWindow(QMainWindow):
         try:
             response = future.result()
             if response.success:
-                self.confirm_reject_label.setText(f"{action} succeeded!")
-                self.recieve_console_update(f"{action} succeeded!", coug_number)
+                self.confirm_reject_label.setText(f"{action} Service Initiated Successfully")
+                self.recieve_console_update(f"{action} Service Initiated Successfully", coug_number)
             else:
-                self.confirm_reject_label.setText(f"{action} failed!")
-                self.recieve_console_update(f"{action} failed!", coug_number)
+                self.confirm_reject_label.setText(f"{action} Service Initilization Failed")
+                self.recieve_console_update(f"{action} Service Initilization Failed", coug_number)
         except Exception as e:
             self.confirm_reject_label.setText(f"{action} service call failed: {e}")
             self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
