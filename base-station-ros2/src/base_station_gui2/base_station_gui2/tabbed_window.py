@@ -1387,7 +1387,7 @@ class ConfigurationWindow(QDialog):
         # Create a checkbox for each option
         for opt in options:
             cb = QCheckBox(opt)
-            cb.setChecked(True)  # Default to checked, change as needed
+            cb.setChecked(False)  # Default to unchecked
             self.checkboxes[opt] = cb
             layout.addWidget(cb)
 
