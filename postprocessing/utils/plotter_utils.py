@@ -93,53 +93,59 @@ def cov_from_str(cov_str:str):
     size = int(np.sqrt(len(cov_list)))
     return np.array(cov_list).reshape((size,size))
 
-def plot_pose_w_imu(        
-        pose_df,
-        imu_df,
-        seconds_between_imu,
-        confidence=.95,
-        ax=None,
-        **kwargs):
-    if ax is None:
-        fig, ax = plt.subplots()
-    x_dist = pose_df["pose.pose.position.x"].max() - pose_df["pose.pose.position.x"].min()
-    y_dist = pose_df["pose.pose.position.y"].max() - pose_df["pose.pose.position.y"].min()
-    dist = 0.04*max(x_dist, y_dist) # Used to calculate the length of orientation lines
-
-    delta = pd.to_timedelta(seconds_between_imu, unit='s')
-    last_time = pose_df["timestamp"].iloc[0]
-    imu_index=0
-    for idx, row in pose_df.iterrows():
-        timestamp = row["timestamp"]
-        imu_stamp=imu_df["timestamp"]
-        if timestamp - last_time > delta:
-            last_time = timestamp
-            x = row["pose.pose.position.x"]
-            y = row["pose.pose.position.y"]
-            #find index of closest entry in imu df
-            while imu_stamp[imu_index]<timestamp:
-                imu_index+=1
-                #print(imu_index," : ",imu_stamp[imu_index])
-            # print(row.keys())
-            # print(imu_df.keys())
-            # print(imu_df["header.stamp.sec"].shape)
-            orient_x=imu_df["orientation.x"][imu_index]
-            orient_y=imu_df["orientation.y"][imu_index]
-            orient_z=imu_df["orientation.z"][imu_index]
-            orient_w=imu_df["orientation.w"][imu_index]
-            yaw=np.atan2(2*(orient_w*orient_z+orient_x*orient_y),1-2*(orient_y*orient_y+orient_z*orient_z))
-            plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-')
-            
-    pose_x = pose_df["pose.pose.position.x"]
-    pose_y = pose_df["pose.pose.position.y"]
-    ax.plot(pose_x,pose_y, **kwargs)
-    ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
-
-    ax.axis('equal')
-    return ax
-
     
-
+def plot_arb(
+        pose_dfs : list, #array of data frames
+        plot_pose_covariances : list, #array of bools
+        pose_colors: list, #arrat of strings of colors
+        vector_dfs : list, #array of dataframes of topics
+        vector_type : list, #TODO: auto detection, either 'imu' or 'twist', TODO: add more types if needed
+        seconds_between_vectors : int, #int
+        vector_colors : list, #array of strings of colors (e.g 'r-')
+        ax=None
+):
+    if ax is None:
+        fig, ax=plt.subplots()
+    delta=pd.to_timedelta(seconds_between_vectors, unit='s')
+    vector_index=[0]*len(vector_dfs)
+    vector_stamp=[None]*len(vector_dfs)
+    max_x=0
+    max_y=0
+    for pose_num in range(len(pose_dfs)):
+        pose_df=pose_dfs[pose_num]
+        last_time = pose_df["timestamp"].iloc[0]
+        for idx, row in pose_df.iterrows():
+            timestamp=row["timestamp"]
+            if timestamp - last_time > delta:
+                last_time=timestamp
+                x = row["pose.pose.position.x"]
+                y = row["pose.pose.position.y"]
+                if(x>max_x):
+                    max_x=x
+                if(y>max_y):
+                    max_y=y
+                for vector_id in range(len(vector_dfs)):
+                    vector_stamp[vector_id]=vector_dfs[vector_id]["timestamp"]
+                    while vector_stamp[vector_id][vector_index[vector_id]]<timestamp:
+                        vector_index[vector_id] +=1
+                    dist=max(max_x,max_y)*.05
+                    if vector_type[vector_id]=='imu':
+                        #do imu stuff
+                        orient_x=vector_dfs[vector_id]["orientation.x"][vector_index[vector_id]]
+                        orient_y=vector_dfs[vector_id]["orientation.y"][vector_index[vector_id]]
+                        orient_z=vector_dfs[vector_id]["orientation.z"][vector_index[vector_id]]
+                        orient_w=vector_dfs[vector_id]["orientation.w"][vector_index[vector_id]]
+                        yaw=np.atan2(2*(orient_w*orient_z+orient_x*orient_y),1-2*(orient_y*orient_y+orient_z*orient_z))
+                        plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], vector_colors[vector_id])
+                    elif vector_type[vector_id]=='twist':
+                        #do twist stuff
+                        orient_x=vector_dfs[vector_id]["twist.twist.linear.x"][vector_index[vector_id]]
+                        orient_y=vector_dfs[vector_id]["twist.twist.linear.y"][vector_index[vector_id]]
+                        plt.plot([x, x+dist*orient_x],[y, y+dist*orient_y], vector_colors[vector_id])
+        pose_x = pose_df["pose.pose.position.x"]
+        pose_y = pose_df["pose.pose.position.y"]
+        ax.plot(pose_x,pose_y,pose_colors[pose_num])
+    return ax
 def plot_pose_w_cov(
         pose_df,
         seconds_between_cov=2,
