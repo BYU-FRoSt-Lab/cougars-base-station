@@ -16,6 +16,8 @@ class MainWindow(QMainWindow):
     update_connections_signal = pyqtSignal(object)
     update_status_signal = pyqtSignal(object)
     update_console_signal = pyqtSignal(object, int)
+    kill_confirm_signal = pyqtSignal(object)
+    surface_confirm_signal = pyqtSignal(object)
     def __init__(self, ros_node):
         """
         Initializes GUI window with a ros node inside
@@ -149,6 +151,8 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(content_widget, name)
             self.set_background(content_widget, "cadetblue")
 
+        self.tabs.currentChanged.connect(self.scroll_console_to_bottom_on_tab)
+
         #Emergency exit GUI button
         self.emergency_exit_gui_button = QPushButton("Close GUI")
         self.emergency_exit_gui_button.clicked.connect(self.close_window)
@@ -179,6 +183,18 @@ class MainWindow(QMainWindow):
         self.update_connections_signal.connect(self._update_connections_gui)
         self.update_status_signal.connect(self._update_status_gui)
         self.update_console_signal.connect(self._update_console_gui)
+        self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
+        self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
+
+    def scroll_console_to_bottom_on_tab(self, index):
+        tab_name = self.tabs.tabText(index)
+        if tab_name.startswith("Coug"):
+            coug_number = int(tab_name.split()[-1])
+            scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+            if scroll_area:
+                # Process events to ensure layout is updated
+                QApplication.processEvents()
+                scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
@@ -952,15 +968,59 @@ class MainWindow(QMainWindow):
         text_label.setContentsMargins(0, 0, 0, 0)
         return text_label
 
-    #currently used as a proof of concept of receiving subscriptions
-    def recieve_message(self, message): 
+    def recieve_kill_confirmation_message(self, kill_message): 
         """
-        Slot to receive a message and display its data in the confirmation/rejection label.
-
+        Slot to receive a kill confirmation message from the ROS topic.
+        Emits a signal to update the GUI with the received message.
+        
         Parameters:
-            message: The message object containing a 'data' attribute.
+            kill_message: The message object received from the 'confirm_e_kill' topic (std_msgs/Bool).
         """
-        self.confirm_reject_label.setText(message.data)
+        self.kill_confirm_signal.emit(kill_message)
+
+    def _update_kill_confirmation_gui(self, kill_message): 
+        """
+        Slot connected to kill_confirm_signal.
+        Updates the GUI console with a confirmation or failure message for all Cougs,
+        depending on the value of the kill_message.
+        
+        Parameters:
+            kill_message: The message object received from the 'confirm_e_kill' topic (std_msgs/Bool).
+        """
+        value = kill_message.data if hasattr(kill_message, 'data') else kill_message
+        if value: 
+            for i in range(1, 4):
+                self.recieve_console_update("Kill Command Confirmed", i)
+        else: 
+            for i in range(1, 4):
+                self.recieve_console_update("Kill Command Failed", i)
+
+    def recieve_surface_confirmation_message(self, surf_message): 
+        """
+        Slot to receive a surface confirmation message from the ROS topic.
+        Emits a signal to update the GUI with the received message.
+        
+        Parameters:
+            surf_message: The message object received from the 'confirm_e_surface' topic (std_msgs/Bool).
+        """
+        self.surface_confirm_signal.emit(surf_message)
+
+    def _update_surf_confirmation_gui(self, surf_message):
+        """
+        Slot connected to surface_confirm_signal.
+        Updates the GUI console with a confirmation or failure message for all Cougs,
+        depending on the value of the surf_message.
+        
+        Parameters:
+            surf_message: The message object received from the 'confirm_e_surface' topic (std_msgs/Bool).
+        """
+        value = surf_message.data if hasattr(surf_message, 'data') else surf_message
+        if value: 
+            for i in range(1, 4):
+                self.recieve_console_update("Surface Command Confirmed", i)
+        else: 
+            for i in range(1, 4):
+                self.recieve_console_update("Surface Command Failed", i)
 
     def recieve_connections(self, conn_message):
         """
@@ -1014,7 +1074,7 @@ class MainWindow(QMainWindow):
                     # Optionally, set to a default or log a warning
                     self.feedback_dict[feedback_key][coug_number] = 2  # waiting/unknown
 
-            # Update seconds since last ping for each Coug
+            # Update seconds since last ping for each Cdef recieve_console_updateoug
             ping_list = list(conn_message.last_ping)
             for coug_number, ping in enumerate(ping_list, start=1):
                 self.feedback_dict[feedback_key_seconds][coug_number] = ping
@@ -1053,6 +1113,10 @@ class MainWindow(QMainWindow):
                 else:
                     updated_text = console_message
                 label.setText(updated_text)
+                # Scroll to the bottom of the scroll area
+                scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+                if scroll_area:
+                    scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
             else:
                 print(f"Console log label not found for Coug {coug_number}")
                 self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)

@@ -4,7 +4,7 @@ import signal
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -24,11 +24,17 @@ class GuiNode(Node):
         super().__init__('gui_node')
         # Publisher for sending String messages to the 'topic' topic
         self.publisher_ = self.create_publisher(String, 'topic', 10)
-        # Subscription for receiving String messages from the 'topic' topic
-        self.subscription = self.create_subscription(
-            String,
-            'topic',
-            window.recieve_message,  # Calls the GUI's recieve_message method
+
+        self.kill_subscription = self.create_subscription(
+            Bool,
+            'confirm_e_kill',
+            window.recieve_kill_confirmation_message,  # Calls the GUI's recieve_kill_confirmation_message method
+            10)        
+            
+        self.surface_subscription = self.create_subscription(
+            Bool,
+            'confirm_e_surface',
+            window.recieve_surface_confirmation_message,  # Calls the GUI's recieve_surface_confirmation_message method
             10)
 
         # Subscription for receiving Connections messages from the 'connections' topic
@@ -48,7 +54,6 @@ class GuiNode(Node):
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
-        self.subscription  # prevent unused variable warning
 
     def listener_callback(self, msg):
         """

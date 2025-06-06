@@ -22,7 +22,7 @@
 #         response.success = random.choice([True, False])
 #         self.get_logger().info(f"Received e_surface_service request: {request}")
 #         return response
-
+ 
 # def main():
 #     rclpy.init()
 #     node = EKillService()
