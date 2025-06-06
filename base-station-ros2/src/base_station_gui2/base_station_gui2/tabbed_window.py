@@ -2,7 +2,8 @@ import sys
 import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QSizePolicy, QSplashScreen, QSpacerItem, QGridLayout, QStyle, QWidget, QDialog, QDialogButtonBox
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
+    QStyle, QWidget, QDialog, QDialogButtonBox, QMessageBox
 )
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
@@ -18,7 +19,7 @@ class MainWindow(QMainWindow):
     update_console_signal = pyqtSignal(object, int)
     kill_confirm_signal = pyqtSignal(object)
     surface_confirm_signal = pyqtSignal(object)
-    def __init__(self, ros_node):
+    def __init__(self, ros_node, coug_dict):
         """
         Initializes GUI window with a ros node inside
 
@@ -31,59 +32,63 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("CoUGARS_GUI")
         scale = 300  #Manually scaling the window
         self.resize(QSize(4 * scale, 3 * scale))
-        # print(f"height: {self.height()}, width: {self.width()}")
+
+        self.selected_cougs = []
+
+        for coug_data, included in coug_dict.items():
+            if included: self.selected_cougs.append(int(str(coug_data[-1])))
 
         ###This is how the coug info gets into the GUI
         self.feedback_dict = {
             #0->negative, 1->positive, 2->waiting
             #Cougs 1-3 connections
-            "Wifi_connections": {1: 2, 2: 2, 3: 2},
-            "Radio_connections": {1: 2, 2: 2, 3: 2},
-            "Modem_connections": {1: 2, 2: 2, 3: 2},
+            "Wifi_connections": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Radio_connections": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Modem_connections": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #0->negative, 1->positive, 2->waiting
             #Cougs 1-3 sensors
-            "DVL_sensors": {1: 2, 2: 2, 3: 2},
-            "GPS_sensors": {1: 2, 2: 2, 3: 2},
-            "IMU_sensors": {1: 2, 2: 2, 3: 2},
-            "Leak_sensors": {1: 2, 2: 2, 3: 2},
-            "Battery_sensors": {1: 2, 2: 2, 3: 2},
+            "DVL_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "GPS_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "IMU_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Leak_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Battery_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 status messages
-            "Status_messages": {1: "", 2: "", 3: ""},
+            "Status_messages": {coug_num: "" for coug_num in self.selected_cougs},
 
             #Cougs 1-3 last messages
-            "Last_messages": {1: "", 2: "", 3: ""},
+            "Last_messages": {coug_num: "" for coug_num in self.selected_cougs},
 
             #Cougs 1-3 message logs, lists of strings
-            "Console_messages": {1: [], 2: [], 3: []},
+            "Console_messages": {coug_num: [] for coug_num in self.selected_cougs},
 
             #Cougs 1-3 message logs, lists of strings
-            "Missions": {1: "", 2: "", 3: ""},    
+            "Missions": {coug_num: "" for coug_num in self.selected_cougs},    
 
             #Cougs 1-3 seconds since last connection, list of ints
-            "Modem_seconds": {1: 2, 2: 2, 3: 2},    
+            "Modem_seconds": {coug_num: 2 for coug_num in self.selected_cougs},    
 
             #Cougs 1-3 seconds since last radio connection, list of ints
-            "Radio_seconds": {1: 2, 2: 2, 3: 2},     
+            "Radio_seconds": {coug_num: 2 for coug_num in self.selected_cougs},     
 
             #Cougs 1-3 X Position in the DVL frame
-            "XPos": {1: 2, 2: 2, 3: 2},     
+            "XPos": {coug_num: 2 for coug_num in self.selected_cougs},     
 
             #Cougs 1-3 Y Position in the DVL frame
-            "YPos": {1: 2, 2: 2, 3: 2},
+            "YPos": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 Depth, list of ints
-            "Depth": {1: 2, 2: 2, 3: 2},
+            "Depth": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 Heading, list of ints
-            "Heading": {1: 2, 2: 2, 3: 2},
+            "Heading": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 Waypoint, list of ints
-            "Waypoint": {1: 2, 2: 2, 3: 2},
+            "Waypoint": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 Velocities, list of ints
-            "DVL_vel": {1: 2, 2: 2, 3: 2}
+            "DVL_vel": {coug_num: 2 for coug_num in self.selected_cougs}
         }
 
         #this is used to connect the feedback_dict keys to what is actually printed, in _update_status_gui
@@ -115,12 +120,8 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
 
         #Placeholders for the tabs layout, to be accessed later. 
-        self.tab_dict = {
-            "General": [None, QHBoxLayout()],
-            "Coug 1": [None, QHBoxLayout()],
-            "Coug 2": [None, QHBoxLayout()],
-            "Coug 3": [None, QHBoxLayout()]
-        }
+        tab_names = ["General"] + [f"Coug {i}" for i in self.selected_cougs]
+        self.tab_dict = {name: [None, QHBoxLayout()] for name in tab_names}
 
         #create the widgets from the tab dict, assign layouts, and add each to self.tabs
         for name in self.tab_dict:
@@ -227,7 +228,7 @@ class MainWindow(QMainWindow):
             self.close()  
         else:
             self.confirm_reject_label.setText("Canceling Close Window command...")
-            for i in range(1, 4):
+            for i in self.selected_cougs:
                 self.recieve_console_update("Canceling Close Window command...", i)
 
     #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
@@ -250,7 +251,7 @@ class MainWindow(QMainWindow):
             index = parent_layout.indexOf(temp_widget)
         else:
             print(f"not found. widget_name: {widget_name} : parent_widget: {parent_widget} temp_widget: {temp_widget}")
-            for i in range(1, 4): self.recieve_console_update("GUI error. See terminal.", i)
+            for i in self.selected_cougs: self.recieve_console_update("GUI error. See terminal.", i)
             return
 
         parent_layout.removeWidget(temp_widget)
@@ -280,10 +281,10 @@ class MainWindow(QMainWindow):
     "/*Override the resizeEvent method in the sub class*/"
     def resizeEvent(self, event):
         size = self.size()
-        width_px = self.width() // 4
+        width_px = self.width() // (len(self.selected_cougs) + 1) - 10
         self.resizeTabs(width_px)
         # Dynamically resize each console scroll area
-        for i in range(1, 4):  # Assuming Coug 1-3
+        for i in self.selected_cougs:  # Assuming Coug 1-3
             scroll_area = getattr(self, f"coug{i}_console_scroll_area", None)
             if scroll_area:
                 scroll_area.setFixedHeight(int(self.height() * 0.2))
@@ -328,13 +329,13 @@ class MainWindow(QMainWindow):
     def load_missions_button(self):
         # Handler for 'Load Missions' button on the general tab.
         self.confirm_reject_label.setText("Loading the missions...")
-        for i in range(1, 4): self.recieve_console_update("Loading the missions...", i)
+        for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def start_missions_button(self):
         # Handler for 'Start Missions' button on the general tab.
         self.confirm_reject_label.setText("Starting the missions...")
-        for i in range(1, 4): self.recieve_console_update("Starting the missions...", i)
+        for i in self.selected_cougs: self.recieve_console_update("Starting the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def spec_load_missions_button(self, coug_number):
@@ -403,10 +404,10 @@ class MainWindow(QMainWindow):
         dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self)
         if dlg.exec():
             self.confirm_reject_label.setText("Recalling the Cougs...")
-            for i in range(1, 4): self.recieve_console_update("Recalling the Cougs...", i)
+            for i in self.selected_cougs: self.recieve_console_update("Recalling the Cougs...", i)
         else:
             self.confirm_reject_label.setText("Canceling Recall All Cougs Command...")
-            for i in range(1, 4): self.recieve_console_update("Canceling Recall All Cougs Command...", i)
+            for i in self.selected_cougs: self.recieve_console_update("Canceling Recall All Cougs Command...", i)
     
     #(NS) -> not yet connected to a signal
     def recall_spec_coug(self, coug_number):
@@ -438,46 +439,36 @@ class MainWindow(QMainWindow):
     #used to set all of the widgets on the "general" page tab
     def set_general_page_widgets(self):
         # Sets up the widgets and layouts for the General tab.
-        #retrieve the layout type from the tab dict
         self.general_page_layout = self.tab_dict["General"][1]
 
-        #create a container widget and a layout for it
+        # Create the first column (General Options)
         self.general_page_C0_widget = QWidget()
-        #widgets are layered vertically
         self.general_page_C0_layout = QVBoxLayout()
         self.general_page_C0_widget.setLayout(self.general_page_C0_layout)
-        
-        #create the widget and layout for the first column on the general page
-        self.general_page_C1_widget = QWidget()
-        self.general_page_C1_layout = QVBoxLayout()
-        self.general_page_C1_widget.setLayout(self.general_page_C1_layout)
 
-        #create the widget and layout for the second column on the general page
-        self.general_page_C2_widget = QWidget()
-        self.general_page_C2_layout = QVBoxLayout()
-        self.general_page_C2_widget.setLayout(self.general_page_C2_layout)
+        # Store widgets and layouts for each Coug column
+        self.general_page_coug_widgets = {}
+        self.general_page_coug_layouts = {}
 
-        #create the widget and layout for the third column on the general page
-        self.general_page_C3_widget = QWidget()
-        self.general_page_C3_layout = QVBoxLayout()
-        self.general_page_C3_widget.setLayout(self.general_page_C3_layout)
-
-        #add columns 1-3 to the general page layout, separated by vertical lines
+        # Add the first column to the layout
         self.general_page_layout.addWidget(self.general_page_C0_widget)
-        self.general_page_layout.addWidget(self.make_vline())
-        self.general_page_layout.addWidget(self.general_page_C1_widget)
-        self.general_page_layout.addWidget(self.make_vline())
-        self.general_page_layout.addWidget(self.general_page_C2_widget)
-        self.general_page_layout.addWidget(self.make_vline())
-        self.general_page_layout.addWidget(self.general_page_C3_widget)
 
-        #function used to add the buttons to the first column
+        # For each selected Coug, create a column and add to the layout, separated by vertical lines
+        for idx, coug_number in enumerate(self.selected_cougs):
+            self.general_page_layout.addWidget(self.make_vline())
+            widget = QWidget()
+            layout = QVBoxLayout()
+            widget.setLayout(layout)
+            self.general_page_layout.addWidget(widget)
+            self.general_page_coug_widgets[coug_number] = widget
+            self.general_page_coug_layouts[coug_number] = layout
+
+        # Add the buttons to the first column
         self.set_general_page_C0_widgets()
 
-        #set the widgets for columns 1-3 respectively
-        self.set_general_page_column_widgets(self.general_page_C1_layout, 1)
-        self.set_general_page_column_widgets(self.general_page_C2_layout, 2)
-        self.set_general_page_column_widgets(self.general_page_C3_layout, 3)
+        # Set the widgets for each Coug column
+        for coug_number in self.selected_cougs:
+            self.set_general_page_column_widgets(self.general_page_coug_layouts[coug_number], coug_number)
 
     #set the widgets of the first column on the general page
     def set_general_page_C0_widgets(self):
@@ -956,7 +947,7 @@ class MainWindow(QMainWindow):
         temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         temp_layout.addWidget(temp_label)        
-        
+
         # Mission description label
         temp_label = QLabel(f"This is where the mission for coug #{coug_number} will go.")
         temp_label.setWordWrap(True)
@@ -1027,10 +1018,10 @@ class MainWindow(QMainWindow):
         """
         value = kill_message.data if hasattr(kill_message, 'data') else kill_message
         if value: 
-            for i in range(1, 4):
+            for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Confirmed", i)
         else: 
-            for i in range(1, 4):
+            for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Failed", i)
 
     def recieve_surface_confirmation_message(self, surf_message): 
@@ -1054,10 +1045,10 @@ class MainWindow(QMainWindow):
         """
         value = surf_message.data if hasattr(surf_message, 'data') else surf_message
         if value: 
-            for i in range(1, 4):
+            for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Confirmed", i)
         else: 
-            for i in range(1, 4):
+            for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Failed", i)
 
     def recieve_connections(self, conn_message):
@@ -1242,10 +1233,9 @@ class MainWindow(QMainWindow):
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
     app = QApplication(sys.argv)
-
     window_width, window_height = 1200, 900
-    # pixmap = QPixmap(window_width, window_height)
-    # pixmap.fill(QColor("#5F9EA0"))
+
+    # Prepare splash image
     img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
     pixmap = QPixmap(img_path)
     if pixmap.isNull():
@@ -1253,11 +1243,9 @@ def OpenWindow(ros_node, borders=False):
         pixmap = QPixmap(window_width, window_height)
         pixmap.fill(QColor("#5F9EA0"))
     else:
-        # Composite PNG onto a solid background
         background = QPixmap(window_width, window_height)
-        background.fill(QColor("#5F9EA0"))  # Your desired background color
+        background.fill(QColor("#5F9EA0"))
         painter = QPainter(background)
-        # Center the PNG
         x = (window_width - pixmap.width()) // 2
         y = (window_height - pixmap.height()) // 2
         painter.drawPixmap(x, y, pixmap)
@@ -1265,19 +1253,18 @@ def OpenWindow(ros_node, borders=False):
         pixmap = background
 
     pixmap = pixmap.scaled(window_width, window_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-    splash = QSplashScreen(pixmap)
+    splash = CustomSplash(pixmap)
+    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
     splash.show()
 
-    # Move splash to the center of the screen where the mouse is (or primary screen)
+    # Move splash to the center of the screen
     screen = app.primaryScreen()
     if QApplication.screens():
-        # Optionally, use the screen where the mouse is
         mouse_pos = QCursor.pos()
         for scr in QApplication.screens():
             if scr.geometry().contains(mouse_pos):
                 screen = scr
                 break
-
     screen_geometry = screen.geometry()
     x = screen_geometry.x() + (screen_geometry.width() - window_width) // 2
     y = screen_geometry.y() + (screen_geometry.height() - window_height) // 2
@@ -1285,26 +1272,63 @@ def OpenWindow(ros_node, borders=False):
 
     app.processEvents()
 
+    # Show configuration dialog ON TOP of splash
+    options = [f"Coug {i}" for i in range(1, 5)]
+    dlg = ConfigurationWindow(options, parent=splash)
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+    dlg.move(
+        x + (window_width - dlg.width()) // 2,
+        y + (window_height - dlg.height()) // 2
+    )
+
+    selected_cougs = None
+    if dlg.exec():
+        #example selected_cougs: {'Coug 1': True, 'Coug 2': True, 'Coug 3': False, 'Coug 4': True}
+        selected_cougs = dlg.get_states()
+    else:
+        sys.exit(0)
+
+    # Raise the splash again in case it lost focus
+    splash.raise_()
+    splash.showMessage("Loading main window...")
+
     if borders:
         app.setStyleSheet("""*{border: 1px solid red;}""")
 
     result = {}
 
     def build_main_window():
-        # This function is called after a short delay to build and show the main window.
-        window = MainWindow(ros_node)
+        window = MainWindow(ros_node, selected_cougs)
         window.resize(window_width, window_height)
         window.move(x, y)
         result['window'] = window
-        # Show the main window after a further delay, then finish (hide) the splash screen.
         QTimer.singleShot(3000, lambda: (
             window.show(),
-            splash.finish(window)
+            window.activateWindow(),
+            splash.close()
         ))
 
-    # Start building the main window after a short delay to allow the splash to show.
     QTimer.singleShot(500, build_main_window)
     return app, result
+
+class CustomSplash(QWidget):
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.label = QLabel(self)
+        self.label.setPixmap(pixmap)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.resize(pixmap.size())
+        # Optional: Add a message label
+        self.message_label = QLabel("", self)
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter)
+        self.message_label.setStyleSheet("color: white; font-size: 18pt; font-weight: bold;")
+        self.message_label.setGeometry(0, pixmap.height() - 60, pixmap.width(), 60)
+
+    def showMessage(self, text):
+        self.message_label.setText(text)
 
 class AbortMissionsDialog(QDialog):
     """
@@ -1342,35 +1366,48 @@ class AbortMissionsDialog(QDialog):
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
 
-class SplashFinisher(QObject):
-    # This class is used to control when the splash screen is finished (hidden).
-    # It ensures the splash stays up for at least min_duration_ms and until the main window is painted.
-    def __init__(self, splash, window, min_duration_ms=2000):
-        super().__init__(window)
-        self.splash = splash
-        self.window = window
-        self._painted = False
-        self._timer_done = False
-        self._finished = False
-        # Start a timer for the minimum splash duration.
-        QTimer.singleShot(min_duration_ms, self._on_timer_done)
+class ConfigurationWindow(QDialog):
+    """
+    Custom configuration dialog with multiple checkboxes.
+    Returns the checked states as a dictionary if accepted.
+    """
+    def __init__(self, options, parent=None):
+        """
+        Parameters:
+            options (list of str): List of checkbox labels.
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Configuration")
+        self.checkboxes = {}
+        layout = QVBoxLayout()
 
-    def _on_timer_done(self):
-        # Called when the minimum splash duration has elapsed.
-        self._timer_done = True
-        self._maybe_finish()
+        # Make the dialog not resizable
+        self.setFixedSize(300, 200)  # Set to your preferred width and height
 
-    def eventFilter(self, obj, event):
-        # Event filter to detect when the main window is painted.
-        if obj is self.window and event.type() == QEvent.Type.Paint and not self._painted:
-            self._painted = True
-            self._maybe_finish()
-        return False
+        # Create a checkbox for each option
+        for opt in options:
+            cb = QCheckBox(opt)
+            cb.setChecked(True)  # Default to checked, change as needed
+            self.checkboxes[opt] = cb
+            layout.addWidget(cb)
 
-    def _maybe_finish(self):
-        # Only finish the splash if both the timer and the paint event have occurred.
-        if self._painted and self._timer_done and not self._finished:
-            self._finished = True
-            # Add a short delay before hiding the splash to ensure the window is ready.
-            QTimer.singleShot(700, lambda: self.splash.finish(self.window))
-            self.window.removeEventFilter(self)
+        # OK/Cancel buttons
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttonBox.accepted.connect(self.validate_and_accept)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+    
+    def validate_and_accept(self):
+        valid = False
+        states = self.get_states()
+        for coug_data, included in states.items():
+            if included: 
+                self.accept()
+                return
+        QMessageBox.warning(self, "Selection Required", "Please select at least one Coug before continuing.")
+
+    def get_states(self):
+        """
+        Returns a dict of {option: bool} for each checkbox.
+        """
+        return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
