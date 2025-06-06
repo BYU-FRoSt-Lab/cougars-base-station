@@ -956,12 +956,12 @@ class MainWindow(QMainWindow):
         temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         temp_layout.addWidget(temp_label)        
-
+        
         # Mission description label
         temp_label = QLabel(f"This is where the mission for coug #{coug_number} will go.")
         temp_label.setWordWrap(True)
         temp_label.setFont(QFont("Arial", 13))
-        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         temp_layout.addSpacing(20)
         temp_layout.addWidget(temp_label)
 
