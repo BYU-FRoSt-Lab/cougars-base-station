@@ -83,38 +83,45 @@ def main():
     """
     rclpy.init()
 
-    # Create the Qt application and main window
-    app, window = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
+    # Create the Qt application and main window (window will be set later)
+    app, result = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
 
-    # Create the ROS 2 node and assign it to the GUI window
-    gui_node = GuiNode(window)
-    window.ros_node = gui_node  # if you need to access the node from the GUI
+    def after_window_ready():
+        window = result.get('window')
+        if window is None:
+            # Try again shortly
+            QTimer.singleShot(50, after_window_ready)
+            return
 
-    # Create a single-threaded executor and add the node
-    executor = SingleThreadedExecutor()
-    executor.add_node(gui_node)
+        # Create the ROS 2 node and assign it to the GUI window
+        gui_node = GuiNode(window)
+        window.ros_node = gui_node  # if you need to access the node from the GUI
 
-    # Spin ROS 2 in a background thread so the Qt event loop can run
-    ros_thread = threading.Thread(target=ros_spin_thread, args=(executor,), daemon=True)
-    ros_thread.start()
+        # Create a single-threaded executor and add the node
+        executor = SingleThreadedExecutor()
+        executor.add_node(gui_node)
 
-    # Ensure Ctrl+C interrupts the Qt event loop
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+        # Spin ROS 2 in a background thread so the Qt event loop can run
+        ros_thread = threading.Thread(target=ros_spin_thread, args=(executor,), daemon=True)
+        ros_thread.start()
 
-    # Start a dummy QTimer to keep the Qt event loop alive
-    def start_timer():
-        timer = QTimer()
-        timer.timeout.connect(lambda: None)
-        timer.start(100)
+        # Ensure Ctrl+C interrupts the Qt event loop
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    QTimer.singleShot(0, start_timer)
+        # Start a dummy QTimer to keep the Qt event loop alive
+        def start_timer():
+            timer = QTimer()
+            timer.timeout.connect(lambda: None)
+            timer.start(100)
+        QTimer.singleShot(0, start_timer)
+
+    # Start polling for the window to be ready
+    QTimer.singleShot(0, after_window_ready)
 
     try:
         # Start the Qt event loop
         exit_code = app.exec()
     finally:
-        # Clean up ROS 2 resources on exit
-        gui_node.destroy_node()
         rclpy.shutdown()
         sys.exit(exit_code)
 

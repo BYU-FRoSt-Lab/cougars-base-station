@@ -1,12 +1,12 @@
 import sys 
-import random
+import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QSizePolicy, QSpacerItem, QGridLayout, QStyle, QWidget, QDialog, QDialogButtonBox
+    QSizePolicy, QSplashScreen, QSpacerItem, QGridLayout, QStyle, QWidget, QDialog, QDialogButtonBox
 )
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
-from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter
 
 from base_station_interfaces.srv import BeaconId
 from functools import partial
@@ -136,10 +136,12 @@ class MainWindow(QMainWindow):
             content_layout.addWidget(self.make_hline())
 
             if name.lower() != "general":
+                # For Coug tabs, add specific widgets and console log
                 content_layout.addWidget(self.set_specific_coug_widgets(int(name[-1])))
                 content_layout.addWidget(self.make_hline())
                 content_layout.addWidget(self.create_specific_coug_console_log(int(name[-1])))
             else:
+                # For General tab, add general widgets
                 content_layout.addWidget(content)
                 self.set_general_page_widgets()
 
@@ -151,6 +153,7 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(content_widget, name)
             self.set_background(content_widget, "cadetblue")
 
+        # Connect tab change to scroll-to-bottom for console logs
         self.tabs.currentChanged.connect(self.scroll_console_to_bottom_on_tab)
 
         #Emergency exit GUI button
@@ -186,14 +189,31 @@ class MainWindow(QMainWindow):
         self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
         self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
 
+        # self.show()
+
     def scroll_console_to_bottom_on_tab(self, index):
+        """
+        Ensures the console log for a Coug tab is always scrolled to the bottom when the tab is selected.
+
+        This function is connected to the QTabWidget's currentChanged signal. When the user switches
+        to a Coug tab, it finds the corresponding QScrollArea for that Coug's console log and scrolls
+        it to the bottom, so the latest messages are always visible.
+
+        Parameters:
+            index (int): The index of the newly selected tab.
+        """
+        # Get the name of the tab at the given index
         tab_name = self.tabs.tabText(index)
+        # Only act if the tab is a Coug tab (e.g., "Coug 1", "Coug 2", "Coug 3")
         if tab_name.startswith("Coug"):
+            # Extract the Coug number from the tab name
             coug_number = int(tab_name.split()[-1])
+            # Get the scroll area for this Coug's console log
             scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
             if scroll_area:
-                # Process events to ensure layout is updated
+                # Process any pending events to ensure the layout is up to date
                 QApplication.processEvents()
+                # Scroll the vertical scrollbar to the maximum (bottom)
                 scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
@@ -207,8 +227,8 @@ class MainWindow(QMainWindow):
             self.close()  
         else:
             self.confirm_reject_label.setText("Canceling Close Window command...")
-            self.recieve_console_update("Canceling Close Window command...", coug_number)
-            for i in range(1, 4): self.recieve_console_update("Canceling Close Window command...", i)
+            for i in range(1, 4):
+                self.recieve_console_update("Canceling Close Window command...", i)
 
     #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
     def replace_label(self, widget_name, parent_layout, parent_widget, new_label, color=""):
@@ -245,6 +265,7 @@ class MainWindow(QMainWindow):
         parent_layout.insertWidget(index, new_label)
 
     def get_status_message_color(self, message):
+        # Returns a color and possibly modified message string based on status.
         if message.lower() == "running": message_color = "green"
         elif message.lower() == "no connection": message_color = "red"
         elif message.lower() == "waiting": message_color = "yellow"
@@ -278,6 +299,7 @@ class MainWindow(QMainWindow):
 
     "/*resize the tabs according to the width of the window*/"
     def resizeTabs(self, width_px):
+        # Sets the stylesheet for tab width and appearance.
         self.tabs.setStyleSheet(f"""
         QTabBar::tab {{
             height: 30px;
@@ -296,6 +318,7 @@ class MainWindow(QMainWindow):
 
     #used to initialize the background of the tabs
     def set_background(self, widget, color):
+        # Sets the background color of a widget.
         palette = widget.palette()
         palette.setColor(widget.backgroundRole(), QColor(color))
         widget.setAutoFillBackground(True)
@@ -303,26 +326,31 @@ class MainWindow(QMainWindow):
 
     #(NS) -> not yet connected to a signal
     def load_missions_button(self):
+        # Handler for 'Load Missions' button on the general tab.
         self.confirm_reject_label.setText("Loading the missions...")
         for i in range(1, 4): self.recieve_console_update("Loading the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def start_missions_button(self):
+        # Handler for 'Start Missions' button on the general tab.
         self.confirm_reject_label.setText("Starting the missions...")
         for i in range(1, 4): self.recieve_console_update("Starting the missions...", i)
 
     #(NS) -> not yet connected to a signal
     def spec_load_missions_button(self, coug_number):
+        # Handler for 'Load Mission' button on a specific Coug tab.
         self.confirm_reject_label.setText(f"Loading Coug {coug_number} mission...")
         self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
 
     #(NS) -> not yet connected to a signal
     def spec_start_missions_button(self, coug_number):
+        # Handler for 'Start Mission' button on a specific Coug tab.
         self.confirm_reject_label.setText(f"Starting Coug {coug_number} mission...")
         self.recieve_console_update(f"Starting Coug {coug_number} mission...", coug_number)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, coug_number):
+        # Handler for 'Emergency Shutdown' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
         dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self)
@@ -339,6 +367,7 @@ class MainWindow(QMainWindow):
 
     #Connected to the "surface" signal
     def emergency_surface_button(self, coug_number):
+        # Handler for 'Emergency Surface' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
         dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self)
@@ -355,6 +384,7 @@ class MainWindow(QMainWindow):
 
     #used by various buttons to handle services dynamically
     def handle_service_response(self, future, action, coug_number):
+        # Handles the result of an asynchronous ROS service call.
         try:
             response = future.result()
             if response.success:
@@ -369,6 +399,7 @@ class MainWindow(QMainWindow):
 
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
+        # Handler for 'Recall Cougs' button on the general tab, with confirmation dialog.
         dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self)
         if dlg.exec():
             self.confirm_reject_label.setText("Recalling the Cougs...")
@@ -379,6 +410,7 @@ class MainWindow(QMainWindow):
     
     #(NS) -> not yet connected to a signal
     def recall_spec_coug(self, coug_number):
+        # Handler for 'Recall Coug' button on a specific Coug tab, with confirmation dialog.
         dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self)
         if dlg.exec():
             self.confirm_reject_label.setText(f"Recalling Coug {coug_number}...")
@@ -389,6 +421,7 @@ class MainWindow(QMainWindow):
 
     #template to make a vertical line
     def make_vline(self):
+        # Returns a vertical line QFrame for use in layouts.
         Vline = QFrame()
         Vline.setFrameShape(QFrame.Shape.VLine)
         Vline.setFrameShadow(QFrame.Shadow.Sunken)
@@ -396,6 +429,7 @@ class MainWindow(QMainWindow):
 
     #template to make a horizontal line
     def make_hline(self):
+        # Returns a horizontal line QFrame for use in layouts.
         Hline = QFrame()
         Hline.setFrameShape(QFrame.Shape.HLine)
         Hline.setFrameShadow(QFrame.Shadow.Sunken)
@@ -403,6 +437,7 @@ class MainWindow(QMainWindow):
 
     #used to set all of the widgets on the "general" page tab
     def set_general_page_widgets(self):
+        # Sets up the widgets and layouts for the General tab.
         #retrieve the layout type from the tab dict
         self.general_page_layout = self.tab_dict["General"][1]
 
@@ -484,6 +519,7 @@ class MainWindow(QMainWindow):
             
     #template to set the rest of widgets on the rest of the columns on the general page
     def set_general_page_column_widgets(self, layout, coug_number):
+        # Sets up the widgets for each Coug column on the General tab.
         # Create and style the header label for each coug column
         title_label = QLabel(f"Coug {coug_number}:")
         title_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
@@ -561,6 +597,7 @@ class MainWindow(QMainWindow):
 
     #This is used to set the widgets on the other tabs, namely Coug1, Coug2, Coug3, etc
     def set_specific_coug_widgets(self, coug_number):
+        # Sets up the widgets for a specific Coug tab.
         #temporary container for the entire tab
         temp_container = QWidget()
         temp_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -581,6 +618,7 @@ class MainWindow(QMainWindow):
 
     #The scrolling log at the bottom of the specific coug tabs. 
     def create_specific_coug_console_log(self, coug_number): 
+        # Creates the scrollable console log area for a specific Coug tab.
         temp_container = QWidget()
         temp_layout = QVBoxLayout(temp_container)
         setattr(self, f"coug{coug_number}_console_layout", temp_layout)
@@ -1116,11 +1154,11 @@ class MainWindow(QMainWindow):
                 # Scroll to the bottom of the scroll area
                 scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
                 if scroll_area:
-                    scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
+                    # Defer scrolling to after the event loop processes the label update
+                    QTimer.singleShot(50, lambda: scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum()))
             else:
                 print(f"Console log label not found for Coug {coug_number}")
                 self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)
-
         except Exception as e:
             print(f"Exception in _update_console_gui: {e}")
             self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
@@ -1203,22 +1241,70 @@ class MainWindow(QMainWindow):
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
-    """
-    Used by ROS to open a window. Starts the PyQt application on a different thread than ROS.
-
-    Parameters:
-        ros_node: The ROS node to pass to the MainWindow.
-        borders (bool): If True, adds a red border to all widgets for debugging layout.
-
-    Returns:
-        tuple: (QApplication instance, MainWindow instance)
-    """
     app = QApplication(sys.argv)
+
+    window_width, window_height = 1200, 900
+    # pixmap = QPixmap(window_width, window_height)
+    # pixmap.fill(QColor("#5F9EA0"))
+    img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
+    pixmap = QPixmap(img_path)
+    if pixmap.isNull():
+        print(f"Warning: Could not load splash image '{img_path}'. Using solid color instead.")
+        pixmap = QPixmap(window_width, window_height)
+        pixmap.fill(QColor("#5F9EA0"))
+    else:
+        # Composite PNG onto a solid background
+        background = QPixmap(window_width, window_height)
+        background.fill(QColor("#5F9EA0"))  # Your desired background color
+        painter = QPainter(background)
+        # Center the PNG
+        x = (window_width - pixmap.width()) // 2
+        y = (window_height - pixmap.height()) // 2
+        painter.drawPixmap(x, y, pixmap)
+        painter.end()
+        pixmap = background
+
+    pixmap = pixmap.scaled(window_width, window_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    splash = QSplashScreen(pixmap)
+    splash.show()
+
+    # Move splash to the center of the screen where the mouse is (or primary screen)
+    screen = app.primaryScreen()
+    if QApplication.screens():
+        # Optionally, use the screen where the mouse is
+        mouse_pos = QCursor.pos()
+        for scr in QApplication.screens():
+            if scr.geometry().contains(mouse_pos):
+                screen = scr
+                break
+
+    screen_geometry = screen.geometry()
+    x = screen_geometry.x() + (screen_geometry.width() - window_width) // 2
+    y = screen_geometry.y() + (screen_geometry.height() - window_height) // 2
+    splash.move(x, y)
+
+    app.processEvents()
+
     if borders:
         app.setStyleSheet("""*{border: 1px solid red;}""")
-    window = MainWindow(ros_node)
-    window.show()
-    return app, window  # Return both
+
+    result = {}
+
+    def build_main_window():
+        # This function is called after a short delay to build and show the main window.
+        window = MainWindow(ros_node)
+        window.resize(window_width, window_height)
+        window.move(x, y)
+        result['window'] = window
+        # Show the main window after a further delay, then finish (hide) the splash screen.
+        QTimer.singleShot(3000, lambda: (
+            window.show(),
+            splash.finish(window)
+        ))
+
+    # Start building the main window after a short delay to allow the splash to show.
+    QTimer.singleShot(500, build_main_window)
+    return app, result
 
 class AbortMissionsDialog(QDialog):
     """
@@ -1255,3 +1341,36 @@ class AbortMissionsDialog(QDialog):
         layout.addWidget(message)
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
+
+class SplashFinisher(QObject):
+    # This class is used to control when the splash screen is finished (hidden).
+    # It ensures the splash stays up for at least min_duration_ms and until the main window is painted.
+    def __init__(self, splash, window, min_duration_ms=2000):
+        super().__init__(window)
+        self.splash = splash
+        self.window = window
+        self._painted = False
+        self._timer_done = False
+        self._finished = False
+        # Start a timer for the minimum splash duration.
+        QTimer.singleShot(min_duration_ms, self._on_timer_done)
+
+    def _on_timer_done(self):
+        # Called when the minimum splash duration has elapsed.
+        self._timer_done = True
+        self._maybe_finish()
+
+    def eventFilter(self, obj, event):
+        # Event filter to detect when the main window is painted.
+        if obj is self.window and event.type() == QEvent.Type.Paint and not self._painted:
+            self._painted = True
+            self._maybe_finish()
+        return False
+
+    def _maybe_finish(self):
+        # Only finish the splash if both the timer and the paint event have occurred.
+        if self._painted and self._timer_done and not self._finished:
+            self._finished = True
+            # Add a short delay before hiding the splash to ensure the window is ready.
+            QTimer.singleShot(700, lambda: self.splash.finish(self.window))
+            self.window.removeEventFilter(self)
