@@ -124,6 +124,7 @@ public:
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
     {
         check_modem_connections();
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
 
         RequestStatus request_status_msg;
         send_acoustic_message(request->beacon_id, sizeof(request_status_msg), (uint8_t*)&request_status_msg, MSG_OWAY);
@@ -145,6 +146,7 @@ public:
         status_msg.dvl_running = status->dvl_running;
         status_msg.gps_connection = status->gps_connection;
         status_msg.leak_detection = status->leak_detection;
+        status_msg.waypoint = status->waypoint;
 
         this->status_publisher_->publish(status_msg);
         

@@ -99,7 +99,7 @@ public:
 
         for(int64_t i: vehicles_in_mission_){
             modem_connection[i] = true;
-            radio_connection[i] = true;  
+            radio_connection[i] = false; // radio connection is not established by default
         }
 
 
@@ -108,48 +108,72 @@ public:
     }
 
     void listen_to_connections(const base_station_interfaces::msg::Connections::SharedPtr msg) {
-        // update the connections to the cougs
-        int i = 0;
-        for (const auto& beacon_id : this->vehicles_in_mission_) {
+        RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Updating connections for cougs");
+
+        size_t n = std::min(vehicles_in_mission_.size(), msg->connections.size());
+        for (size_t i = 0; i < n; ++i) {
+            int beacon_id = vehicles_in_mission_[i];
             if (msg->connection_type == 1) {
                 radio_connection[beacon_id] = msg->connections[i];
             } else if (msg->connection_type == 0) {
                 modem_connection[beacon_id] = msg->connections[i];
             }
-            i++;
         }
     }
 
     void request_status_callback(){
-       
+        if (vehicles_in_mission_.empty()) {
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "No vehicles in mission — skipping status request.");
+            return;
+}   
         vehicle_id_index += 1;
         if (vehicle_id_index+1>=vehicles_in_mission_.size())
             vehicle_id_index = 0;
-        
+        vehicle_id_index = 0;
         auto request = std::make_shared<base_station_interfaces::srv::BeaconId::Request>();
         int beacon_id = vehicles_in_mission_[vehicle_id_index];
         request->beacon_id = beacon_id;
 
         if (radio_connection[beacon_id]){
 
-            radio_status_request_client_->async_send_request(request,
+            if (!radio_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
+                RCLCPP_WARN(rclcpp::get_logger("rclcpp"),
+                    "Radio status request service not available for Coug %i. Skipping request.", beacon_id);
+                return;
+            }
+
+            auto result_future = radio_status_request_client_->async_send_request(request,
                 [this, beacon_id](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
-                    auto response = future.get();
-                    if (response->success)
-                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through radio", beacon_id);
-                    else
-                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through radio failed", beacon_id);
+                    try {
+                        auto response = future.get();
+                        if (response->success)
+                            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through radio", beacon_id);
+                        else
+                            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through radio failed", beacon_id);
+                    } catch (const std::exception& e) {
+                        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Exception while requesting status from Coug %i: %s", beacon_id, e.what());
+                    }
                 });
 
         } else if (modem_connection[beacon_id]) {
-            
-            modem_status_request_client_->async_send_request(request,
+
+            if (!modem_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
+                RCLCPP_WARN(rclcpp::get_logger("rclcpp"),
+                    "Modem status request service not available for Coug %i. Skipping request.", beacon_id);
+                return;
+            }
+
+            auto result_future = modem_status_request_client_->async_send_request(request,
                 [this, beacon_id](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
-                    auto response = future.get();
-                    if (response->success)
-                        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through modem", beacon_id);
-                    else
-                        RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through modem failed", beacon_id);
+                    try {
+                        auto response = future.get();
+                        if (response->success)
+                            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Requesting status from Coug %i through modem", beacon_id);
+                        else
+                            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request from Coug %i through modem failed", beacon_id);
+                    } catch (const std::exception& e) {
+                        RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Exception while requesting status from Coug %i: %s", beacon_id, e.what());
+                    }
                 });
 
         } else {
