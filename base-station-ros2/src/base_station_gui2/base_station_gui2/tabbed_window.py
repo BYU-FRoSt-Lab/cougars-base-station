@@ -19,6 +19,7 @@ class MainWindow(QMainWindow):
     update_console_signal = pyqtSignal(object, int)
     kill_confirm_signal = pyqtSignal(object)
     surface_confirm_signal = pyqtSignal(object)
+    handle_service_signal = pyqtSignal(str, object, object, str, str)
     def __init__(self, ros_node, coug_dict):
         """
         Initializes GUI window with a ros node inside
@@ -189,8 +190,7 @@ class MainWindow(QMainWindow):
         self.update_console_signal.connect(self._update_console_gui)
         self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
         self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
-
-        # self.show()
+        self.handle_service_signal.connect(self.handle_service_label_replacement)
 
     def scroll_console_to_bottom_on_tab(self, index):
         """
@@ -243,7 +243,6 @@ class MainWindow(QMainWindow):
             new_label: the new text/icon the label will be changed to
             color: optional color to change the label to
         """
-
         #find the widget in reference to its parent widget
         temp_widget = parent_widget.findChild(QWidget, widget_name)
         if temp_widget:
@@ -390,14 +389,32 @@ class MainWindow(QMainWindow):
             response = future.result()
             if response.success:
                 self.confirm_reject_label.setText(f"{action} Service Initiated Successfully")
-                self.recieve_console_update(f"{action} Service Initiated Successfully", coug_number)
+
+                for i in self.selected_cougs:
+                    self.recieve_console_update(f"{action} Service Initiated Successfully", i)
+                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initiated Successfully"
+                    layout = self.general_page_coug_layouts.get(i)
+                    widget = self.general_page_coug_widgets.get(i)
+                    self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "green")
+
             else:
                 self.confirm_reject_label.setText(f"{action} Service Initilization Failed")
-                self.recieve_console_update(f"{action} Service Initilization Failed", coug_number)
+
+                for i in self.selected_cougs:
+                    self.recieve_console_update(f"{action} Service Initilization Failed", i)
+                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initilization Failed"
+                    layout = self.general_page_coug_layouts.get(i)
+                    widget = self.general_page_coug_widgets.get(i)
+                    self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "red")
+       
         except Exception as e:
             self.confirm_reject_label.setText(f"{action} service call failed: {e}")
             if coug_number in self.selected_cougs: self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
             else: print(f"{action} service call failed: {e}")
+
+    def handle_service_label_replacement(self, widget_name, parent_layout, parent_widget, new_label, color):
+        new_last_label = QLabel(new_label, font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+        self.replace_label(widget_name, parent_layout, parent_widget, new_last_label, color)
 
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
@@ -573,7 +590,7 @@ class MainWindow(QMainWindow):
 
             #The Last Message section contains the last message from each Coug respectively
             elif title == "Last Message":
-                last_message = self.feedback_dict["Status_messages"][coug_number]
+                last_message = self.feedback_dict["Last_messages"][coug_number]
                 if last_message: 
                     last_mesage_label = QLabel(self.feedback_dict["Last_messages"][coug_number], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
                 else:
@@ -1021,9 +1038,19 @@ class MainWindow(QMainWindow):
         if value: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Confirmed", i)
+                self.feedback_dict["Last_messages"][i] = "Kill Command Confirmed"
+                layout = self.general_page_coug_layouts.get(i)
+                widget = self.general_page_coug_widgets.get(i)
+                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "green")
         else: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Failed", i)
+                self.feedback_dict["Last_messages"][i] = "Kill Command Failed"
+                layout = self.general_page_coug_layouts.get(i)
+                widget = self.general_page_coug_widgets.get(i)
+                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "red")
 
     def recieve_surface_confirmation_message(self, surf_message): 
         """
@@ -1048,9 +1075,19 @@ class MainWindow(QMainWindow):
         if value: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Confirmed", i)
+                self.feedback_dict["Last_messages"][i] = "Surface Command Confirmed"
+                layout = self.general_page_coug_layouts.get(i)
+                widget = self.general_page_coug_widgets.get(i)
+                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "green")
         else: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Failed", i)
+                self.feedback_dict["Last_messages"][i] = "Surface Command Failed"
+                layout = self.general_page_coug_layouts.get(i)
+                widget = self.general_page_coug_widgets.get(i)
+                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "red")
 
     def recieve_connections(self, conn_message):
         """
@@ -1128,9 +1165,9 @@ class MainWindow(QMainWindow):
         status = ""
         connection_types = ["Wifi_connections", "Radio_connections", "Modem_connections"]
         temp_connections_list = [self.feedback_dict[ctype][coug_number] for ctype in connection_types]
-        if 1 in temp_connections_list: status = "connected"
-        elif 0 in temp_connections_list: status = "no connection"
-        else: status = "no data"
+        if 1 in temp_connections_list: status = "Connected"
+        elif 0 in temp_connections_list: status = "No Connection"
+        else: status = "No Data"
         status_color, status = self.get_status_message_color(status)
         temp_label = QLabel(f"{status}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
         return temp_label, status_color
