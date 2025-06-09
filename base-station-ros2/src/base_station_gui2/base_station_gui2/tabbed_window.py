@@ -398,11 +398,11 @@ class MainWindow(QMainWindow):
                     self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "green")
 
             else:
-                self.confirm_reject_label.setText(f"{action} Service Initilization Failed")
+                self.confirm_reject_label.setText(f"{action} Service Initialization Failed")
 
                 for i in self.selected_cougs:
-                    self.recieve_console_update(f"{action} Service Initilization Failed", i)
-                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initilization Failed"
+                    self.recieve_console_update(f"{action} Service Initialization Failed", i)
+                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initialization Failed"
                     layout = self.general_page_coug_layouts.get(i)
                     widget = self.general_page_coug_widgets.get(i)
                     self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "red")
