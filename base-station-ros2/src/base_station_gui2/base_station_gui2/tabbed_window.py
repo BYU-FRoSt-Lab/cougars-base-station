@@ -1,4 +1,3 @@
-#test
 import sys 
 import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
