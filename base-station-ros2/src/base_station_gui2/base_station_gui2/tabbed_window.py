@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
         self.container = QWidget()
         self.container.setObjectName("MyContainer")
         self.container.setLayout(self.main_layout)
-        #the container with the main layout is set as teh central widget
+        #the container with the main layout is set as the central widget
         self.setCentralWidget(self.container)
 
         #creates a signal that is sent from recieve_connections, and sent to _update_connections_gui. 
@@ -267,9 +267,9 @@ class MainWindow(QMainWindow):
 
     def get_status_message_color(self, message):
         # Returns a color and possibly modified message string based on status.
-        if message.lower() == "running": message_color = "green"
+        if message.lower() == "connected": message_color = "green"
         elif message.lower() == "no connection": message_color = "red"
-        elif message.lower() == "waiting": message_color = "yellow"
+        elif message.lower() == "no data": message_color = "yellow"
         elif not message: 
             message_color = "orange"
             message = "No message to be read"
@@ -567,7 +567,7 @@ class MainWindow(QMainWindow):
                 status_color, status = self.get_status_message_color(status)
                 label = QLabel(f"{status}", font=QFont("Arial", 13))
                 label.setObjectName(f"Status_messages{coug_number}")
-                label.setStyleSheet(f"color: {status_color};")  # Change 'red' to any color you want (name, hex, rgb)
+                label.setStyleSheet(f"color: {status_color};")
                 layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
                 layout.addSpacing(40)
 
@@ -1087,7 +1087,7 @@ class MainWindow(QMainWindow):
                 conn_type = 0
 
             # Update connection status icons for each Coug
-            for coug_number, data in self.feedback_dict[feedback_key].items():
+            for coug_number, data in self.feedback_dict[feedback_key].items(): 
                 if coug_number-1 < len(conn_message.connections):
                     status = 1 if conn_message.connections[coug_number-1] else 0
                     self.feedback_dict[feedback_key][coug_number] = status
@@ -1096,6 +1096,8 @@ class MainWindow(QMainWindow):
                     layout = self.general_page_coug_layouts.get(coug_number)
                     widget = self.general_page_coug_widgets.get(coug_number)
                     self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+                    new_status_label, status_color = self.get_status_label(coug_number)
+                    self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
                     new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
                     layout = getattr(self, f"coug{coug_number}_column0_layout")
                     widget = getattr(self, f"coug{coug_number}_column0_widget")
@@ -1121,8 +1123,18 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print("Exception in update_connections_gui:", e)
             if coug_number in self.selected_cougs: self.recieve_console_update("Exception in update_connections_gui:", coug_number)
-            print()
             
+    def get_status_label(self, coug_number):
+        status = ""
+        connection_types = ["Wifi_connections", "Radio_connections", "Modem_connections"]
+        temp_connections_list = [self.feedback_dict[ctype][coug_number] for ctype in connection_types]
+        if 1 in temp_connections_list: status = "connected"
+        elif 0 in temp_connections_list: status = "no connection"
+        else: status = "no data"
+        status_color, status = self.get_status_message_color(status)
+        temp_label = QLabel(f"{status}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+        return temp_label, status_color
+
     def recieve_console_update(self, console_message, coug_number):
         """
         Slot to receive a console message and emit a signal to update the GUI.
