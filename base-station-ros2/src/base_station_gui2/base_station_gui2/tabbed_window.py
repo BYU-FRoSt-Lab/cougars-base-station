@@ -74,8 +74,8 @@ class MainWindow(QMainWindow):
             "Radio_seconds": {coug_num: 2 for coug_num in self.selected_cougs},     
 
             #Cougs 1-3 X Position in the DVL frame
-            "XPos": {coug_num: 2 for coug_num in self.selected_cougs},     
-
+            "XPos": {coug_num: 2 for coug_num in self.selected_cougs},        
+            
             #Cougs 1-3 Y Position in the DVL frame
             "YPos": {coug_num: 2 for coug_num in self.selected_cougs},
 
