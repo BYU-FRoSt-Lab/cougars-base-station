@@ -396,7 +396,8 @@ class MainWindow(QMainWindow):
                 self.recieve_console_update(f"{action} Service Initilization Failed", coug_number)
         except Exception as e:
             self.confirm_reject_label.setText(f"{action} service call failed: {e}")
-            self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
+            if coug_number in self.selected_cougs: self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
+            else: print(f"{action} service call failed: {e}")
 
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
@@ -1092,8 +1093,8 @@ class MainWindow(QMainWindow):
                     self.feedback_dict[feedback_key][coug_number] = status
                     prefix = feedback_key.split("_")[0]
                     new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
-                    layout = getattr(self, f"general_page_C{coug_number}_layout")
-                    widget = getattr(self, f"general_page_C{coug_number}_widget")
+                    layout = self.general_page_coug_layouts.get(coug_number)
+                    widget = self.general_page_coug_widgets.get(coug_number)
                     self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
                     new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
                     layout = getattr(self, f"coug{coug_number}_column0_layout")
@@ -1106,9 +1107,10 @@ class MainWindow(QMainWindow):
             # Update seconds since last ping for each Cdef recieve_console_updateoug
             ping_list = list(conn_message.last_ping)
             for coug_number, ping in enumerate(ping_list, start=1):
+                if coug_number not in self.selected_cougs: continue
                 self.feedback_dict[feedback_key_seconds][coug_number] = ping
-                layout = getattr(self, f"coug{coug_number}_buttons_column_layout")
-                widget = getattr(self, f"coug{coug_number}_buttons_column_widget")
+                layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
+                widget = getattr(self, f"coug{coug_number}_buttons_column_widget", None)
                 new_seconds_label = self.create_seconds_label(conn_type, ping)
                 if conn_type:
                     old_label = f"coug{coug_number}_radio_seconds_widget"
@@ -1118,7 +1120,8 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
-            self.recieve_console_update("Exception in update_connections_gui:", coug_number)
+            if coug_number in self.selected_cougs: self.recieve_console_update("Exception in update_connections_gui:", coug_number)
+            print()
             
     def recieve_console_update(self, console_message, coug_number):
         """
@@ -1152,7 +1155,7 @@ class MainWindow(QMainWindow):
                 self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)
         except Exception as e:
             print(f"Exception in _update_console_gui: {e}")
-            self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
+            if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
 
     def receive_status(self, stat_message):
         """
@@ -1184,6 +1187,7 @@ class MainWindow(QMainWindow):
         #   bool leak_detection
         try:
             coug_number = stat_message.vehicle_id
+            if coug_number not in self.selected_cougs: return
             # update the feedback dict with the new status using a loop
             status_keys = [
                 ("XPos", "x"),
@@ -1221,14 +1225,13 @@ class MainWindow(QMainWindow):
                     self.replace_label(f"Spec_{key}{coug_number}", layout, widget, new_label)
                     if key != "Leak_sensors":
                         new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
-                        layout = getattr(self, f"general_page_C{coug_number}_layout")
-                        widget = getattr(self, f"general_page_C{coug_number}_widget")
+                        layout = self.general_page_coug_layouts.get(coug_number)
+                        widget = self.general_page_coug_widgets.get(coug_number)
                         self.replace_label(f"{key}{coug_number}", layout, widget, new_label2)
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
-            self.recieve_console_update(f"Exception in update_connections_gui: {e}", coug_number)
-
+            if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in update_connections_gui: {e}", coug_number)
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
