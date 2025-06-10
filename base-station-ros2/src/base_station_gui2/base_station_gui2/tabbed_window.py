@@ -11,15 +11,20 @@ from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcu
 
 from base_station_interfaces.srv import BeaconId
 from functools import partial
+from transforms3d.euler import quat2euler
+import math
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
     update_connections_signal = pyqtSignal(object)
-    update_status_signal = pyqtSignal(object)
     update_console_signal = pyqtSignal(object, int)
     kill_confirm_signal = pyqtSignal(object)
+    safety_status_signal = pyqtSignal(int, object)
+    smoothed_ouput_signal = pyqtSignal(int, object)
+    depth_data_signal = pyqtSignal(int, object)
+    pressure_data_signal = pyqtSignal(int, object)
+    battery_data_signal = pyqtSignal(int, object)
     surface_confirm_signal = pyqtSignal(object)
-    handle_service_signal = pyqtSignal(str, object, object, str, str)
     def __init__(self, ros_node, coug_dict):
         """
         Initializes GUI window with a ros node inside
@@ -31,8 +36,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ros_node = ros_node
         self.setWindowTitle("CoUGARS_GUI")
-        scale = 300  #Manually scaling the window
-        self.resize(QSize(4 * scale, 3 * scale))
 
         self.selected_cougs = []
 
@@ -49,17 +52,14 @@ class MainWindow(QMainWindow):
 
             #0->negative, 1->positive, 2->waiting
             #Cougs 1-3 sensors
-            "DVL_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
-            "GPS_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "DVL": {coug_num: 2 for coug_num in self.selected_cougs},
+            "GPS": {coug_num: 2 for coug_num in self.selected_cougs},
             "IMU_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
             "Leak_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
-            "Battery_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Battery": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 status messages
             "Status_messages": {coug_num: "" for coug_num in self.selected_cougs},
-
-            #Cougs 1-3 last messages
-            "Last_messages": {coug_num: "" for coug_num in self.selected_cougs},
 
             #Cougs 1-3 message logs, lists of strings
             "Console_messages": {coug_num: [] for coug_num in self.selected_cougs},
@@ -88,8 +88,14 @@ class MainWindow(QMainWindow):
             #Cougs 1-3 Waypoint, list of ints
             "Waypoint": {coug_num: 2 for coug_num in self.selected_cougs},
 
-            #Cougs 1-3 Velocities, list of ints
-            "DVL_vel": {coug_num: 2 for coug_num in self.selected_cougs}
+            #Cougs 1-3 Linear Velocities, list of ints
+            "DVL_vel": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Angular Velocities, list of ints
+            "Angular_vel": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Pressures, list of ints
+            "Pressure": {coug_num: 2 for coug_num in self.selected_cougs}
         }
 
         #this is used to connect the feedback_dict keys to what is actually printed, in _update_status_gui
@@ -97,10 +103,12 @@ class MainWindow(QMainWindow):
             "XPos": "x (meters): ",
             "YPos": "y (meters): ",
             "Depth": "Depth (meters): ",
-            "Heading": "Heading (units?): ",
+            "Heading": "Heading (deg): ",
             "Waypoint": "Current Waypoint: ",
             "DVL_vel": "DVL Velocity (m/s): ",
-            "Battery_sensors": "Battery %: "
+            "Battery": "Battery %: ",
+            "Pressure": "Pressure (Pa): ",
+            "Angular_vel": "Angular Velocity (rad/s): "
         }
 
         #This is a dictionary to map the feedback_dict to the correct symbols
@@ -186,11 +194,14 @@ class MainWindow(QMainWindow):
         #creates a signal that is sent from recieve_connections, and sent to _update_connections_gui. 
         #this avoids the error of the gui not working on the main thread
         self.update_connections_signal.connect(self._update_connections_gui)
-        self.update_status_signal.connect(self._update_status_gui)
         self.update_console_signal.connect(self._update_console_gui)
         self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
         self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
-        self.handle_service_signal.connect(self.handle_service_label_replacement)
+        self.safety_status_signal.connect(self._update_safety_status_information)
+        self.smoothed_ouput_signal.connect(self._update_gui_smoothed_output)
+        self.depth_data_signal.connect(self.update_depth_data)
+        self.pressure_data_signal.connect(self.update_pressure_data)
+        self.battery_data_signal.connect(self.update_battery_data)
 
     def scroll_console_to_bottom_on_tab(self, index):
         """
@@ -392,29 +403,17 @@ class MainWindow(QMainWindow):
 
                 for i in self.selected_cougs:
                     self.recieve_console_update(f"{action} Service Initiated Successfully", i)
-                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initiated Successfully"
-                    layout = self.general_page_coug_layouts.get(i)
-                    widget = self.general_page_coug_widgets.get(i)
-                    self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "green")
 
             else:
                 self.confirm_reject_label.setText(f"{action} Service Initialization Failed")
 
                 for i in self.selected_cougs:
                     self.recieve_console_update(f"{action} Service Initialization Failed", i)
-                    self.feedback_dict["Last_messages"][i] = f"{action} Service Initialization Failed"
-                    layout = self.general_page_coug_layouts.get(i)
-                    widget = self.general_page_coug_widgets.get(i)
-                    self.handle_service_signal.emit(f"Last_messages{i}", layout, widget, self.feedback_dict["Last_messages"][i], "red")
        
         except Exception as e:
             self.confirm_reject_label.setText(f"{action} service call failed: {e}")
             if coug_number in self.selected_cougs: self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
             else: print(f"{action} service call failed: {e}")
-
-    def handle_service_label_replacement(self, widget_name, parent_layout, parent_widget, new_label, color):
-        new_last_label = QLabel(new_label, font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-        self.replace_label(widget_name, parent_layout, parent_widget, new_last_label, color)
 
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
@@ -537,12 +536,12 @@ class MainWindow(QMainWindow):
         layout.addSpacing(20)
 
         #section labels for each column
-        section_titles = ["Connections", "Sensors", "Status", "Last Message"]
+        section_titles = ["Connections", "Sensors", "Status"]
         for title in section_titles:
             layout.addWidget(QLabel(title, font=QFont("Arial", 15)), alignment=Qt.AlignmentFlag.AlignTop)
             layout.addSpacing(20)
             #repeated tab_spacing variable used throughout the file, to keep tabs consistent
-            self.tab_spacing = 75
+            self.tab_spacing = 60
 
             #The connections section contains the wifi, radio, and modem connections for each Coug respectively
             if title == "Connections": 
@@ -563,13 +562,13 @@ class MainWindow(QMainWindow):
 
             #The connections section contains the DVL, GPS, and IMU sensors connections for each Coug respectively
             elif title == "Sensors":
-                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL_sensors"][coug_number]], self.tab_spacing)
-                DVL_sensor_widget.setObjectName(f"DVL_sensors{coug_number}")
+                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], self.tab_spacing)
+                DVL_sensor_widget.setObjectName(f"DVL{coug_number}")
                 layout.addWidget(DVL_sensor_widget)
                 layout.addSpacing(20)
 
-                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS_sensors"][coug_number]], self.tab_spacing)
-                GPS_sensor_widget.setObjectName(f"GPS_sensors{coug_number}")
+                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], self.tab_spacing)
+                GPS_sensor_widget.setObjectName(f"GPS{coug_number}")
                 layout.addWidget(GPS_sensor_widget)
                 layout.addSpacing(20)
                 
@@ -586,18 +585,6 @@ class MainWindow(QMainWindow):
                 label.setObjectName(f"Status_messages{coug_number}")
                 label.setStyleSheet(f"color: {status_color};")
                 layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
-                layout.addSpacing(40)
-
-            #The Last Message section contains the last message from each Coug respectively
-            elif title == "Last Message":
-                last_message = self.feedback_dict["Last_messages"][coug_number]
-                if last_message: 
-                    last_mesage_label = QLabel(self.feedback_dict["Last_messages"][coug_number], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                else:
-                    last_mesage_label = QLabel("No messages have been recieved", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                    last_mesage_label.setStyleSheet(f"color: orange;")
-                last_mesage_label.setObjectName(f"Last_messages{coug_number}")
-                layout.addWidget(last_mesage_label)
                 layout.addSpacing(40)
 
         # Add spacer to push content up
@@ -912,12 +899,12 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add sensor status icons (DVL, GPS, IMU, Leak Detector)
-        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL_sensors"][coug_number]], 0)
-        DVL_sensor_widget.setObjectName(f"Spec_DVL_sensors{coug_number}")
+        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], 0)
+        DVL_sensor_widget.setObjectName(f"Spec_DVL{coug_number}")
         temp_layout.addWidget(DVL_sensor_widget)
 
-        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS_sensors"][coug_number]], 0)
-        GPS_sensor_widget.setObjectName(f"Spec_GPS_sensors{coug_number}")
+        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], 0)
+        GPS_sensor_widget.setObjectName(f"Spec_GPS{coug_number}")
         temp_layout.addWidget(GPS_sensor_widget)
         
         IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU_sensors"][coug_number]], 0)
@@ -933,7 +920,7 @@ class MainWindow(QMainWindow):
 
     #create the second sub-column in the first column of the specific cougar pages (starts with "Nodes")
     def create_specific_coug_column01(self, coug_number):
-        """
+        """     
         Creates the second sub-column in the first column of the specific Coug pages.
         This column displays the mission section and the status widgets for the given Coug.
 
@@ -946,7 +933,7 @@ class MainWindow(QMainWindow):
         # Create a vertical layout for the column and set margins and spacing
         temp_layout = QVBoxLayout()
         temp_layout.setContentsMargins(0, 0, 0, 0)
-        temp_layout.setSpacing(0) 
+        # temp_layout.setSpacing(0) 
 
         # Create the container widget for this column and store it as an attribute
         temp_container = QWidget()
@@ -960,38 +947,28 @@ class MainWindow(QMainWindow):
         # Add an (optional) title label at the top
         temp_layout.addWidget(self.create_title_label(f""), alignment=Qt.AlignmentFlag.AlignTop)
 
-        # Mission section
-        temp_label = QLabel("Mission")
-        temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
-        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        temp_layout.addWidget(temp_label)        
-
-        # Mission description label
-        temp_label = QLabel(f"This is where the mission for coug #{coug_number} will go.")
-        temp_label.setWordWrap(True)
-        temp_label.setFont(QFont("Arial", 13))
-        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        temp_layout.addSpacing(20)
-        temp_layout.addWidget(temp_label)
-
         # Status widgets section
-        temp_layout.addSpacing(20)
+        temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_title_label(f"Coug {coug_number} status"), alignment=Qt.AlignmentFlag.AlignTop)
-        temp_layout.addSpacing(20)
+        temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("x (meters): x", f"XPos{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
+        temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("y (meters): y", f"YPos{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
+        temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Depth (meters): d", f"Depth{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
-        temp_layout.addWidget(self.create_normal_label("Heading (units?): h", f"Heading{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
-        temp_layout.addWidget(self.create_normal_label("DVL Velocity (m/s): w", f"DVL_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(20)
-        # Battery status from status message
-        temp_layout.addWidget(self.create_normal_label("Battery %: b", f"Battery_sensors{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("DVL Velocity (m/s): v", f"DVL_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Angular Velocity (rad/s): a", f"Angular_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Battery %: b", f"Battery{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Pressure (Pa): p", f"Pressure{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addStretch()
 
         # Return the container widget holding the mission and status widgets
         return temp_container
@@ -1013,7 +990,119 @@ class MainWindow(QMainWindow):
         text_label.setObjectName(name) 
         text_label.setFont(QFont("Arial", 13))
         text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setWordWrap(True)  # Allow text to wrap if it's long
+        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         return text_label
+
+    def recieve_safety_status_message(self, coug_number, safety_message):
+        # #header
+        # std_msgs/Header header
+        # #0 = good, 1 = not publishing
+        # std_msgs/Int8 depth_status
+        # #0=good, bit 1 = publishing?, bit 2 = good enough gps fix?
+        # std_msgs/Int8 gps_status
+        # #0 = good, 1= not publishing
+        # std_msgs/Int8 modem_status
+        # #0=good, bit 1=publishing?, bit 2= standard dev below threshold
+        # std_msgs/Int8 dvl_status
+        # #0= ok, 1 = surfacing, 2=surfaced/disarmed
+        # std_msgs/Int8 emergency_status
+        self.safety_status_signal.emit(coug_number, safety_message)
+    
+    def _update_safety_status_information(self, coug_number, safety_message):
+        print(f"Testing signal for coug#{coug_number}: {safety_message}")
+        #TODO: Ask Eli to decode what the bits mean
+        # print(f"gps: {safety_message.gps_status.data}")
+        # print(f"dvl: {safety_message.dvl_status.data}")
+        # safety_message.wifi_status ##TODO: Ask Eli to add this
+        # safety_message.imu_status ##TODO: Ask Eli to add this
+
+        #logic is opposite, switch 0 and 1
+        if safety_message.gps_status.data: gps_data = 0
+        else: gps_data = 1
+        self.feedback_dict["GPS"][coug_number] = gps_data
+
+        if safety_message.dvl_status.data: dvl_data = 0
+        else: dvl_data = 1
+        self.feedback_dict["DVL"][coug_number] = dvl_data
+        
+        #replace general page widgets
+        self.replace_general_page_widget(coug_number, "GPS")
+        self.replace_general_page_widget(coug_number, "DVL")
+
+        #replace specific page widgets
+        self.replace_specific_icon_widget(coug_number, "GPS")
+        self.replace_specific_icon_widget(coug_number, "DVL")
+
+    def recieve_smoothed_output_message(self, coug_number, msg):
+        self.smoothed_ouput_signal.emit(coug_number, msg)
+
+    def _update_gui_smoothed_output(self, coug_number, msg):
+        position = msg.pose.pose.position
+        x = position.x
+        y = position.y
+        #won't use z, will use depth data instead
+        
+        # Quaternion from Odometry message
+        q = (
+            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
+            msg.pose.pose.orientation.x,
+            msg.pose.pose.orientation.y,
+            msg.pose.pose.orientation.z
+        )
+
+        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
+        _, _, yaw = quat2euler(q)
+
+        # heading
+        heading_deg = math.degrees(yaw) % 360
+
+        l_vel = msg.twist.twist.linear
+        a_vel = msg.twist.twist.angular
+
+        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
+        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
+
+        #update feedback dict 
+        self.feedback_dict["XPos"][coug_number] = round(x, 2)
+        self.feedback_dict["YPos"][coug_number] = round(y, 2)
+        self.feedback_dict["DVL_vel"][coug_number] = round(total_linear_vel, 2)
+        self.feedback_dict["Angular_vel"][coug_number] = round(total_angular_vel, 2)
+        self.feedback_dict["Heading"][coug_number] = round(heading_deg, 2)
+
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "XPos")
+        self.replace_specific_status_widget(coug_number, "YPos")
+        self.replace_specific_status_widget(coug_number, "DVL_vel")
+        self.replace_specific_status_widget(coug_number, "Angular_vel")
+        self.replace_specific_status_widget(coug_number, "Heading")
+
+    def recieve_depth_data_message(self, coug_number, msg):
+        self.depth_data_signal.emit(coug_number, msg)
+
+    def update_depth_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Depth"][coug_number] = msg.pose.position.z
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Depth")
+
+    def recieve_pressure_data_message(self, coug_number, msg):
+        self.pressure_data_signal.emit(coug_number, msg)
+
+    def update_pressure_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Pressure"][coug_number] = msg.fluid_pressure
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Pressure")
+
+    def recieve_battery_data_message(self, coug_number, msg):
+        self.battery_data_signal.emit(coug_number, msg)
+        
+    def update_battery_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Battery"][coug_number] = msg.percentage * 100 #turn decimal from 0 to 1 into a percentage from 0 to 100
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Battery")
 
     def recieve_kill_confirmation_message(self, kill_message): 
         """
@@ -1038,19 +1127,9 @@ class MainWindow(QMainWindow):
         if value: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Confirmed", i)
-                self.feedback_dict["Last_messages"][i] = "Kill Command Confirmed"
-                layout = self.general_page_coug_layouts.get(i)
-                widget = self.general_page_coug_widgets.get(i)
-                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "green")
         else: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Kill Command Failed", i)
-                self.feedback_dict["Last_messages"][i] = "Kill Command Failed"
-                layout = self.general_page_coug_layouts.get(i)
-                widget = self.general_page_coug_widgets.get(i)
-                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "red")
 
     def recieve_surface_confirmation_message(self, surf_message): 
         """
@@ -1075,19 +1154,9 @@ class MainWindow(QMainWindow):
         if value: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Confirmed", i)
-                self.feedback_dict["Last_messages"][i] = "Surface Command Confirmed"
-                layout = self.general_page_coug_layouts.get(i)
-                widget = self.general_page_coug_widgets.get(i)
-                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "green")
         else: 
             for i in self.selected_cougs:
                 self.recieve_console_update("Surface Command Failed", i)
-                self.feedback_dict["Last_messages"][i] = "Surface Command Failed"
-                layout = self.general_page_coug_layouts.get(i)
-                widget = self.general_page_coug_widgets.get(i)
-                new_last_label = QLabel(self.feedback_dict["Last_messages"][i], font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
-                self.replace_label(f"Last_messages{i}", layout, widget, new_last_label, "red")
 
     def recieve_connections(self, conn_message):
         """
@@ -1206,86 +1275,30 @@ class MainWindow(QMainWindow):
             print(f"Exception in _update_console_gui: {e}")
             if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
 
-    def receive_status(self, stat_message):
-        """
-        Slot to receive a Status message and emit a signal to update the GUI.
+    def replace_general_page_widget(self, coug_number, prefix):
+        layout = self.general_page_coug_layouts.get(coug_number)
+        widget = self.general_page_coug_widgets.get(coug_number)
+        status = self.feedback_dict[prefix][coug_number]
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
+        self.replace_label(f"{prefix}{coug_number}", layout, widget, new_label)
+    
+    def replace_specific_icon_widget(self, coug_number, prefix):
+        layout = getattr(self, f"coug{coug_number}_column0_layout")
+        widget = getattr(self, f"coug{coug_number}_column0_widget")
+        status = self.feedback_dict[prefix][coug_number]
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
+        self.replace_label(f"Spec_{prefix}{coug_number}", layout, widget, new_label)
 
-        Parameters:
-            stat_message: The Status message object.
-        """
-        self.update_status_signal.emit(stat_message)
-
-    def _update_status_gui(self, stat_message):
-        """
-        Updates the GUI to reflect the latest status information for a specific Coug.
-
-        Parameters:
-            stat_message: The Status message object containing vehicle_id and status fields.
-        """
-        # message: Status
-        #   uint8 vehicle_id
-        #   uint8 x
-        #   uint8 y
-        #   uint8 depth
-        #   uint8 heading
-        #   uint8 waypoint
-        #   uint8 dvl_vel
-        #   uint8 battery_voltage
-        #   bool dvl_running
-        #   bool gps_connection
-        #   bool leak_detection
-        try:
-            coug_number = stat_message.vehicle_id
-            if coug_number not in self.selected_cougs: return
-            # update the feedback dict with the new status using a loop
-            status_keys = [
-                ("XPos", "x"),
-                ("YPos", "y"),
-                ("Depth", "depth"),
-                ("Heading", "heading"),
-                ("Waypoint", "waypoint"),
-                ("DVL_vel", "dvl_vel"),
-                ("Battery_sensors", "battery_voltage"),
-                ("DVL_sensors", "dvl_running"),
-                ("GPS_sensors", "gps_connection"),
-                ("Leak_sensors", "leak_detection"),
-            ]
-            for key, attr in status_keys:
-                value = getattr(stat_message, attr)
-                if isinstance(value, bool):
-                    # Store 1 for True, 0 for False in feedback_dict for sensor status
-                    self.feedback_dict[key][coug_number] = 1 if value else 0
-                else:
-                    self.feedback_dict[key][coug_number] = value
-
-                # Update normal labels for numeric/status fields
-                if key in ["XPos", "YPos", "Depth", "Heading", "Waypoint", "DVL_vel", "Battery_sensors"]:
-                    new_label = self.create_normal_label(self.key_to_text_dict[key] + str(self.feedback_dict[key][coug_number]), f"{key}{coug_number}")
-                    layout = getattr(self, f"coug{coug_number}_column01_layout")
-                    widget = getattr(self, f"coug{coug_number}_column01_widget")
-                    self.replace_label(f"{key}{coug_number}", layout, widget, new_label)
-                # Update sensor icons for DVL, GPS, Leak
-                elif key in ["DVL_sensors", "GPS_sensors", "Leak_sensors"]:
-                    prefix = key.split("_")[0] if key != "Leak_sensors" else "Leak Detector"
-                    status = self.feedback_dict[key][coug_number]
-                    new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
-                    layout = getattr(self, f"coug{coug_number}_column0_layout")
-                    widget = getattr(self, f"coug{coug_number}_column0_widget")
-                    self.replace_label(f"Spec_{key}{coug_number}", layout, widget, new_label)
-                    if key != "Leak_sensors":
-                        new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
-                        layout = self.general_page_coug_layouts.get(coug_number)
-                        widget = self.general_page_coug_widgets.get(coug_number)
-                        self.replace_label(f"{key}{coug_number}", layout, widget, new_label2)
-
-        except Exception as e:
-            print("Exception in update_connections_gui:", e)
-            if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in update_connections_gui: {e}", coug_number)
+    def replace_specific_status_widget(self, coug_number, prefix):
+        layout = getattr(self, f"coug{coug_number}_column01_layout")
+        widget = getattr(self, f"coug{coug_number}_column01_widget")
+        new_label = self.create_normal_label(self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number]), f"{prefix}{coug_number}")
+        self.replace_label(f"{prefix}{coug_number}", layout, widget, new_label)
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
     app = QApplication(sys.argv)
-    window_width, window_height = 1200, 900
+    window_width, window_height = 1200, 800
 
     # Prepare splash image
     img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
@@ -1362,7 +1375,9 @@ def OpenWindow(ros_node, borders=False):
         ))
 
     QTimer.singleShot(500, build_main_window)
-    return app, result
+
+    #return the app, the result, and the selected coug numbers
+    return app, result, [int(str(coug_data[-1])) for coug_data, included in selected_cougs.items() if included]
 
 class CustomSplash(QWidget):
     def __init__(self, pixmap, parent=None):

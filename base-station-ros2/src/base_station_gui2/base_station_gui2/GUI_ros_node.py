@@ -5,6 +5,9 @@ import signal
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseWithCovariance
+from sensor_msgs.msg import FluidPressure, BatteryState
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -14,16 +17,70 @@ from rclpy.executors import SingleThreadedExecutor
 
 from base_station_interfaces.srv import BeaconId
 from base_station_interfaces.msg import Connections, Status
+from frost_interfaces.msg import SystemStatus
 
 class GuiNode(Node):
     """
     ROS 2 node that connects the GUI to ROS topics and services.
     Handles publishing, subscribing, and service clients for the GUI.
     """
-    def __init__(self, window):
+    def __init__(self, window, selected_cougs):
         super().__init__('gui_node')
-        # Publisher for sending String messages to the 'topic' topic
-        self.publisher_ = self.create_publisher(String, 'topic', 10)
+
+        for coug_number in selected_cougs:
+            #dynamic subscriptions for the safety status messages
+            sub = self.create_subscription(
+                SystemStatus,
+                f'coug{coug_number}/safety_status',
+                lambda msg, n=coug_number: window.recieve_safety_status_message(n, msg),
+                10
+            )
+            setattr(self, f'safety_status_subscription{coug_number}', sub)
+
+            #dynamic subscriptions for the smoothed_output messages
+            sub = self.create_subscription(
+                Odometry,
+                f'coug{coug_number}/smoothed_output',
+                lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
+                10
+            )
+            setattr(self, f'smoothed_ouput_subscription{coug_number}', sub)
+
+            #dynamic subscriptions for the depth_data messages
+            sub = self.create_subscription(
+                PoseWithCovariance,
+                f'coug{coug_number}/depth_data',
+                lambda msg, n=coug_number: window.recieve_depth_data_message(n, msg),
+                10
+            )
+            setattr(self, f'depth_data_subscription{coug_number}', sub)            
+            
+            #dynamic subscriptions for the leak/data messages (used for pressure)
+            sub = self.create_subscription(
+                FluidPressure,
+                f'coug{coug_number}/pressure/data',
+                lambda msg, n=coug_number: window.recieve_pressure_data_message(n, msg),
+                10
+            )
+            setattr(self, f'pressure_data_subscription{coug_number}', sub)
+
+            #dynamic subscriptions for the leak/data messages #TODO: how is leak data being published?
+            # sub = self.create_subscription(
+            #     FluidPressure,
+            #     f'coug{coug_number}/leak/data',
+            #     lambda msg, n=coug_number: window.receive_leak_data_message(n, msg),
+            #     10
+            # )
+            # setattr(self, f'leak_data_subscription{coug_number}', sub) 
+
+            #dynamic subscriptions for the battery/data messages
+            sub = self.create_subscription(
+                BatteryState,
+                f'coug{coug_number}/battery/data',
+                lambda msg, n=coug_number: window.recieve_battery_data_message(n, msg),
+                10
+            )
+            setattr(self, f'battery_data_subscription{coug_number}', sub)
 
         self.kill_subscription = self.create_subscription(
             Bool,
@@ -43,13 +100,6 @@ class GuiNode(Node):
             'connections',
             window.recieve_connections,  # Calls the GUI's recieve_connections method
             10)   
-
-        # Subscription for receiving Status messages from the 'status' topic
-        self.stat_subscription = self.create_subscription( 
-            Status,
-            'status',
-            window.receive_status,  # Calls the GUI's receive_status method
-            10) 
             
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
@@ -84,7 +134,7 @@ def main():
     rclpy.init()
 
     # Create the Qt application and main window (window will be set later)
-    app, result = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
+    app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
 
     def after_window_ready():
         window = result.get('window')
@@ -94,7 +144,7 @@ def main():
             return
 
         # Create the ROS 2 node and assign it to the GUI window
-        gui_node = GuiNode(window)
+        gui_node = GuiNode(window, selected_cougs)
         window.ros_node = gui_node  # if you need to access the node from the GUI
 
         # Create a single-threaded executor and add the node
