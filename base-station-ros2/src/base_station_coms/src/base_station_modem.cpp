@@ -73,7 +73,9 @@ public:
 
         RCLCPP_INFO(this->get_logger(), "base station coms node started");
 
-        
+        this->timer_ = this->create_wall_timer(
+            std::chrono::seconds(3), std::bind(&ModemComs::check_modem_connections, this)
+        );
 
     }
 
@@ -123,7 +125,6 @@ public:
     void status_request_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
     {
-        check_modem_connections();
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
 
         RequestStatus request_status_msg;
@@ -183,7 +184,7 @@ public:
     }
 
 
-    void check_modem_connections(double timeout_sec = 10.0) {
+    void check_modem_connections() {
         rclcpp::Time now = this->now();
         std::vector<bool> connections;
         std::vector<uint32_t> last_ping;
@@ -192,20 +193,24 @@ public:
         for (auto vehicle_id : vehicles_in_mission_) {
             auto it = last_message_time_.find(vehicle_id);
             if (it != last_message_time_.end()) {
+                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %i", vehicle_id);
+
                 double dt = (now - it->second).seconds();
-                connections.push_back(dt < timeout_sec);
+                connections.push_back(dt < 10);
                 last_ping.push_back(static_cast<uint32_t>(dt));
 
             } else {
-                modem_connection[vehicle_id] = false;
+                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %i", vehicle_id);
+                connections.push_back(false);
             }
         }
-            base_station_interfaces::msg::Connections msg;
-            msg.header.stamp = now;
-            msg.connection_type = 0; // 0 for acoustic modem
-            msg.connections = connections;
-            msg.last_ping = last_ping;
-            modem_connections_publisher_->publish(msg);
+
+        base_station_interfaces::msg::Connections msg;
+        msg.header.stamp = now;
+        msg.connection_type = 0; // 0 for acoustic modem
+        msg.connections = connections;
+        msg.last_ping = last_ping;
+        modem_connections_publisher_->publish(msg);
 
     }
    
