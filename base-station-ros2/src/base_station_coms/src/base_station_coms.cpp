@@ -125,15 +125,17 @@ public:
         if (vehicles_in_mission_.empty()) {
             RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "No vehicles in mission — skipping status request.");
             return;
-}   
+        }   
         vehicle_id_index += 1;
-        if (vehicle_id_index+1>=vehicles_in_mission_.size())
+        if (vehicle_id_index>=vehicles_in_mission_.size())
             vehicle_id_index = 0;
-        vehicle_id_index = 0;
+
         auto request = std::make_shared<base_station_interfaces::srv::BeaconId::Request>();
         int beacon_id = vehicles_in_mission_[vehicle_id_index];
         request->beacon_id = beacon_id;
 
+        RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Coug %i connections: radio - %d, modem - %d", beacon_id, radio_connection[beacon_id], modem_connection[beacon_id]);
+        
         if (radio_connection[beacon_id]){
 
             if (!radio_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
