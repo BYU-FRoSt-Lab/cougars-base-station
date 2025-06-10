@@ -174,7 +174,7 @@ class RFBridge(Node):
             elif message_type == "E_KILL":
                 self.confirm_e_kill(data)
             elif message_type == "PING":
-                self.recieve_ping(data, sender_address)
+                self.recieve_ping(data.get("src_id"), sender_address)
             else:
                 self.get_logger().warn(f"Unknown message type: {message_type}")
         except Exception as e:
@@ -189,16 +189,21 @@ class RFBridge(Node):
         self.get_logger().debug(f"Sending PING")
         ping = "PING"
         if len(self.radio_addresses) < len(self.vehicles_in_mission):
-            self.device.send_data_broadcast(ping)
+            try:
+                self.device.send_data_broadcast(ping)
+            except Exception as e:
+                self.get_logger().error(f"Error sending broadcast PING: {e}")
         else:
             for vehicle in self.radio_addresses:
                 self.send_message(ping, self.radio_addresses[vehicle])
-                last_ping = int(time.time() - self.ping_timestamp[vehicle])
-                if (last_ping >= self.ping_frequency*self.max_msgs_missed):
-                    self.connections[vehicle] = False 
-                msg.connections.append(self.connections[vehicle])
-                msg.last_ping.append(last_ping)
-                self.rf_connection_publisher.publish(msg)
+
+        for vehicle in self.vehicles_in_mission:
+            last_ping = int(time.time() - self.ping_timestamp[vehicle])
+            if (last_ping >= self.ping_frequency*self.max_msgs_missed):
+                self.connections[vehicle] = False 
+            msg.connections.append(self.connections[vehicle])
+            msg.last_ping.append(last_ping)
+            self.rf_connection_publisher.publish(msg)
 
         if self.debug_mode:
             self.get_logger().debug(f"Connections: {self.connections}")
@@ -243,11 +248,11 @@ class RFBridge(Node):
 
 
 
-    def recieve_ping(self, msg, sender_address):
-        self.radio_addresses[msg["src_id"]] = sender_address
-        vehicle_id = msg["src_id"]
-        self.ping_timestamp[vehicle_id] = time.time()
-        self.connections[vehicle_id] = True
+    def recieve_ping(self, sender_id, sender_address):
+        # self.get_logger().info(f"Received PING from {sender_id}")
+        self.radio_addresses[sender_id] = sender_address
+        self.ping_timestamp[sender_id] = time.time()
+        self.connections[sender_id] = True
 
 
     def send_e_kill_callback(self, request, response):
