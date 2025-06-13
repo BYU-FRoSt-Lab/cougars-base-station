@@ -13,6 +13,7 @@ from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
 from transforms3d.euler import quat2euler
 import math
+from base_station_gui2 import mission_deployer
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
@@ -339,7 +340,19 @@ class MainWindow(QMainWindow):
     def load_missions_button(self):
         # Handler for 'Load Missions' button on the general tab.
         self.confirm_reject_label.setText("Loading the missions...")
-        for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
+        for i in self.selected_cougs:
+            self.recieve_console_update("Loading the missions...", i)
+        try:
+            mission_deployer.main()
+            self.confirm_reject_label.setText("Missions deployed successfully.")
+            for i in self.selected_cougs:
+                self.recieve_console_update("Missions deployed successfully.", i)
+        except Exception as e:
+            err_msg = f"Mission deployment failed: {e}"
+            print(err_msg)
+            self.confirm_reject_label.setText(err_msg)
+            for i in self.selected_cougs:
+                self.recieve_console_update(err_msg, i)
 
     #(NS) -> not yet connected to a signal
     def start_missions_button(self):
