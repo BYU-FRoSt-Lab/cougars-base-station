@@ -6,7 +6,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseWithCovariance
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
 from sensor_msgs.msg import FluidPressure, BatteryState
 
 from PyQt6.QtWidgets import QApplication
@@ -48,7 +48,7 @@ class GuiNode(Node):
 
             #dynamic subscriptions for the depth_data messages
             sub = self.create_subscription(
-                PoseWithCovariance,
+                PoseWithCovarianceStamped,
                 f'coug{coug_number}/depth_data',
                 lambda msg, n=coug_number: window.recieve_depth_data_message(n, msg),
                 10

@@ -8,6 +8,7 @@ setup(
     packages=find_packages(exclude=['test']),
     package_data={
         package_name: ['FRoSt_Lab.png'],
+        'base_station_gui2.temp_mission_control': ['*.json'],
     },
     data_files=[
         ('share/ament_index/resource_index/packages',

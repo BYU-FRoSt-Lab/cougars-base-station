@@ -13,7 +13,8 @@ from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
 from transforms3d.euler import quat2euler
 import math
-from base_station_gui2 import mission_deployer
+from base_station_gui2.temp_mission_control import deploy
+import threading
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
             "Heading": "Heading (deg): ",
             "Waypoint": "Current Waypoint: ",
             "DVL_vel": "DVL Velocity (m/s): ",
-            "Battery": "Battery %: ",
+            "Battery": "Battery (volts): ",
             "Pressure": "Pressure (Pa): ",
             "Angular_vel": "Angular Velocity (rad/s): "
         }
@@ -338,22 +339,25 @@ class MainWindow(QMainWindow):
 
     #(NS) -> not yet connected to a signal
     def load_missions_button(self):
-        # Handler for 'Load Missions' button on the general tab.
         self.confirm_reject_label.setText("Loading the missions...")
         for i in self.selected_cougs:
             self.recieve_console_update("Loading the missions...", i)
-        try:
-            mission_deployer.main()
-            self.confirm_reject_label.setText("Missions deployed successfully.")
-            for i in self.selected_cougs:
-                self.recieve_console_update("Missions deployed successfully.", i)
-        except Exception as e:
-            err_msg = f"Mission deployment failed: {e}"
-            print(err_msg)
-            self.confirm_reject_label.setText(err_msg)
-            for i in self.selected_cougs:
-                self.recieve_console_update(err_msg, i)
 
+        def deploy_in_thread():
+            try:
+                deploy.main()
+                self.confirm_reject_label.setText("Missions deployed successfully.")
+                for i in self.selected_cougs:
+                    self.recieve_console_update("Missions deployed successfully.", i)
+            except Exception as e:
+                err_msg = f"Mission deployment failed: {e}"
+                print(err_msg)
+                self.confirm_reject_label.setText(err_msg)
+                for i in self.selected_cougs:
+                    self.recieve_console_update(err_msg, i)
+
+        threading.Thread(target=deploy_in_thread, daemon=True).start()
+    
     #(NS) -> not yet connected to a signal
     def start_missions_button(self):
         # Handler for 'Start Missions' button on the general tab.
@@ -992,7 +996,7 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Angular Velocity (rad/s): a", f"Angular_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("Battery %: b", f"Battery{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("Battery (volts): b", f"Battery{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Pressure (Pa): p", f"Pressure{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addStretch()
@@ -1037,14 +1041,13 @@ class MainWindow(QMainWindow):
         self.safety_status_signal.emit(coug_number, safety_message)
     
     def _update_safety_status_information(self, coug_number, safety_message):
-        print(f"Testing signal for coug#{coug_number}: {safety_message}")
-        # print(f"dvl: {safety_message.dvl_status.data}")
         # safety_message.wifi_status ##TODO: Ask Eli to add this
         # safety_message.imu_status ##TODO: Ask Eli to add this
 
         #TEST:TODO remove this logic when wifi_status is created
         #randomly control whether to shut off the modem or not, simulating wifi connection
-        self.modem_shut_off_service(random.choice([True, False]))
+        ######random logic: 
+        #####self.modem_shut_off_service(random.choice([True, False]))
 
         #logic is opposite, switch 0 and 1
         if safety_message.gps_status.data: gps_data = 0
@@ -1111,7 +1114,7 @@ class MainWindow(QMainWindow):
 
     def update_depth_data(self, coug_number, msg):
         #update feedback dict 
-        self.feedback_dict["Depth"][coug_number] = msg.pose.position.z
+        self.feedback_dict["Depth"][coug_number] = round(msg.pose.pose.position.z, 2)
         #replace specific page status widget
         self.replace_specific_status_widget(coug_number, "Depth")
 
@@ -1120,7 +1123,7 @@ class MainWindow(QMainWindow):
 
     def update_pressure_data(self, coug_number, msg):
         #update feedback dict 
-        self.feedback_dict["Pressure"][coug_number] = msg.fluid_pressure
+        self.feedback_dict["Pressure"][coug_number] = round(msg.fluid_pressure, 2)
         #replace specific page status widget
         self.replace_specific_status_widget(coug_number, "Pressure")
 
@@ -1129,7 +1132,7 @@ class MainWindow(QMainWindow):
         
     def update_battery_data(self, coug_number, msg):
         #update feedback dict 
-        self.feedback_dict["Battery"][coug_number] = msg.percentage * 100 #turn decimal from 0 to 1 into a percentage from 0 to 100
+        self.feedback_dict["Battery"][coug_number] = round(msg.voltage, 1)
         #replace specific page status widget
         self.replace_specific_status_widget(coug_number, "Battery")
 
@@ -1211,6 +1214,7 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
+        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio_connections"
@@ -1222,28 +1226,29 @@ class MainWindow(QMainWindow):
                 conn_type = 0
 
             # Update connection status icons for each Coug
-            for coug_number, data in self.feedback_dict[feedback_key].items(): 
-                if coug_number-1 < len(conn_message.connections):
-                    status = 1 if conn_message.connections[coug_number-1] else 0
-                    self.feedback_dict[feedback_key][coug_number] = status
-                    prefix = feedback_key.split("_")[0]
-                    new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
-                    layout = self.general_page_coug_layouts.get(coug_number)
-                    widget = self.general_page_coug_widgets.get(coug_number)
-                    self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
-                    new_status_label, status_color = self.get_status_label(coug_number)
-                    self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
-                    new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
-                    layout = getattr(self, f"coug{coug_number}_column0_layout")
-                    widget = getattr(self, f"coug{coug_number}_column0_widget")
-                    self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
-                else:
-                    # Optionally, set to a default or log a warning
-                    self.feedback_dict[feedback_key][coug_number] = 2  # waiting/unknown
+            # for coug_number, data in self.feedback_dict[feedback_key].items(): 
+            for coug_number in conn_message.vehicle_ids:
+                data = self.feedback_dict[feedback_key][coug_number]
+                status = 1 if conn_message.connections[coug_number-1] else 0
+                self.feedback_dict[feedback_key][coug_number] = status
+                prefix = feedback_key.split("_")[0]
+                new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
+                layout = self.general_page_coug_layouts.get(coug_number)
+                widget = self.general_page_coug_widgets.get(coug_number)
+                self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+                new_status_label, status_color = self.get_status_label(coug_number)
+                self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
+                new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
+                layout = getattr(self, f"coug{coug_number}_column0_layout")
+                widget = getattr(self, f"coug{coug_number}_column0_widget")
+                self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
 
             # Update seconds since last ping for each Cdef recieve_console_updateoug
             ping_list = list(conn_message.last_ping)
-            for coug_number, ping in enumerate(ping_list, start=1):
+            count = 0
+            for coug_number in conn_message.vehicle_ids:
+            # for coug_number, ping in enumerate(ping_list, start=1):
+                ping = ping_list[count]
                 if coug_number not in self.selected_cougs: continue
                 self.feedback_dict[feedback_key_seconds][coug_number] = ping
                 layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
@@ -1254,6 +1259,7 @@ class MainWindow(QMainWindow):
                 else:
                     old_label = f"coug{coug_number}_modem_seconds_widget"
                 self.replace_label(old_label, layout, widget, new_seconds_label)
+                count += 1
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
