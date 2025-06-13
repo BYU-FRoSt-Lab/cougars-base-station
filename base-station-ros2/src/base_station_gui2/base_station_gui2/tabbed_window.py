@@ -1025,6 +1025,7 @@ class MainWindow(QMainWindow):
     
     def _update_safety_status_information(self, coug_number, safety_message):
         print(f"Testing signal for coug#{coug_number}: {safety_message}")
+        # print(f"dvl: {safety_message.dvl_status.data}")
         # safety_message.wifi_status ##TODO: Ask Eli to add this
         # safety_message.imu_status ##TODO: Ask Eli to add this
 
