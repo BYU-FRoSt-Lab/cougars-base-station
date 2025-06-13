@@ -6,9 +6,10 @@
 #include "base_station_interfaces/srv/beacon_id.hpp"
 #include "base_station_interfaces/msg/status.hpp"
 #include "base_station_interfaces/msg/connections.hpp"
-
-
-
+#include "frost_interfaces/msg/system_status.hpp"
+#include "frost_interfaces/msg/leak_status.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "sensor_msgs/msg/battery_state.hpp"
 
 #include "base_station_coms/coms_protocol.hpp"
 #include "base_station_coms/seatrac_enums.hpp"
@@ -18,6 +19,7 @@
 #include <chrono>
 #include <memory>
 #include <unordered_map>
+#include <string>
 
 
 using namespace std::literals::chrono_literals;
@@ -33,11 +35,11 @@ class ComsNode : public rclcpp::Node {
 public:
     ComsNode() : Node("base_station_coms") {
 
-
+        // Frequency of status requests to vehicles in mission, one at a time
         this->declare_parameter<int>("status_request_frequency_seconds", 5);
         this->status_request_frequency = this->get_parameter("status_request_frequency_seconds").as_int();
 
-
+        // list of beacon ids of vehicles in mission
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
@@ -79,14 +81,37 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
+        // subscruber to the status topic published by the modem and radio nodes
+        status_subscriber_ = this->create_subscription<base_station_interfaces::msg::Status>(
+            "status", 10,
+            std::bind(&ComsNode::publish_status_callback, this, _1)
+        );
+
+        // timer that periodically requests status from vehicles in mission
         timer_ = this->create_wall_timer(
                     std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
+        // subscriber to the connections topic of the modem and radio nodes, keeps track of which vehicles are connected via radio or modem
         connections_subscriber_ = this->create_subscription<base_station_interfaces::msg::Connections>(
-            "connections",
-            10,
+            "connections", 10,
             std::bind(&ComsNode::listen_to_connections, this, _1)
         );
+
+        // Status publishers for each vehicle in the mission modelling the topics on each vehicle
+        for (int vehicle_id : vehicles_in_mission_) {
+            std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
+            safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
+                ros_namespace + "/safety_status", 10);
+            leak_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
+                ros_namespace + "/leak/data", 10);
+            smoothed_odom_publishers_[vehicle_id] = this->create_publisher<nav_msgs::msg::Odometry>(
+                ros_namespace + "/smoothed_output", 10);
+            battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
+                ros_namespace + "/battery/data", 10);
+            depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+                ros_namespace + "/depth_data", 10);
+            
+        }
 
         std::ostringstream ss;
         ss << "Vehicle ids in mission: ";
@@ -96,10 +121,11 @@ public:
 
         modem_connection[0] = true;
         radio_connection[0] = true; 
-
+        
+        // Initialize lists of connections statuses for each vehicle in mission
         for(int64_t i: vehicles_in_mission_){
             modem_connection[i] = true;
-            radio_connection[i] = false; // radio connection is not established by default
+            radio_connection[i] = false;
         }
 
 
@@ -107,6 +133,8 @@ public:
 
     }
 
+    // Callback for the connections topic, updates the connections for each vehicle in mission
+    // The connections are stored in two maps, one for radio and one for modem connections
     void listen_to_connections(const base_station_interfaces::msg::Connections::SharedPtr msg) {
         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Updating connections for cougs");
 
@@ -120,12 +148,18 @@ public:
             }
         }
     }
-
+    
+    // Callback for the status request service, requests the status of a specific vehicle in mission
+    // If the vehicle is connected via radio, it requests the status through the radio node
+    // If not it attempts to request the status through the modem node
     void request_status_callback(){
+
+
         if (vehicles_in_mission_.empty()) {
             RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "No vehicles in mission — skipping status request.");
             return;
-        }   
+        }  
+        // Cycle through vehicles in mission to request status one by one
         vehicle_id_index += 1;
         if (vehicle_id_index>=vehicles_in_mission_.size())
             vehicle_id_index = 0;
@@ -184,7 +218,9 @@ public:
         }
     }
 
-
+    // Callback for the emergency kill service, sends an emergency kill command to a specific vehicle in mission
+    // If the vehicle is connected via radio, it sends the command through the radio node
+    // If not it attempts to send the command through the modem node
     void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response){
         int beacon_id = request->beacon_id;
@@ -224,6 +260,8 @@ public:
         }
     }
 
+    // Callback for the emergency surface service, sends an emergency surface command to a specific vehicle in mission
+    // Only sent through the modem node, as the radio node does not support this command
     void emergency_surface_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response){
         int beacon_id = request->beacon_id;
@@ -251,6 +289,28 @@ public:
         }
     }
 
+    // Callback for the status subscriber, publishes the status of a specific vehicle in mission
+    // If the vehicle is in the mission, it publishes the status to the appropriate topics
+    void publish_status_callback(const std::shared_ptr<base_station_interfaces::msg::Status> msg) {
+        int64_t vehicle_id = msg->vehicle_id;
+        if (std::find(vehicles_in_mission_.begin(), vehicles_in_mission_.end(), vehicle_id) != vehicles_in_mission_.end()) {
+            // Publish the status to the appropriate topic
+            frost_interfaces::msg::SystemStatus safety_status = msg->safety_status;
+            sensor_msgs::msg::FluidPressure leak_status = msg->leak_status;
+            nav_msgs::msg::Odometry smoothed_odom = msg->smoothed_odom;
+            sensor_msgs::msg::BatteryState battery_state = msg->battery_state;
+            geometry_msgs::msg::PoseWithCovarianceStamped depth_status = msg->depth_data;
+
+            safety_status_publishers_[vehicle_id]->publish(safety_status);
+            leak_publishers_[vehicle_id]->publish(leak_status);
+            smoothed_odom_publishers_[vehicle_id]->publish(smoothed_odom);
+            battery_publishers_[vehicle_id]->publish(battery_state);
+            depth_publishers_[vehicle_id]->publish(depth_status);
+
+        } else {
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot publish status. There is no Vehicle with ID %li", vehicle_id);
+        }
+    }
 
 
 private:
@@ -268,6 +328,13 @@ private:
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
+
+    rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
+    std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr> leak_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr> smoothed_odom_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr> battery_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr> depth_publishers_;
 
     std::unordered_map<int,bool> radio_connection;
     std::unordered_map<int,bool> modem_connection;

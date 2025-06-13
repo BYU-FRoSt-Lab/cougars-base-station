@@ -8,6 +8,7 @@ from base_station_interfaces.msg import Connections
 from base_station_interfaces.srv import BeaconId
 from std_msgs.msg import String
 from std_msgs.msg import Bool
+from std_msgs.msg import Int8
 import time
 
 
@@ -192,7 +193,7 @@ class RFBridge(Node):
             try:
                 self.device.send_data_broadcast(ping)
             except Exception as e:
-                self.get_logger().error(f"Error sending broadcast PING: {e}")
+                self.get_logger().error(f"Failed to send broadcast PING: {e}")
         else:
             for vehicle in self.radio_addresses:
                 self.send_message(ping, self.radio_addresses[vehicle])
@@ -203,7 +204,8 @@ class RFBridge(Node):
                 self.connections[vehicle] = False 
             msg.connections.append(self.connections[vehicle])
             msg.last_ping.append(last_ping)
-            self.rf_connection_publisher.publish(msg)
+        msg.vehicle_ids = list(self.vehicles_in_mission)
+        self.rf_connection_publisher.publish(msg)
 
         if self.debug_mode:
             self.get_logger().debug(f"Connections: {self.connections}")
@@ -229,20 +231,38 @@ class RFBridge(Node):
 
         return response
 
+    def make_int8(self, val):
+        msg = Int8()
+        msg.data = val
+        return msg
+
     def recieve_status(self, data):
         self.get_logger().info(f"Coug {data.get('src_id', 'unknown')}'s Status:")
         self.get_logger().info(f"    Data: {data}")
+        safety_status = data.get('safety_status', {})
+        leak_status = data.get('leak_status', {})
+        smoothed_odom = data.get('smoothed_odom', {})
+        battery_state = data.get('battery_state', {})
+        depth_data = data.get('depth_data', {})
 
         status = Status()
         status.vehicle_id = data.get('src_id', 0)
-        status.x = data.get('x', 0)
-        status.y = data.get('y', 0)
-        status.heading = data.get('heading', 0)
-        status.dvl_vel = data.get('dvl_vel', 0)
-        status.battery_voltage = data.get('battery', 0)
-        status.dvl_running = data.get('dvl_running', False)
-        status.gps_connection = data.get('gps_connection', False)
-        status.leak_detection = data.get('leak_detection', False)
+        status.safety_status.depth_status = self.make_int8(safety_status.get('depth_status', 0))
+        status.safety_status.gps_status = self.make_int8(safety_status.get('gps_status', 0))
+        status.safety_status.modem_status = self.make_int8(safety_status.get('modem_status', 0))
+        status.safety_status.dvl_status = self.make_int8(safety_status.get('dvl_status', 0))
+        status.safety_status.emergency_status = self.make_int8(safety_status.get('emergency_status', 0))
+        status.leak_status.fluid_pressure = leak_status.get('fluid_pressure', 0.0)
+        status.smoothed_odom.pose.pose.position.x = smoothed_odom.get('x', 0.0)
+        status.smoothed_odom.pose.pose.position.y = smoothed_odom.get('y', 0.0)
+        status.smoothed_odom.pose.pose.position.z = smoothed_odom.get('z', 0.0)
+        # status.smoothed_odom.pose.pose.orientation.z = data.get('heading', 0)
+        status.smoothed_odom.twist.twist.linear.x = smoothed_odom.get('x_vel', 0.0)
+        status.smoothed_odom.twist.twist.linear.y = smoothed_odom.get('y_vel', 0.0)
+        status.smoothed_odom.twist.twist.linear.z = smoothed_odom.get('z_vel', 0.0)
+        status.battery_state.voltage = battery_state.get('voltage', 0.0)
+        status.battery_state.percentage = battery_state.get('percentage', 0.0)
+        status.depth_data.pose.pose.position.z = depth_data.get('depth', 0.0)
         self.status_publisher.publish(status)
 
 
@@ -250,6 +270,9 @@ class RFBridge(Node):
 
     def recieve_ping(self, sender_id, sender_address):
         # self.get_logger().info(f"Received PING from {sender_id}")
+        if sender_id not in self.vehicles_in_mission:
+            self.get_logger().warn(f"Received PING from unknown vehicle ID {sender_id}. Ignoring.")
+            return
         self.radio_addresses[sender_id] = sender_address
         self.ping_timestamp[sender_id] = time.time()
         self.connections[sender_id] = True

@@ -7,6 +7,7 @@
 #include "base_station_interfaces/msg/status.hpp"
 #include "base_station_interfaces/msg/connections.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "base_station_interfaces/msg/command_verify.hpp"
 
 
 
@@ -32,44 +33,50 @@ class ModemComs : public rclcpp::Node {
 public:
     ModemComs() : Node("base_station_modem") {
 
-
+        // id of the base station beacon, used to identify the base station in the network
         this->declare_parameter<int>("base_station_beacon_id", 15);
         this->base_station_beacon_id_ = this->get_parameter("base_station_beacon_id").as_int();
 
+        // lsit of beacon ids of vehicles in mission
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
-
+        //subscriber to ModemRec messages, which are received from the cougs
         this->modem_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
             "modem_rec", 10,
             std::bind(&ModemComs::listen_to_modem, this, _1)
         );
         this->modem_publisher_ = this->create_publisher<seatrac_interfaces::msg::ModemSend>("modem_send", 10);
 
-
+        // service that requests the status of a vehicle specified in the request
         request_status_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "modem_status_request",
             std::bind(&ModemComs::status_request_callback, this, _1, _2)
         );
 
+        // service that sends an emergency kill command to a vehicle specified in the request
         emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "modem_e_kill",
             std::bind(&ModemComs::emergency_kill_callback, this, _1, _2)
         );
 
-
+        // service that sends an emergency surface command to a vehicle specified in the request
         emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "modem_e_surface",
             std::bind(&ModemComs::emergency_surface_callback, this, _1, _2)
         );
 
+        // publisher for the status of the cougs, published to the status topic
         this->status_publisher_ = this->create_publisher<base_station_interfaces::msg::Status>("status", 10);
 
+        // publisher for the connections of the vehicles in the mission via modem
         this->modem_connections_publisher_ = this->create_publisher<base_station_interfaces::msg::Connections>("connections", 10);
 
-        this->confirm_e_kill_publisher_ = this->create_publisher<std_msgs::msg::Bool>("confirm_e_kill", 10);
+        // publisher for the confirmation of the emergency kill command
+        this->confirm_e_kill_publisher_ = this->create_publisher<base_station_interfaces::msg::CommandVerify>("confirm_e_kill", 10);
 
-        this->confirm_e_surface_ = this->create_publisher<std_msgs::msg::Bool>("confirm_e_surface", 10);
+        // publisher for the confirmation of the emergency surface command
+        this->confirm_e_surface_ = this->create_publisher<base_station_interfaces::msg::CommandVerify>("confirm_e_surface", 10);
 
         RCLCPP_INFO(this->get_logger(), "base station coms node started");
 
@@ -133,57 +140,58 @@ public:
         response->success = true;
     }
 
+    // publishes the status recieved through the modem
     void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
         
         const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
         auto status_msg = base_station_interfaces::msg::Status();
         status_msg.vehicle_id = msg.src_id;
-        status_msg.x = status->x;
-        status_msg.y = status->y;
-        status_msg.depth = status->depth;
-        status_msg.heading = status->heading;
-        status_msg.dvl_vel = status->dvl_vel;
-        status_msg.battery_voltage = status->battery_voltage;
-        status_msg.dvl_running = status->dvl_running;
-        status_msg.gps_connection = status->gps_connection;
-        status_msg.leak_detection = status->leak_detection;
-        status_msg.waypoint = status->waypoint;
-
+        status_msg.safety_status.depth_status.data = (status->safety_mask & 0x01) != 0;
+        status_msg.safety_status.gps_status.data = (status->safety_mask & 0x02) != 0;
+        status_msg.safety_status.modem_status.data = (status->safety_mask & 0x04) != 0;
+        status_msg.safety_status.dvl_status.data = (status->safety_mask & 0x08) != 0;
+        status_msg.safety_status.emergency_status.data = (status->safety_mask & 0x10) != 0;
+        status_msg.leak_status.fluid_pressure = status->leak;
+        status_msg.smoothed_odom.pose.pose.position.x = status->x;
+        status_msg.smoothed_odom.pose.pose.position.y = status->y;
+        status_msg.smoothed_odom.twist.twist.linear.x = status->x_vel;
+        status_msg.smoothed_odom.twist.twist.linear.y = status->y_vel;
+        status_msg.smoothed_odom.pose.pose.position.z = status->depth;
+        status_msg.battery_state.voltage = status->battery_voltage;
+        status_msg.battery_state.percentage = status->battery_percentage;
+        status_msg.depth_data.pose.pose.position.z = status->depth;
         this->status_publisher_->publish(status_msg);
-        
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Coug %i Status:", msg.src_id);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "x pos: %i", status->x);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "y pos: %i", status->y);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Depth: %i", status->depth);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Heading: %i", status->heading);
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Waypoint: %i", status->waypoint);
-
     }
 
-    // 
+    // publishes succes or failure of emergency kill command
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        auto success_msg = std_msgs::msg::Bool();
-        success_msg.data = msg.packet_data[0];
+        auto success_msg = base_station_interfaces::msg::CommandVerify();
+        success_msg.beacon_id = msg.src_id;
+        success_msg.success = msg.packet_data[0];
+
         this->confirm_e_kill_publisher_->publish(success_msg);
-        if (success_msg.data){
+        if (success_msg.success){
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful for Coug %i", msg.src_id);
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed for Coug %i", msg.src_id);
         }
     }
 
+    // publishes succes or failure of emergency surface command
     void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        auto success_msg = std_msgs::msg::Bool();
-        success_msg.data = msg.packet_data[0];
-        this->confirm_e_kill_publisher_->publish(success_msg);
-        if (success_msg.data){
+        auto success_msg = base_station_interfaces::msg::CommandVerify();
+        success_msg.beacon_id = msg.src_id;
+        success_msg.success = msg.packet_data[0];
+
+        this->confirm_e_surface_->publish(success_msg);
+        if (success_msg.success){
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful for Coug %i", msg.src_id);
         } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed for Coug %i", msg.src_id);
         }
     }
 
-
+    // checks the connections of the vehicles in the mission and publishes the connections
     void check_modem_connections() {
         rclcpp::Time now = this->now();
         std::vector<bool> connections;
@@ -193,14 +201,14 @@ public:
         for (auto vehicle_id : vehicles_in_mission_) {
             auto it = last_message_time_.find(vehicle_id);
             if (it != last_message_time_.end()) {
-                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %i", vehicle_id);
+                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %li", vehicle_id);
 
                 double dt = (now - it->second).seconds();
                 connections.push_back(dt < 10);
                 last_ping.push_back(static_cast<uint32_t>(dt));
 
             } else {
-                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %i", vehicle_id);
+                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %li", vehicle_id);
                 connections.push_back(false);
             }
         }
@@ -240,8 +248,8 @@ private:
 
     rclcpp::Publisher<base_station_interfaces::msg::Status>::SharedPtr status_publisher_;
     rclcpp::Publisher<base_station_interfaces::msg::Connections>::SharedPtr modem_connections_publisher_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr confirm_e_kill_publisher_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr confirm_e_surface_;
+    rclcpp::Publisher<base_station_interfaces::msg::CommandVerify>::SharedPtr confirm_e_kill_publisher_;
+    rclcpp::Publisher<base_station_interfaces::msg::CommandVerify>::SharedPtr confirm_e_surface_;
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;

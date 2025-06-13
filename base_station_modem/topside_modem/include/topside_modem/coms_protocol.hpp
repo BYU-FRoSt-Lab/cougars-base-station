@@ -27,11 +27,11 @@ enum COUG_MSG_ID : uint8_t {
 
 
 struct EmergencyKill {
-    static const COUG_MSG_ID msg_id = EMERGENCY_KILL;
+    COUG_MSG_ID msg_id = EMERGENCY_KILL;
 }__attribute__((packed));
 
 struct ConfirmEmergencyKill {
-    static const COUG_MSG_ID msg_id = CONFIRM_EMERGENCY_KILL;
+    COUG_MSG_ID msg_id = CONFIRM_EMERGENCY_KILL;
     bool success;
 }__attribute__((packed));
 
@@ -45,21 +45,27 @@ struct ConfirmEmergencySurface {
 }__attribute__((packed));
 
 struct RequestStatus {
-    static const COUG_MSG_ID msg_id = REQUEST_STATUS;
+    COUG_MSG_ID msg_id = REQUEST_STATUS;
 }__attribute__((packed));
 
 struct VehicleStatus {
-    static const COUG_MSG_ID msg_id = VEHICLE_STATUS;
+    COUG_MSG_ID msg_id = VEHICLE_STATUS;
 
-    uint32_t timestamp;
+    uint8_t waypoint;
 
-    uint8_t moos_waypoint;
-    uint8_t moos_behavior_number;
+    uint8_t battery_voltage;
+    uint8_t battery_percentage;
 
-    int16_t x;
-    int16_t y;
-    uint16_t depth;
-    uint16_t heading;
+    uint8_t leak;
+
+    uint8_t safety_mask;
+
+    int8_t x;
+    int8_t y;
+    int8_t x_vel;
+    int8_t y_vel;
+    uint8_t depth;
+    uint8_t heading;
 
 }__attribute__((packed));
 
