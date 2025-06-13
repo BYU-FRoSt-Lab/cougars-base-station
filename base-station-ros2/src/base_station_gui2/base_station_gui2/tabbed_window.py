@@ -9,7 +9,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter
 
-from base_station_interfaces.srv import BeaconId
+from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
 from transforms3d.euler import quat2euler
 import math
@@ -393,6 +393,20 @@ class MainWindow(QMainWindow):
             self.confirm_reject_label.setText("Canceling Emergency Surface command...")
             self.recieve_console_update(f"Canceling Emergency Surface for Coug {coug_number}", coug_number)
 
+    #Connected to the "ModemControl" service in base_station_interfaces
+    def modem_shut_off_service(self, shutoff:bool):
+        message = ModemControl.Request()
+        message.modem_shut_off = shutoff
+        if shutoff: self.confirm_reject_label.setText("Wifi Connected, Shutting Off Modem")
+        else: self.confirm_reject_label.setText("Wifi Disconnected, Turning On Modem")
+        for i in self.selected_cougs:
+            if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", i)
+            else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", i)
+        future = self.ros_node.cli3.call_async(message)
+        # Add callback to handle response
+        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", coug_number=0)) #0->for all cougs
+        return future
+
     #used by various buttons to handle services dynamically
     def handle_service_response(self, future, action, coug_number):
         # Handles the result of an asynchronous ROS service call.
@@ -509,7 +523,7 @@ class MainWindow(QMainWindow):
         self.recall_all_cougs = QPushButton("Recall Cougs (NS)")
         self.recall_all_cougs.clicked.connect(self.recall_cougs)
         self.recall_all_cougs.setStyleSheet("background-color: red; color: black;")
-
+        
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
         self.general_page_C0_layout.addSpacing(100)
@@ -1011,11 +1025,12 @@ class MainWindow(QMainWindow):
     
     def _update_safety_status_information(self, coug_number, safety_message):
         print(f"Testing signal for coug#{coug_number}: {safety_message}")
-        #TODO: Ask Eli to decode what the bits mean
-        # print(f"gps: {safety_message.gps_status.data}")
-        # print(f"dvl: {safety_message.dvl_status.data}")
         # safety_message.wifi_status ##TODO: Ask Eli to add this
         # safety_message.imu_status ##TODO: Ask Eli to add this
+
+        #TEST:TODO remove this logic when wifi_status is created
+        #randomly control whether to shut off the modem or not, simulating wifi connection
+        self.modem_shut_off_service(random.choice([True, False]))
 
         #logic is opposite, switch 0 and 1
         if safety_message.gps_status.data: gps_data = 0

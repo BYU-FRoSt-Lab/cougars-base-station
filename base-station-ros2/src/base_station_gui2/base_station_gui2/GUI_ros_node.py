@@ -15,7 +15,7 @@ from PyQt6.QtCore import QTimer
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
 
-from base_station_interfaces.srv import BeaconId
+from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status
 from frost_interfaces.msg import SystemStatus
 
@@ -104,6 +104,7 @@ class GuiNode(Node):
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
+        self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
     def listener_callback(self, msg):
         """
