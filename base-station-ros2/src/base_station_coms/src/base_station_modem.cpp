@@ -151,7 +151,6 @@ public:
         status_msg.safety_status.modem_status.data = (status->safety_mask & 0x04) != 0;
         status_msg.safety_status.dvl_status.data = (status->safety_mask & 0x08) != 0;
         status_msg.safety_status.emergency_status.data = (status->safety_mask & 0x10) != 0;
-        status_msg.leak_status.fluid_pressure = status->leak;
         status_msg.smoothed_odom.pose.pose.position.x = status->x;
         status_msg.smoothed_odom.pose.pose.position.y = status->y;
         status_msg.smoothed_odom.twist.twist.linear.x = status->x_vel;
