@@ -55,7 +55,7 @@ class GuiNode(Node):
             )
             setattr(self, f'depth_data_subscription{coug_number}', sub)            
             
-            #dynamic subscriptions for the leak/data messages (used for pressure)
+            #dynamic subscriptions for the pressure data topic
             sub = self.create_subscription(
                 FluidPressure,
                 f'coug{coug_number}/pressure/data',
@@ -63,15 +63,6 @@ class GuiNode(Node):
                 10
             )
             setattr(self, f'pressure_data_subscription{coug_number}', sub)
-
-            #dynamic subscriptions for the leak/data messages #TODO: how is leak data being published?
-            # sub = self.create_subscription(
-            #     FluidPressure,
-            #     f'coug{coug_number}/leak/data',
-            #     lambda msg, n=coug_number: window.receive_leak_data_message(n, msg),
-            #     10
-            # )
-            # setattr(self, f'leak_data_subscription{coug_number}', sub) 
 
             #dynamic subscriptions for the battery/data messages
             sub = self.create_subscription(

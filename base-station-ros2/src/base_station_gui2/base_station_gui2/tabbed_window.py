@@ -48,16 +48,15 @@ class MainWindow(QMainWindow):
         self.feedback_dict = {
             #0->negative, 1->positive, 2->waiting
             #Cougs 1-3 connections
-            "Wifi_connections": {coug_num: 2 for coug_num in self.selected_cougs},
-            "Radio_connections": {coug_num: 2 for coug_num in self.selected_cougs},
-            "Modem_connections": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Wifi": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Radio": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Modem": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #0->negative, 1->positive, 2->waiting
             #Cougs 1-3 sensors
             "DVL": {coug_num: 2 for coug_num in self.selected_cougs},
             "GPS": {coug_num: 2 for coug_num in self.selected_cougs},
-            "IMU_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
-            "Leak_sensors": {coug_num: 2 for coug_num in self.selected_cougs},
+            "IMU": {coug_num: 2 for coug_num in self.selected_cougs},
             "Battery": {coug_num: 2 for coug_num in self.selected_cougs},
 
             #Cougs 1-3 status messages
@@ -286,16 +285,19 @@ class MainWindow(QMainWindow):
 
     def get_status_message_color(self, message):
         # Returns a color and possibly modified message string based on status.
-        if message.lower() == "connected": message_color = "green"
-        elif message.lower() == "no connection": message_color = "red"
-        elif message.lower() == "no data": message_color = "yellow"
-        elif not message: 
-            message_color = "orange"
-            message = "No message to be read"
+        if not message: 
+            message_color = "green"
+            message_label = "Good"
+        elif message == 1: 
+            message_color = "red"
+            message_label = "EMERGENCY: Recall Coug Immediately"
+        elif message == 2:
+            message_color = "yellow"
+            message_label = "Surfaced/Disarmed"
         else: 
-            message = "Status flag unrecognized: " + message
-            message_color = "blue"
-        return message_color, message
+            message_label = "No Data Received"
+            message_color = "orange"
+        return message_color, message_label
 
     "/*Override the resizeEvent method in the sub class*/"
     def resizeEvent(self, event):
@@ -344,19 +346,20 @@ class MainWindow(QMainWindow):
         widget.setAutoFillBackground(True)
         widget.setPalette(palette)
 
-    #(NS) -> not yet connected to a signal
     def load_missions_button(self):
         self.confirm_reject_label.setText("Loading the missions...")
         for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
 
         def deploy_in_thread():
             try:
-                deploy.main(self.selected_cougs)
-                self.confirm_reject_label.setText("Missions deployed successfully.")
-                for i in self.selected_cougs:
-                    self.recieve_console_update("Missions deployed successfully.", i)
+                success_dict = deploy.main(self.selected_cougs)
+                for i in self.selected_cougs: 
+                    message = f"Mission loading for Coug{i} finished with no errors." if success_dict[i] else f"Mission loading for Coug{i} failed."
+                    self.confirm_reject_label.setText(message)
+                    self.recieve_console_update(message, i)
+
             except Exception as e:
-                err_msg = f"Mission deployment failed: {e}"
+                err_msg = f"Mission loading failed: {e}"
                 print(err_msg)
                 self.confirm_reject_label.setText(err_msg)
                 for i in self.selected_cougs:
@@ -377,11 +380,13 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread():
             try:
-                deploy.main([coug_number]) #deploy.py expects a list
-                self.confirm_reject_label.setText("Mission deployed successfully.")
-                self.recieve_console_update("Mission deployed successfully.", coug_number)
+                success_dict = deploy.main([coug_number])
+                message = f"Coug{coug_number} mission loading finished with no errors." if success_dict[coug_number] else f"Coug{coug_number} mission loading failed."
+                self.confirm_reject_label.setText(message)
+                self.recieve_console_update(message, coug_number)
+
             except Exception as e:
-                err_msg = f"Mission deployment failed: {e}"
+                err_msg = f"Mission loading failed: {e}"
                 print(err_msg)
                 self.confirm_reject_label.setText(err_msg)
                 self.recieve_console_update(err_msg, coug_number)
@@ -584,7 +589,7 @@ class MainWindow(QMainWindow):
         layout.addSpacing(20)
 
         #section labels for each column
-        section_titles = ["Connections", "Sensors", "Status"]
+        section_titles = ["Connections", "Sensors", "Emergency Status"]
         for title in section_titles:
             layout.addWidget(QLabel(title, font=QFont("Arial", 15)), alignment=Qt.AlignmentFlag.AlignTop)
             layout.addSpacing(20)
@@ -593,18 +598,18 @@ class MainWindow(QMainWindow):
 
             #The connections section contains the wifi, radio, and modem connections for each Coug respectively
             if title == "Connections": 
-                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi_connections"][coug_number]], self.tab_spacing)
-                wifi_widget.setObjectName(f"Wifi_connections{coug_number}")
+                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], self.tab_spacing)
+                wifi_widget.setObjectName(f"Wifi{coug_number}")
                 layout.addWidget(wifi_widget)
                 layout.addSpacing(20)
 
-                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio_connections"][coug_number]], self.tab_spacing)
-                radio_widget.setObjectName(f"Radio_connections{coug_number}")
+                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], self.tab_spacing)
+                radio_widget.setObjectName(f"Radio{coug_number}")
                 layout.addWidget(radio_widget)
                 layout.addSpacing(20)
 
-                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem_connections"][coug_number]], self.tab_spacing)
-                modem_widget.setObjectName(f"Modem_connections{coug_number}")
+                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], self.tab_spacing)
+                modem_widget.setObjectName(f"Modem{coug_number}")
                 layout.addWidget(modem_widget)
                 layout.addSpacing(40)
 
@@ -620,18 +625,17 @@ class MainWindow(QMainWindow):
                 layout.addWidget(GPS_sensor_widget)
                 layout.addSpacing(20)
                 
-                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU_sensors"][coug_number]], self.tab_spacing)
-                IMU_sensor_widget.setObjectName(f"IMU_sensors{coug_number}")
+                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], self.tab_spacing)
+                IMU_sensor_widget.setObjectName(f"IMU{coug_number}")
                 layout.addWidget(IMU_sensor_widget)
                 layout.addSpacing(40)
 
             #The status section contains the status message for each Coug respectively
-            elif title == "Status":
-                status = self.feedback_dict["Status_messages"][coug_number]
-                status_color, status = self.get_status_message_color(status)
+            elif title == "Emergency Status":
+                status = "No Data Recieved"
                 label = QLabel(f"{status}", font=QFont("Arial", 13))
                 label.setObjectName(f"Status_messages{coug_number}")
-                label.setStyleSheet(f"color: {status_color};")
+                label.setStyleSheet(f"color: orange;")
                 layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
                 layout.addSpacing(40)
 
@@ -931,16 +935,16 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add connection status icons (Wifi, Radio, Modem)
-        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi_connections"][coug_number]], 0)
-        wifi_widget.setObjectName(f"Spec_Wifi_connections{coug_number}")
+        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], 0)
+        wifi_widget.setObjectName(f"Spec_Wifi{coug_number}")
         temp_layout.addWidget(wifi_widget)
 
-        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio_connections"][coug_number]], 0)
-        radio_widget.setObjectName(f"Spec_Radio_connections{coug_number}")
+        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], 0)
+        radio_widget.setObjectName(f"Spec_Radio{coug_number}")
         temp_layout.addWidget(radio_widget)
 
-        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem_connections"][coug_number]], 0)
-        modem_widget.setObjectName(f"Spec_Modem_connections{coug_number}")
+        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], 0)
+        modem_widget.setObjectName(f"Spec_Modem{coug_number}")
         temp_layout.addWidget(modem_widget)
         temp_layout.addSpacing(20)
 
@@ -951,7 +955,7 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(20)
         temp_layout.addWidget(temp_label)
 
-        # Add sensor status icons (DVL, GPS, IMU, Leak Detector)
+        # Add sensor status icons (DVL, GPS, IMU)
         DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], 0)
         DVL_sensor_widget.setObjectName(f"Spec_DVL{coug_number}")
         temp_layout.addWidget(DVL_sensor_widget)
@@ -960,13 +964,9 @@ class MainWindow(QMainWindow):
         GPS_sensor_widget.setObjectName(f"Spec_GPS{coug_number}")
         temp_layout.addWidget(GPS_sensor_widget)
         
-        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU_sensors"][coug_number]], 0)
-        IMU_sensor_widget.setObjectName(f"Spec_IMU_sensors{coug_number}")
+        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], 0)
+        IMU_sensor_widget.setObjectName(f"Spec_IMU{coug_number}")
         temp_layout.addWidget(IMU_sensor_widget)
-
-        Leak_sensor_widget = self.create_icon_and_text("Leak Detector", self.icons_dict[self.feedback_dict["Leak_sensors"][coug_number]], 0)
-        Leak_sensor_widget.setObjectName(f"Spec_Leak_sensors{coug_number}")
-        temp_layout.addWidget(Leak_sensor_widget)
 
         # Return the container widget holding all status icons
         return temp_container
@@ -1052,6 +1052,8 @@ class MainWindow(QMainWindow):
         # std_msgs/Header header
         # #0 = good, 1 = not publishing
         # std_msgs/Int8 depth_status
+        # #imu status
+        # std_msgs/Bool imu_published
         # #0=good, bit 1 = publishing?, bit 2 = good enough gps fix?
         # std_msgs/Int8 gps_status
         # #0 = good, 1= not publishing
@@ -1060,16 +1062,19 @@ class MainWindow(QMainWindow):
         # std_msgs/Int8 dvl_status
         # #0= ok, 1 = surfacing, 2=surfaced/disarmed
         # std_msgs/Int8 emergency_status
+        # #what node is sending this, 1= coug, 0= base station
+        #or, 1= wifi, 0= modem
+        # std_msgs/Int8 sender_id
         self.safety_status_signal.emit(coug_number, safety_message)
     
     def _update_safety_status_information(self, coug_number, safety_message):
         # safety_message.wifi_status ##TODO: Ask Eli to add this
-        # safety_message.imu_status ##TODO: Ask Eli to add this
 
-        #TEST:TODO remove this logic when wifi_status is created
-        #randomly control whether to shut off the modem or not, simulating wifi connection
-        ######random logic: 
-        #####self.modem_shut_off_service(random.choice([True, False]))
+        #Wifi widget, only if it changes
+        if self.feedback_dict["Wifi"][coug_number] != safety_message.sender_id.data:
+            self.feedback_dict["Wifi"][coug_number] = safety_message.sender_id.data
+            modem_off = True if self.feedback_dict["Wifi"][coug_number] else False
+            self.modem_shut_off_service(modem_off)
 
         #logic is opposite, switch 0 and 1
         if safety_message.gps_status.data: gps_data = 0
@@ -1078,15 +1083,31 @@ class MainWindow(QMainWindow):
 
         if safety_message.dvl_status.data: dvl_data = 0
         else: dvl_data = 1
-        self.feedback_dict["DVL"][coug_number] = dvl_data
+        self.feedback_dict["DVL"][coug_number] = dvl_data 
+        
+        if safety_message.imu_published.data: imu_data = 0
+        else: imu_data = 1
+        self.feedback_dict["IMU"][coug_number] = imu_data
         
         #replace general page widgets
-        self.replace_general_page_widget(coug_number, "GPS")
-        self.replace_general_page_widget(coug_number, "DVL")
+        self.replace_general_page_icon_widget(coug_number, "GPS")
+        self.replace_general_page_icon_widget(coug_number, "DVL")
+        self.replace_general_page_icon_widget(coug_number, "Wifi")
+        self.replace_general_page_icon_widget(coug_number, "IMU")
 
         #replace specific page widgets
         self.replace_specific_icon_widget(coug_number, "GPS")
         self.replace_specific_icon_widget(coug_number, "DVL")
+        self.replace_specific_icon_widget(coug_number, "Wifi")
+        self.replace_specific_icon_widget(coug_number, "IMU")
+
+        #replace emergency status label
+        if self.feedback_dict["Status_messages"][coug_number] != safety_message.emergency_status.data:
+            self.feedback_dict["Status_messages"][coug_number] = safety_message.emergency_status.data
+            layout = self.general_page_coug_layouts.get(coug_number)
+            widget = self.general_page_coug_widgets.get(coug_number)
+            new_status_label, status_color = self.get_status_label(coug_number, self.feedback_dict["Status_messages"][coug_number])
+            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
 
     def recieve_smoothed_output_message(self, coug_number, msg):
         self.smoothed_ouput_signal.emit(coug_number, msg)
@@ -1239,11 +1260,11 @@ class MainWindow(QMainWindow):
         print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
-                feedback_key = "Radio_connections"
+                feedback_key = "Radio"
                 feedback_key_seconds = "Radio_seconds"
                 conn_type = 1
             else:
-                feedback_key = "Modem_connections"
+                feedback_key = "Modem"
                 feedback_key_seconds = "Modem_seconds"
                 conn_type = 0
 
@@ -1258,8 +1279,7 @@ class MainWindow(QMainWindow):
                 layout = self.general_page_coug_layouts.get(coug_number)
                 widget = self.general_page_coug_widgets.get(coug_number)
                 self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
-                new_status_label, status_color = self.get_status_label(coug_number)
-                self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
+
                 new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
                 layout = getattr(self, f"coug{coug_number}_column0_layout")
                 widget = getattr(self, f"coug{coug_number}_column0_widget")
@@ -1287,15 +1307,9 @@ class MainWindow(QMainWindow):
             print("Exception in update_connections_gui:", e)
             if coug_number in self.selected_cougs: self.recieve_console_update("Exception in update_connections_gui:", coug_number)
             
-    def get_status_label(self, coug_number):
-        status = ""
-        connection_types = ["Wifi_connections", "Radio_connections", "Modem_connections"]
-        temp_connections_list = [self.feedback_dict[ctype][coug_number] for ctype in connection_types]
-        if 1 in temp_connections_list: status = "Connected"
-        elif 0 in temp_connections_list: status = "No Connection"
-        else: status = "No Data"
-        status_color, status = self.get_status_message_color(status)
-        temp_label = QLabel(f"{status}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+    def get_status_label(self, coug_number, status_message):
+        status_color, message_text = self.get_status_message_color(status_message)
+        temp_label = QLabel(f"{message_text}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
         return temp_label, status_color
 
     def recieve_console_update(self, console_message, coug_number):
@@ -1332,7 +1346,7 @@ class MainWindow(QMainWindow):
             print(f"Exception in _update_console_gui: {e}")
             if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
 
-    def replace_general_page_widget(self, coug_number, prefix):
+    def replace_general_page_icon_widget(self, coug_number, prefix):
         layout = self.general_page_coug_layouts.get(coug_number)
         widget = self.general_page_coug_widgets.get(coug_number)
         status = self.feedback_dict[prefix][coug_number]
