@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ModemControl.srv"
   "msg/Status.msg"
   "msg/Connections.msg"
+  "msg/ConsoleLog.msg"
   DEPENDENCIES std_msgs
 )
 

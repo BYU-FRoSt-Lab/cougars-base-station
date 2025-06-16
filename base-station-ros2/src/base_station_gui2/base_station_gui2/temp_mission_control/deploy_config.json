@@ -1,21 +1,12 @@
 {
   "vehicles": [
     {
-      "name": "Coug1",
+      "name": "CougX",
       "remote_user": "frostlab",
-      "remote_host": "192.168.0.101",
+      "remote_host": "192.168.0.10X",
       "remote_path": "/home/frostlab/cougars/config/deploy_tmp/",
-      "mission_file": "coug1_mission.json",
-      "param_file": "coug1_params.yaml",
-      "fleet_param_file": "fleet_params.yaml"
-    },
-    {
-      "name": "Coug2",
-      "remote_user": "frostlab",
-      "remote_host": "192.168.0.102",
-      "remote_path": "/home/frostlab/cougars/config/deploy_tmp/",
-      "mission_file": "coug2_mission.json",
-      "param_file": "coug2_params.yaml",
+      "mission_file": "cougX_mission.json",
+      "param_file": "cougX_params.yaml",
       "fleet_param_file": "fleet_params.yaml"
     }
   ]

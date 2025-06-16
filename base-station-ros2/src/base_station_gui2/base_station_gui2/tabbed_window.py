@@ -205,6 +205,13 @@ class MainWindow(QMainWindow):
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
 
+    def handle_console_log(self, msg):
+        if msg.coug_number == 0:
+            for i in self.selected_cougs:
+                self.recieve_console_update(msg.message, i)
+        elif msg.coug_number in self.selected_cougs:
+            self.recieve_console_update(msg.message, msg.coug_number)
+
     def scroll_console_to_bottom_on_tab(self, index):
         """
         Ensures the console log for a Coug tab is always scrolled to the bottom when the tab is selected.
@@ -340,12 +347,11 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def load_missions_button(self):
         self.confirm_reject_label.setText("Loading the missions...")
-        for i in self.selected_cougs:
-            self.recieve_console_update("Loading the missions...", i)
+        for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
 
         def deploy_in_thread():
             try:
-                deploy.main()
+                deploy.main(self.selected_cougs)
                 self.confirm_reject_label.setText("Missions deployed successfully.")
                 for i in self.selected_cougs:
                     self.recieve_console_update("Missions deployed successfully.", i)
@@ -364,13 +370,24 @@ class MainWindow(QMainWindow):
         self.confirm_reject_label.setText("Starting the missions...")
         for i in self.selected_cougs: self.recieve_console_update("Starting the missions...", i)
 
-    #(NS) -> not yet connected to a signal
     def spec_load_missions_button(self, coug_number):
         # Handler for 'Load Mission' button on a specific Coug tab.
         self.confirm_reject_label.setText(f"Loading Coug {coug_number} mission...")
         self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
 
-    #(NS) -> not yet connected to a signal
+        def deploy_in_thread():
+            try:
+                deploy.main([coug_number]) #deploy.py expects a list
+                self.confirm_reject_label.setText("Mission deployed successfully.")
+                self.recieve_console_update("Mission deployed successfully.", coug_number)
+            except Exception as e:
+                err_msg = f"Mission deployment failed: {e}"
+                print(err_msg)
+                self.confirm_reject_label.setText(err_msg)
+                self.recieve_console_update(err_msg, coug_number)
+
+        threading.Thread(target=deploy_in_thread, daemon=True).start()
+
     def spec_start_missions_button(self, coug_number):
         # Handler for 'Start Mission' button on a specific Coug tab.
         self.confirm_reject_label.setText(f"Starting Coug {coug_number} mission...")
@@ -527,7 +544,7 @@ class MainWindow(QMainWindow):
         general_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         #Load All Missions button
-        self.Load_missions_button = QPushButton("Load Missions (NS)")
+        self.Load_missions_button = QPushButton("Load All Missions")
         self.Load_missions_button.clicked.connect(self.load_missions_button)
         self.Load_missions_button.setStyleSheet("background-color: blue; color: black;")
 
@@ -665,11 +682,16 @@ class MainWindow(QMainWindow):
         # Create a QLabel from the message_text for displaying the log
         message_label = QLabel(message_text)
         message_label.setWordWrap(True) # Enable word wrapping for readability
-        message_label.setFont(QFont("Arial", 13))
+        font = QFont()
+        #second font is for emojis, that aren't available in arial
+        font.setFamily("Arial, Noto Color Emoji")
+        font.setPointSize(13)
+        message_label.setFont(font)
         message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop) 
         message_label.setContentsMargins(0, 0, 0, 0)
         message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         message_label.setObjectName(f"Console_messages{coug_number}")
+
 
         # Create a QWidget to hold the message label, and a layout for it
         scroll_content = QWidget()
@@ -775,7 +797,7 @@ class MainWindow(QMainWindow):
         setattr(self, f"coug{coug_number}_buttons_column_layout", temp_V_layout)
 
         #load mission (blue)
-        self.create_coug_button(coug_number, "load_mission", "Load Mission (NS)", "blue", lambda: self.spec_load_missions_button(coug_number))
+        self.create_coug_button(coug_number, "load_mission", "Load Mission", "blue", lambda: self.spec_load_missions_button(coug_number))
         #start mission (blue)
         self.create_coug_button(coug_number, "start_mission", "Start Mission (NS)", "blue", lambda: self.spec_start_missions_button(coug_number))
         #system reboot (red)
@@ -1243,7 +1265,7 @@ class MainWindow(QMainWindow):
                 widget = getattr(self, f"coug{coug_number}_column0_widget")
                 self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
 
-            # Update seconds since last ping for each Cdef recieve_console_updateoug
+            # Update seconds since last ping for each Coug
             ping_list = list(conn_message.last_ping)
             count = 0
             for coug_number in conn_message.vehicle_ids:

@@ -16,7 +16,7 @@ import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
 
 from base_station_interfaces.srv import BeaconId, ModemControl
-from base_station_interfaces.msg import Connections, Status
+from base_station_interfaces.msg import Connections, Status, ConsoleLog
 from frost_interfaces.msg import SystemStatus
 
 class GuiNode(Node):
@@ -99,7 +99,14 @@ class GuiNode(Node):
             Connections,
             'connections',
             window.recieve_connections,  # Calls the GUI's recieve_connections method
-            10)   
+            10)  
+
+        self.console_log_sub = self.create_subscription(
+            ConsoleLog,
+            'console_log',
+            window.handle_console_log,
+            10
+        ) 
             
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
