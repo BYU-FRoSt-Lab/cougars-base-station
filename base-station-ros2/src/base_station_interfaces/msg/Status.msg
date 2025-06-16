@@ -4,3 +4,4 @@ frost_interfaces/SystemStatus safety_status
 nav_msgs/Odometry smoothed_odom
 sensor_msgs/BatteryState battery_state
 geometry_msgs/PoseWithCovarianceStamped depth_data
+sensor_msgs/FluidPressure pressure

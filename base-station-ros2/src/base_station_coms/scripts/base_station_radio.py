@@ -243,6 +243,7 @@ class RFBridge(Node):
         smoothed_odom = data.get('smoothed_odom', {})
         battery_state = data.get('battery_state', {})
         depth_data = data.get('depth_data', {})
+        pressure_data = data.get('pressure_data', {})
 
         status = Status()
         status.vehicle_id = data.get('src_id', 0)
@@ -261,6 +262,7 @@ class RFBridge(Node):
         status.battery_state.voltage = battery_state.get('voltage', 0.0)
         status.battery_state.percentage = battery_state.get('percentage', 0.0)
         status.depth_data.pose.pose.position.z = depth_data.get('depth', 0.0)
+        status.pressure.fluid_pressure = pressure_data.get('pressure', 0.0)
         self.status_publisher.publish(status)
 
 

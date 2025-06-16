@@ -159,6 +159,7 @@ public:
         status_msg.battery_state.voltage = status->battery_voltage;
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;
+        status_msg.pressure.fluid_pressure = status->pressure
         this->status_publisher_->publish(status_msg);
     }
 

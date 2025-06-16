@@ -107,7 +107,8 @@ public:
                 ros_namespace + "/battery/data", 10);
             depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
                 ros_namespace + "/depth_data", 10);
-            
+            pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
+                ros_namespace + "/pressure/data", 10);
         }
 
         std::ostringstream ss;
@@ -296,11 +297,13 @@ public:
             nav_msgs::msg::Odometry smoothed_odom = msg->smoothed_odom;
             sensor_msgs::msg::BatteryState battery_state = msg->battery_state;
             geometry_msgs::msg::PoseWithCovarianceStamped depth_status = msg->depth_data;
+            sensor_msgs::msg::FluidPressure pressure_status = msg->pressure;
 
             safety_status_publishers_[vehicle_id]->publish(safety_status);
             smoothed_odom_publishers_[vehicle_id]->publish(smoothed_odom);
             battery_publishers_[vehicle_id]->publish(battery_state);
             depth_publishers_[vehicle_id]->publish(depth_status);
+            pressure_publishers_[vehicle_id]->publish(pressure_status);
 
         } else {
             RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot publish status. There is no Vehicle with ID %li", vehicle_id);
@@ -329,6 +332,7 @@ private:
     std::unordered_map<int64_t, rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr> smoothed_odom_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr> battery_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr> depth_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr> pressure_publishers_;
 
     std::unordered_map<int,bool> radio_connection;
     std::unordered_map<int,bool> modem_connection;
