@@ -452,16 +452,21 @@ class MainWindow(QMainWindow):
         try:
             response = future.result()
             if response.success:
-                self.confirm_reject_label.setText(f"{action} Service Initiated Successfully")
-
-                for i in self.selected_cougs:
-                    self.recieve_console_update(f"{action} Service Initiated Successfully", i)
-
+                message = f"{action} Service Initiated Successfully"
+                self.confirm_reject_label.setText(message)
+                if not coug_number:
+                    for i in self.selected_cougs:
+                        self.recieve_console_update(message, i)
+                elif coug_number in self.selected_cougs:
+                    self.recieve_console_update(message, coug_number)
             else:
-                self.confirm_reject_label.setText(f"{action} Service Initialization Failed")
-
-                for i in self.selected_cougs:
-                    self.recieve_console_update(f"{action} Service Initialization Failed", i)
+                message = f"{action} Service Initialization Failed"
+                self.confirm_reject_label.setText(message)
+                if not coug_number:
+                    for i in self.selected_cougs:
+                        self.recieve_console_update(message, i)
+                elif coug_number in self.selected_cougs:
+                    self.recieve_console_update(message, coug_number)
        
         except Exception as e:
             self.confirm_reject_label.setText(f"{action} service call failed: {e}")
