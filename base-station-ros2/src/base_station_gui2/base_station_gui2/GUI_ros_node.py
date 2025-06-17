@@ -104,12 +104,6 @@ class GuiNode(Node):
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
-    def listener_callback(self, msg):
-        """
-        Example callback for logging received String messages.
-        """
-        self.get_logger().info('I heard: "%s"' % msg.data)
-
     def publish_text(self, text):
         """
         Publishes a String message to the 'topic' topic and logs it.
