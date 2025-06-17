@@ -1603,9 +1603,11 @@ class StartMissionsDialog(QDialog):
     def validate_and_accept(self):
         valid = False
         states = self.get_states()
-        #if record rosbag was chosen, a prefix must be given
+        #if record rosbag was chosen, a prefix must be given, as well as the opposite
         if states["record_rosbag"] and not states["rosbag_prefix"]: 
             QMessageBox.warning(self, "Prefix Required to Record Rosbag", "Please enter a rosbag prefix before continuing")
+        elif not states["record_rosbag"] and states["rosbag_prefix"]: 
+            QMessageBox.warning(self, "Record Rosbag Required to have Prefix", "Please select record rosbag before continuing")
         else:
             self.accept()
             return
