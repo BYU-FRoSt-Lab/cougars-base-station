@@ -352,11 +352,8 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread():
             try:
-                success_dict = deploy.main(self.selected_cougs)
-                for i in self.selected_cougs: 
-                    message = f"Mission loading for Coug{i} finished with no errors." if success_dict[i] else f"Mission loading for Coug{i} failed."
-                    self.confirm_reject_label.setText(message)
-                    self.recieve_console_update(message, i)
+                deploy.main(self.selected_cougs)
+                self.confirm_reject_label.setText("Loading Mission Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission loading failed: {e}"
@@ -380,10 +377,8 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread():
             try:
-                success_dict = deploy.main([coug_number])
-                message = f"Coug{coug_number} mission loading finished with no errors." if success_dict[coug_number] else f"Coug{coug_number} mission loading failed."
-                self.confirm_reject_label.setText(message)
-                self.recieve_console_update(message, coug_number)
+                deploy.main([coug_number])
+                self.confirm_reject_label.setText("Loading Mission Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission loading failed: {e}"

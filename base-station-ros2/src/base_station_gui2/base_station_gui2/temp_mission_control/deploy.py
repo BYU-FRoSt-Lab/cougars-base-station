@@ -70,17 +70,16 @@ def log_deployment(vehicle, files_sent, vehicle_num):
 
 def main(sel_vehicles): #selected vehicles
     global deployment_node
-    load_successes = {} #dictionary of bools for deployment sucesses or failure
     deployment_node = DeploymentPublisher()
 
     vehicles = load_config(sel_vehicles)
     for vehicle in vehicles:
+        load_success = True
         files_sent = []
         mission_path = os.path.join(MISSION_DIR, vehicle["mission_file"])
         param_path = os.path.join(PARAM_DIR, vehicle["param_file"])
         fleet_path = os.path.join(PARAM_DIR, vehicle["fleet_param_file"])
         vehicle_num = int(vehicle["remote_host"][-1])
-        load_successes[vehicle_num] = True
 
         for label, file_path, remote_filename in [
             ("Mission File", mission_path, "mission_states.json"),
@@ -101,11 +100,12 @@ def main(sel_vehicles): #selected vehicles
                 else:
                     print(f"❌ Failed to deploy {label} to {vehicle['name']}")
                     publish_console_log(f"❌ Failed to deploy {label} to {vehicle['name']}", vehicle_num)
-                    load_successes[vehicle_num] = False
+                    load_success = False
             else:
                 print(f"⚠️ File not found: {file_path} (skipping)")
                 publish_console_log(f"⚠️ File not found: {file_path} (skipping)", vehicle_num)
-                load_successes[vehicle_num] = False
+                load_success = False
 
         log_deployment(vehicle, files_sent, vehicle_num)
-    return load_successes 
+        message = f"Coug{vehicle_num} mission loading finished with no errors." if load_success else f"Coug{vehicle_num} mission loading failed."
+        publish_console_log(message, vehicle_num)
