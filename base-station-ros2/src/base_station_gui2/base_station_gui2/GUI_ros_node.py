@@ -4,6 +4,11 @@ import signal
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+
+
+import time
+from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
@@ -17,7 +22,7 @@ from rclpy.executors import SingleThreadedExecutor
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status, ConsoleLog
-from frost_interfaces.msg import SystemStatus
+from frost_interfaces.msg import SystemStatus, SystemControl
 
 class GuiNode(Node):
     """
@@ -26,6 +31,10 @@ class GuiNode(Node):
     """
     def __init__(self, window, selected_cougs):
         super().__init__('gui_node')
+        # Set reliable and transient local QoS profile
+        qos_reliable_profile = QoSProfile(depth=5)
+        qos_reliable_profile.reliability = ReliabilityPolicy.RELIABLE
+        qos_reliable_profile.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
         for coug_number in selected_cougs:
             #dynamic subscriptions for the safety status messages
@@ -73,6 +82,14 @@ class GuiNode(Node):
             )
             setattr(self, f'battery_data_subscription{coug_number}', sub)
 
+            #dynamic subscriptions for the battery/data messages
+            pub = self.create_publisher(
+                SystemControl,
+                f'/coug{coug_number}/system/status',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_publisher_', pub)
+
         self.kill_subscription = self.create_subscription(
             Bool,
             'confirm_e_kill',
@@ -98,7 +115,7 @@ class GuiNode(Node):
             window.handle_console_log,
             10
         ) 
-            
+
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')

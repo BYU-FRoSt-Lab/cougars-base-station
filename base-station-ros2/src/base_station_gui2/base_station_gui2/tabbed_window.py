@@ -3,7 +3,7 @@ import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
-    QStyle, QWidget, QDialog, QDialogButtonBox, QMessageBox
+    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox
 )
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
@@ -14,6 +14,7 @@ from functools import partial
 from transforms3d.euler import quat2euler
 import math
 from base_station_gui2.temp_mission_control import deploy
+from base_station_gui2.cougars_bringup.scripts import startup_call
 import threading
 
 class MainWindow(QMainWindow):
@@ -110,6 +111,14 @@ class MainWindow(QMainWindow):
             "Battery": "Battery (volts): ",
             "Pressure": "Pressure (Pa): ",
             "Angular_vel": "Angular Velocity (rad/s): "
+        }
+
+        self.option_map = {
+            "Start the node": "start_node",
+            "Record rosbag": "record_rosbag",
+            "Enter rosbag prefix (string): ": "rosbag_prefix",
+            "Arm Thruster": "arm_thruster",
+            "Start DVL": "start_dvl"
         }
 
         #This is a dictionary to map the feedback_dict to the correct symbols
@@ -364,11 +373,32 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=deploy_in_thread, daemon=True).start()
     
-    #(NS) -> not yet connected to a signal
     def start_missions_button(self):
         # Handler for 'Start Missions' button on the general tab.
-        self.confirm_reject_label.setText("Starting the missions...")
+        self.confirm_reject_label.setText("Starting all missions...")
         for i in self.selected_cougs: self.recieve_console_update("Starting the missions...", i)
+
+        def deploy_in_thread(start_config):
+            try:
+                startup_call.publish_system_control(self.ros_node, self.selected_cougs, start_config)
+                self.confirm_reject_label.setText("Starting Mission Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission starting failed: {e}"
+                print(err_msg)
+                self.confirm_reject_label.setText(err_msg)
+                for i in self.selected_cougs:
+                    self.recieve_console_update(err_msg, i)
+
+        options = ["Start the node", "Record rosbag", "Enter rosbag prefix (string): ", "Arm Thruster", "Start DVL"]
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
+        else:
+            err_msg = "Starting All Missions command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.confirm_reject_label.setText(err_msg)
 
     def spec_load_missions_button(self, coug_number):
         # Handler for 'Load Mission' button on a specific Coug tab.
@@ -392,6 +422,27 @@ class MainWindow(QMainWindow):
         # Handler for 'Start Mission' button on a specific Coug tab.
         self.confirm_reject_label.setText(f"Starting Coug {coug_number} mission...")
         self.recieve_console_update(f"Starting Coug {coug_number} mission...", coug_number)
+
+        def deploy_in_thread(start_config):
+            try:
+                startup_call.publish_system_control(self.ros_node, [coug_number], start_config)
+                self.confirm_reject_label.setText(f"Starting Mission Coug{coug_number} Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission starting failed: {e}"
+                print(err_msg)
+                self.confirm_reject_label.setText(err_msg)
+                self.recieve_console_update(err_msg, coug_number)
+
+        options = list(self.option_map.keys())
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
+        else:
+            err_msg = f"Starting Coug{coug_number} Mission command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.confirm_reject_label.setText(err_msg)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, coug_number):
@@ -554,7 +605,7 @@ class MainWindow(QMainWindow):
         self.Load_missions_button.setStyleSheet("background-color: blue; color: black;")
 
         #Start All Missions button
-        self.Start_missions_button = QPushButton("Start Missions (NS)")
+        self.Start_missions_button = QPushButton("Start All Missions")
         self.Start_missions_button.clicked.connect(self.start_missions_button)
         self.Start_missions_button.setStyleSheet("background-color: blue; color: black;")
 
@@ -803,7 +854,7 @@ class MainWindow(QMainWindow):
         #load mission (blue)
         self.create_coug_button(coug_number, "load_mission", "Load Mission", "blue", lambda: self.spec_load_missions_button(coug_number))
         #start mission (blue)
-        self.create_coug_button(coug_number, "start_mission", "Start Mission (NS)", "blue", lambda: self.spec_start_missions_button(coug_number))
+        self.create_coug_button(coug_number, "start_mission", "Start Mission", "blue", lambda: self.spec_start_missions_button(coug_number))
         #system reboot (red)
         self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", "red", lambda: self.emergency_surface_button(coug_number))
         #abort mission (red)
@@ -1503,6 +1554,72 @@ class AbortMissionsDialog(QDialog):
         layout.addWidget(message)
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
+
+class StartMissionsDialog(QDialog):
+    """
+    Custom dialog for starting the vehicle missions
+    Presents a window with configuration options
+
+    Parameters:
+        window_title (str): The title of the dialog window.
+        message_text (str): The message to display in the dialog.
+        parent (QWidget, optional): The parent widget.
+    """
+    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0):
+        """
+        Parameters:
+            options (list of str): List of checkbox labels.
+        """
+        super().__init__(parent)
+        if not vehicle: self.setWindowTitle("Start All Missions Configuration")
+        else: self.setWindowTitle(f"Start Coug{vehicle} Mission Configuration")
+        self.checkboxes = {}
+        self.passed_option_map = passed_option_map
+        layout = QVBoxLayout()
+
+        # Make the dialog not resizable
+        self.setFixedSize(300, 200)  # Set to your preferred width and height
+
+        self.inputs = {}
+
+        for opt in options:
+            if "rosbag prefix" in opt.lower():
+                le = QLineEdit()
+                le.setPlaceholderText("Enter Rosbag Prefix...")
+                self.inputs[opt] = le
+                layout.addWidget(le)
+            else:
+                cb = QCheckBox(opt)
+                cb.setChecked(False)
+                self.checkboxes[opt] = cb
+                layout.addWidget(cb)
+
+        # OK/Cancel buttons
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttonBox.accepted.connect(self.validate_and_accept)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+    
+    def validate_and_accept(self):
+        valid = False
+        states = self.get_states()
+        #if record rosbag was chosen, a prefix must be given
+        if states["record_rosbag"] and not states["rosbag_prefix"]: 
+            QMessageBox.warning(self, "Prefix Required to Record Rosbag", "Please enter a rosbag prefix before continuing")
+        else:
+            self.accept()
+            return
+
+    def get_states(self):
+        """
+        Returns a dict of {easy_key: value} for each option.
+        """
+        result = {}
+        for opt, cb in self.checkboxes.items():
+            result[self.passed_option_map[opt]] = cb.isChecked()
+        for opt, le in self.inputs.items():
+            result[self.passed_option_map[opt]] = le.text()
+        return result
 
 class ConfigurationWindow(QDialog):
     """
