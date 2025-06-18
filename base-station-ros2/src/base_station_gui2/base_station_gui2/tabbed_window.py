@@ -3,7 +3,7 @@ import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
-    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox
+    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox, QColorDialog
 )
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
@@ -213,6 +213,64 @@ class MainWindow(QMainWindow):
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
 
+    def open_tab_color_dialog(self):
+        dlg = TabColorDialog(self)
+        if dlg.exec():
+            bg_color, text_color = dlg.get_colors()
+            for name in self.tab_dict:
+                widget = self.tab_dict[name][0]
+                # Get the current stylesheet
+                current_style = widget.styleSheet()
+                # Parse current style for background and color
+                bg_style = ""
+                txt_style = ""
+                for part in current_style.split(";"):
+                    if "background-color" in part:
+                        bg_style = part.strip() + ";"
+                    if "color" in part and "background-color" not in part:
+                        txt_style = part.strip() + ";"
+                # Update only the property that is set
+                style = ""
+                if bg_color:
+                    bg = QColor(bg_color)
+                    if bg.isValid():
+                        bg_style = f"background-color: {bg.name()};"
+                    else:
+                        QMessageBox.warning(self, "Invalid Color", f"'{bg_color}' is not a valid background color.")
+                        return
+                if text_color:
+                    txt = QColor(text_color)
+                    if txt.isValid():
+                        txt_style = f"color: {txt.name()};"
+                    else:
+                        QMessageBox.warning(self, "Invalid Color", f"'{text_color}' is not a valid text color.")
+                        return
+                style = f"{bg_style} {txt_style}".strip()
+                widget.setStyleSheet(style)
+                for btn in self.findChildren(QPushButton):
+                    btn.setStyleSheet(f"background-color: {text_color}; color: {bg_color};")
+                
+                self.set_console_log_colors(text_color, bg_color)
+
+    def set_console_log_colors(self, bg_color, text_color):
+        """
+        Sets the background and text color of all console log QLabel widgets.
+        """
+        for coug_number in self.selected_cougs:
+            label = self.findChild(QLabel, f"Console_messages{coug_number}")
+            if label:
+                label.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+
+    def revert_tab_color(self):
+        for name in self.tab_dict:
+            widget = self.tab_dict[name][0]
+            widget.setStyleSheet("background-color: cadetblue; color: black;")
+
+            for btn in self.findChildren(QPushButton):
+                btn.setStyleSheet(f"background-color: white; color: cadetblue;")
+
+        self.set_console_log_colors("white", "cadetblue")
+    
     def handle_console_log(self, msg):
         if msg.coug_number == 0:
             for i in self.selected_cougs:
@@ -602,17 +660,24 @@ class MainWindow(QMainWindow):
         #Load All Missions button
         self.Load_missions_button = QPushButton("Load All Missions")
         self.Load_missions_button.clicked.connect(self.load_missions_button)
-        self.Load_missions_button.setStyleSheet("background-color: blue; color: black;")
+        # self.Load_missions_button.setStyleSheet("background-color: blue; color: black;")
 
         #Start All Missions button
         self.Start_missions_button = QPushButton("Start All Missions")
         self.Start_missions_button.clicked.connect(self.start_missions_button)
-        self.Start_missions_button.setStyleSheet("background-color: blue; color: black;")
+        # self.Start_missions_button.setStyleSheet("background-color: blue; color: black;")
 
         #Recall all the cougs button
         self.recall_all_cougs = QPushButton("Recall Cougs (NS)")
         self.recall_all_cougs.clicked.connect(self.recall_cougs)
-        self.recall_all_cougs.setStyleSheet("background-color: red; color: black;")
+        # self.recall_all_cougs.setStyleSheet("background-color: red; color: black;")
+
+        # Change Tab Color button
+        self.change_tab_color_button = QPushButton("Change Tab Color")
+        self.change_tab_color_button.clicked.connect(self.open_tab_color_dialog)
+        
+        self.revert_tab_color_button = QPushButton("Revert Tab Color")
+        self.revert_tab_color_button.clicked.connect(self.revert_tab_color)
         
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
@@ -624,6 +689,10 @@ class MainWindow(QMainWindow):
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_cougs)
+        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addWidget(self.change_tab_color_button)
+        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addWidget(self.revert_tab_color_button)
         
         # Add remaining buttons (red recall cougs at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -686,7 +755,7 @@ class MainWindow(QMainWindow):
                 status = "No Data Recieved"
                 label = QLabel(f"{status}", font=QFont("Arial", 13))
                 label.setObjectName(f"Status_messages{coug_number}")
-                label.setStyleSheet(f"color: orange;")
+                # label.setStyleSheet(f"color: orange;")
                 layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
                 layout.addSpacing(40)
 
@@ -1158,7 +1227,8 @@ class MainWindow(QMainWindow):
             layout = self.general_page_coug_layouts.get(coug_number)
             widget = self.general_page_coug_widgets.get(coug_number)
             new_status_label, status_color = self.get_status_label(coug_number, self.feedback_dict["Status_messages"][coug_number])
-            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color)
+            # self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color) #TODO: get rid of the status color logic :(
+            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label)
 
     def recieve_smoothed_output_message(self, coug_number, msg):
         self.smoothed_ouput_signal.emit(coug_number, msg)
@@ -1668,3 +1738,46 @@ class ConfigurationWindow(QDialog):
         Returns a dict of {option: bool} for each checkbox.
         """
         return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
+
+class TabColorDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Tab and Text Color")
+        self.setFixedSize(350, 200)
+        layout = QVBoxLayout()
+
+        self.color_line = QLineEdit()
+        self.color_line.setPlaceholderText("Tab background color (e.g., 'red' or '#5F9EA0')")
+        layout.addWidget(self.color_line)
+
+        self.pick_button = QPushButton("Pick Tab Color...")
+        self.pick_button.clicked.connect(self.open_color_picker)
+        layout.addWidget(self.pick_button)
+
+        self.text_color_line = QLineEdit()
+        self.text_color_line.setPlaceholderText("Tab text color (e.g., 'white' or '#000000')")
+        layout.addWidget(self.text_color_line)
+
+        self.pick_text_button = QPushButton("Pick Text Color...")
+        self.pick_text_button.clicked.connect(self.open_text_color_picker)
+        layout.addWidget(self.pick_text_button)
+
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+        self.setLayout(layout)
+
+    def open_color_picker(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.color_line.setText(color.name())
+
+    def open_text_color_picker(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self.text_color_line.setText(color.name())
+
+    def get_colors(self):
+        return self.color_line.text().strip(), self.text_color_line.text().strip()
