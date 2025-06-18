@@ -7,7 +7,7 @@
 #include "base_station_interfaces/msg/status.hpp"
 #include "base_station_interfaces/msg/connections.hpp"
 #include "std_msgs/msg/bool.hpp"
-#include "base_station_interfaces/msg/command_verify.hpp"
+#include "base_station_interfaces/msg/console_log.hpp"
 
 
 
@@ -73,10 +73,7 @@ public:
         this->modem_connections_publisher_ = this->create_publisher<base_station_interfaces::msg::Connections>("connections", 10);
 
         // publisher for the confirmation of the emergency kill command
-        this->confirm_e_kill_publisher_ = this->create_publisher<base_station_interfaces::msg::CommandVerify>("confirm_e_kill", 10);
-
-        // publisher for the confirmation of the emergency surface command
-        this->confirm_e_surface_ = this->create_publisher<base_station_interfaces::msg::CommandVerify>("confirm_e_surface", 10);
+        this->print_to_gui_pub = this->create_publisher<base_station_interfaces::msg::ConsoleLog>("console_log", 10);
 
         RCLCPP_INFO(this->get_logger(), "base station coms node started");
 
@@ -159,36 +156,38 @@ public:
         status_msg.battery_state.voltage = status->battery_voltage;
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;
-        status_msg.pressure.fluid_pressure = status->pressure
+        status_msg.pressure.fluid_pressure = status->pressure;
         this->status_publisher_->publish(status_msg);
     }
 
     // publishes succes or failure of emergency kill command
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        auto success_msg = base_station_interfaces::msg::CommandVerify();
-        success_msg.beacon_id = msg.src_id;
-        success_msg.success = msg.packet_data[0];
+        std::string message;
 
-        this->confirm_e_kill_publisher_->publish(success_msg);
-        if (success_msg.success){
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command was successful for Coug %i", msg.src_id);
+        if (msg.packet_data[0]){
+            message = "Emergency kill command was successful for Coug " + std::to_string(msg.src_id);
         } else {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency kill command failed for Coug %i", msg.src_id);
+            message = "Emergency kill command failed for Coug " + std::to_string(msg.src_id);
         }
+        base_station_interfaces::msg::ConsoleLog log_msg;
+        log_msg.message = message;
+        log_msg.coug_number = msg.src_id;
+        this->print_to_gui_pub->publish(log_msg);
     }
 
-    // publishes succes or failure of emergency surface command
+    // publishes success or failure of emergency surface command
     void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
-        auto success_msg = base_station_interfaces::msg::CommandVerify();
-        success_msg.beacon_id = msg.src_id;
-        success_msg.success = msg.packet_data[0];
+        std::string message;
 
-        this->confirm_e_surface_->publish(success_msg);
-        if (success_msg.success){
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command was successful for Coug %i", msg.src_id);
+        if (msg.packet_data[0]){
+            message = "Emergency surface command was successful for Coug " + std::to_string(msg.src_id);
         } else {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Emergency surface command failed for Coug %i", msg.src_id);
+            message = "Emergency surface command failed for Coug " + std::to_string(msg.src_id);
         }
+        base_station_interfaces::msg::ConsoleLog log_msg;
+        log_msg.message = message;
+        log_msg.coug_number = msg.src_id;
+        this->print_to_gui_pub->publish(log_msg);
     }
 
     // checks the connections of the vehicles in the mission and publishes the connections
@@ -248,8 +247,7 @@ private:
 
     rclcpp::Publisher<base_station_interfaces::msg::Status>::SharedPtr status_publisher_;
     rclcpp::Publisher<base_station_interfaces::msg::Connections>::SharedPtr modem_connections_publisher_;
-    rclcpp::Publisher<base_station_interfaces::msg::CommandVerify>::SharedPtr confirm_e_kill_publisher_;
-    rclcpp::Publisher<base_station_interfaces::msg::CommandVerify>::SharedPtr confirm_e_surface_;
+    rclcpp::Publisher<base_station_interfaces::msg::ConsoleLog>::SharedPtr print_to_gui_pub;
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;

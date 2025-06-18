@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 from base_station_interfaces.msg import Status
-from base_station_interfaces.msg import Connections
+from base_station_interfaces.msg import Connections, ConsoleLog
 from base_station_interfaces.srv import BeaconId
 from std_msgs.msg import String
 from std_msgs.msg import Bool
@@ -92,7 +92,7 @@ class RFBridge(Node):
         self.init_publisher = self.create_publisher(String, 'init', 10)
         self.status_publisher = self.create_publisher(Status, 'status', 10)
         self.rf_connection_publisher = self.create_publisher(Connections, 'connections', 10)
-        self.confirm_e_kill_publisher = self.create_publisher(Bool, 'confirm_e_kill', 10)
+        self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'print_to_gui', 10)
 
         self.e_kill_service = self.create_service(BeaconId, 'radio_e_kill', self.send_e_kill_callback)
         self.status_service = self.create_service(BeaconId, 'radio_status_request', self.request_status_callback)
@@ -261,7 +261,7 @@ class RFBridge(Node):
         status.smoothed_odom.twist.twist.linear.z = smoothed_odom.get('z_vel', 0.0)
         status.battery_state.voltage = battery_state.get('voltage', 0.0)
         status.battery_state.percentage = battery_state.get('percentage', 0.0)
-        status.depth_data.pose.pose.position.z = depth_data.get('depth', 0.0)
+        status.depth_data.pose.pose.position.z = -depth_data.get('depth', 0.0)
         status.pressure.fluid_pressure = pressure_data.get('pressure', 0.0)
         self.status_publisher.publish(status)
 
@@ -298,17 +298,23 @@ class RFBridge(Node):
 
         return response
 
+
     def confirm_e_kill(self, data):
+        self.get_logger().info(f"Confirmation emergency kill for Coug {data.get('src_id')} is {'successful' if data.get('success') else 'unsuccessful'}")
         if data.get("success"):
-            self.get_logger().debug(f"Emergency kill command was successful for Coug {data.get('src_id')}")
+            self.print_to_gui_publisher.publish(
+                ConsoleLog(
+                    message=f"Emergency kill command sent to Coug {data.get('src_id')}",
+                    coug_number=data.get('src_id', 0),
+                )
+            )
         else:
-            self.get_logger().warn(f"Emergency kill command failed for Coug {data.get('src_id')}")
-
-        success_msg = Bool()
-        success_msg.data = data.get("success", False)
-        self.confirm_e_kill_publisher.publish(success_msg)
-
-
+            self.print_to_gui_publisher.publish(
+                ConsoleLog(
+                    message=f"Emergency kill command sent to Coug {data.get('src_id')}",
+                    coug_number=data.get('src_id', 0),
+                )
+            )
 
 
     def destroy_node(self):
