@@ -45,6 +45,24 @@ class MainWindow(QMainWindow):
         for coug_data, included in coug_dict.items():
             if included: self.selected_cougs.append(int(str(coug_data[-1])))
 
+        #dark mode
+        self.background_color = "#0F1C37"
+        self.border_outline = "#FFFFFF"
+        self.text_color = "#FFFFFF"
+        self.normal_button_color = "#28625a"
+        self.danger_button_color = "#953f10"
+        self.button_padding = 12
+        self.button_font_size = 15
+        self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+        self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+        self.selected_tab_color =  "#FFFFFF"
+        self.selected_tab_text_color = self.background_color
+        self.not_selected_tab_text_color = "#FFFFFF"
+        self.not_selected_tab_color = self.background_color
+
+        #confirmation label dictionary
+        self.confirm_reject_labels = {}
+
         ###This is how the coug info gets into the GUI
         self.feedback_dict = {
             #0->negative, 1->positive, 2->waiting
@@ -155,15 +173,21 @@ class MainWindow(QMainWindow):
             # Add line and content to layout
             content_layout.addWidget(self.make_hline())
 
+            label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
+            label.setStyleSheet(f"color: {self.text_color}; font-size: 14px;") 
+            self.confirm_reject_labels[name] = label
+
             if name.lower() != "general":
                 # For Coug tabs, add specific widgets and console log
                 content_layout.addWidget(self.set_specific_coug_widgets(int(name[-1])))
                 content_layout.addWidget(self.make_hline())
                 content_layout.addWidget(self.create_specific_coug_console_log(int(name[-1])))
+                content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
             else:
                 # For General tab, add general widgets
                 content_layout.addWidget(content)
                 self.set_general_page_widgets()
+                content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
 
             # Set the combined layout
             content_widget.setLayout(content_layout)
@@ -171,15 +195,15 @@ class MainWindow(QMainWindow):
 
             # Add to tabs
             self.tabs.addTab(content_widget, name)
-            self.set_background(content_widget, "cadetblue")
+            self.set_background(content_widget, self.background_color)
 
         # Connect tab change to scroll-to-bottom for console logs
         self.tabs.currentChanged.connect(self.scroll_console_to_bottom_on_tab)
 
         #Emergency exit GUI button
-        self.emergency_exit_gui_button = QPushButton("Close GUI")
-        self.emergency_exit_gui_button.clicked.connect(self.close_window)
-        self.emergency_exit_gui_button.setStyleSheet("background-color: red; color: black;")
+        # self.emergency_exit_gui_button = QPushButton("Close GUI")
+        # self.emergency_exit_gui_button.clicked.connect(self.close_window)
+        # self.emergency_exit_gui_button.setStyleSheet(f"background-color: {self.background_color}; color: {self.text_color}; border: 2px solid {self.border_outline};")
 
         #Ctrl+C shortcut to close the window
         shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
@@ -189,10 +213,10 @@ class MainWindow(QMainWindow):
         self.main_layout = QVBoxLayout()
         #Add the tabs to the main layout
         self.main_layout.addWidget(self.tabs)
-        #button confirmation label
-        self.confirm_reject_label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
-        self.main_layout.addWidget(self.confirm_reject_label, alignment=Qt.AlignmentFlag.AlignTop)
-        self.main_layout.addWidget(self.emergency_exit_gui_button)
+        # #button confirmation label
+        # self.confirm_reject_label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
+        # self.main_layout.addWidget(self.confirm_reject_label, alignment=Qt.AlignmentFlag.AlignTop)
+        # self.main_layout.addWidget(self.emergency_exit_gui_button)
 
         #create a container widget, and place the main layout inside of it
         self.container = QWidget()
@@ -213,44 +237,44 @@ class MainWindow(QMainWindow):
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
 
-    def open_tab_color_dialog(self):
-        dlg = TabColorDialog(self)
-        if dlg.exec():
-            bg_color, text_color = dlg.get_colors()
-            for name in self.tab_dict:
-                widget = self.tab_dict[name][0]
-                # Get the current stylesheet
-                current_style = widget.styleSheet()
-                # Parse current style for background and color
-                bg_style = ""
-                txt_style = ""
-                for part in current_style.split(";"):
-                    if "background-color" in part:
-                        bg_style = part.strip() + ";"
-                    if "color" in part and "background-color" not in part:
-                        txt_style = part.strip() + ";"
-                # Update only the property that is set
-                style = ""
-                if bg_color:
-                    bg = QColor(bg_color)
-                    if bg.isValid():
-                        bg_style = f"background-color: {bg.name()};"
-                    else:
-                        QMessageBox.warning(self, "Invalid Color", f"'{bg_color}' is not a valid background color.")
-                        return
-                if text_color:
-                    txt = QColor(text_color)
-                    if txt.isValid():
-                        txt_style = f"color: {txt.name()};"
-                    else:
-                        QMessageBox.warning(self, "Invalid Color", f"'{text_color}' is not a valid text color.")
-                        return
-                style = f"{bg_style} {txt_style}".strip()
-                widget.setStyleSheet(style)
-                for btn in self.findChildren(QPushButton):
-                    btn.setStyleSheet(f"background-color: {text_color}; color: {bg_color};")
+    # def open_tab_color_dialog(self):
+    #     dlg = TabColorDialog(self)
+    #     if dlg.exec():
+    #         bg_color, text_color = dlg.get_colors()
+    #         for name in self.tab_dict:
+    #             widget = self.tab_dict[name][0]
+    #             # Get the current stylesheet
+    #             current_style = widget.styleSheet()
+    #             # Parse current style for background and color
+    #             bg_style = ""
+    #             txt_style = ""
+    #             for part in current_style.split(";"):
+    #                 if "background-color" in part:
+    #                     bg_style = part.strip() + ";"
+    #                 if "color" in part and "background-color" not in part:
+    #                     txt_style = part.strip() + ";"
+    #             # Update only the property that is set
+    #             style = ""
+    #             if bg_color:
+    #                 bg = QColor(bg_color)
+    #                 if bg.isValid():
+    #                     bg_style = f"background-color: {bg.name()};"
+    #                 else:
+    #                     QMessageBox.warning(self, "Invalid Color", f"'{bg_color}' is not a valid background color.")
+    #                     return
+    #             if text_color:
+    #                 txt = QColor(text_color)
+    #                 if txt.isValid():
+    #                     txt_style = f"color: {txt.name()};"
+    #                 else:
+    #                     QMessageBox.warning(self, "Invalid Color", f"'{text_color}' is not a valid text color.")
+    #                     return
+    #             style = f"{bg_style} {txt_style}".strip()
+    #             widget.setStyleSheet(style)
+    #             for btn in self.findChildren(QPushButton):
+    #                 btn.setStyleSheet(f"background-color: {text_color}; color: {bg_color};")
                 
-                self.set_console_log_colors(text_color, bg_color)
+    #             self.set_console_log_colors(text_color, bg_color)
 
     def set_console_log_colors(self, bg_color, text_color):
         """
@@ -261,15 +285,15 @@ class MainWindow(QMainWindow):
             if label:
                 label.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
 
-    def revert_tab_color(self):
-        for name in self.tab_dict:
-            widget = self.tab_dict[name][0]
-            widget.setStyleSheet("background-color: cadetblue; color: black;")
+    # def revert_tab_color(self):
+    #     for name in self.tab_dict:
+    #         widget = self.tab_dict[name][0]
+    #         widget.setStyleSheet("background-color: cadetblue; color: black;")
 
-            for btn in self.findChildren(QPushButton):
-                btn.setStyleSheet(f"background-color: white; color: cadetblue;")
+    #         for btn in self.findChildren(QPushButton):
+    #             btn.setStyleSheet(f"background-color: white; color: cadetblue;")
 
-        self.set_console_log_colors("white", "cadetblue")
+    #     self.set_console_log_colors("white", "cadetblue")
     
     def handle_console_log(self, msg):
         if msg.coug_number == 0:
@@ -303,17 +327,21 @@ class MainWindow(QMainWindow):
                 # Scroll the vertical scrollbar to the maximum (bottom)
                 scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
+    def replace_confirm_reject_label(self, confirm_reject_text):
+        for label in self.confirm_reject_labels.values():
+            label.setText(confirm_reject_text)
+
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
         #pop-up window
-        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self)
+        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self, background_color=self.background_color, text_color=self.text_color)
         #if confirm is selected
         if dlg.exec():
-            self.confirm_reject_label.setText("Closing Window...")
+            self.replace_confirm_reject_label("Closing Window...")
             print("Closing the Window now...")
             self.close()  
         else:
-            self.confirm_reject_label.setText("Canceling Close Window command...")
+            self.replace_confirm_reject_label("Canceling Close Window command...")
             for i in self.selected_cougs:
                 self.recieve_console_update("Canceling Close Window command...", i)
 
@@ -346,7 +374,7 @@ class MainWindow(QMainWindow):
         #The new label has the same name as the old one, so that it can be changed again
         new_label.setObjectName(widget_name)
         #set the optional color, if there wasn't a color passed, then it doesn't change anything
-        new_label.setStyleSheet(f"color: {color};")
+        new_label.setStyleSheet(f"color: {self.text_color};")
         #insert the new widget in the same index as the old one was, so the order of the text doesn't
         parent_layout.insertWidget(index, new_label)
 
@@ -387,7 +415,7 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
 
     "/*resize the tabs according to the width of the window*/"
-    def resizeTabs(self, width_px):
+    def resizeTabs(self, width_px): #TODO: what colors should these be 
         # Sets the stylesheet for tab width and appearance.
         self.tabs.setStyleSheet(f"""
         QTabBar::tab {{
@@ -395,12 +423,14 @@ class MainWindow(QMainWindow):
             width: {width_px - 15}px;
             font-size: 12pt;
             padding: 5px;
-            background: lightgray;  /* background color of non-selected tab */
-            color: black;           /* font color of non-selected tab */
+            background: {self.not_selected_tab_color};  /* background color of non-selected tab */
+            color: {self.not_selected_tab_text_color};           /* font color of non-selected tab */
+            border: 2px solid {self.not_selected_tab_text_color}; 
         }}
         QTabBar::tab:selected {{
-            background: blue;       /* background color of selected tab */
-            color: white;           /* font color of selected tab */
+            background: {self.selected_tab_color};       /* background color of selected tab */
+            color: {self.selected_tab_text_color};           /* font color of selected tab */
+            border: 2px solid {self.selected_tab_text_color}; 
             font-weight: bold;
         }}
         """)
@@ -414,18 +444,18 @@ class MainWindow(QMainWindow):
         widget.setPalette(palette)
 
     def load_missions_button(self):
-        self.confirm_reject_label.setText("Loading the missions...")
+        self.replace_confirm_reject_label("Loading the missions...")
         for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
 
         def deploy_in_thread():
             try:
                 deploy.main(self.selected_cougs)
-                self.confirm_reject_label.setText("Loading Mission Command Complete")
+                self.replace_confirm_reject_label("Loading Mission Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission loading failed: {e}"
                 print(err_msg)
-                self.confirm_reject_label.setText(err_msg)
+                self.replace_confirm_reject_label(err_msg)
                 for i in self.selected_cougs:
                     self.recieve_console_update(err_msg, i)
 
@@ -433,90 +463,90 @@ class MainWindow(QMainWindow):
     
     def start_missions_button(self):
         # Handler for 'Start Missions' button on the general tab.
-        self.confirm_reject_label.setText("Starting all missions...")
+        self.replace_confirm_reject_label("Starting all missions...")
         for i in self.selected_cougs: self.recieve_console_update("Starting the missions...", i)
 
         def deploy_in_thread(start_config):
             try:
                 startup_call.publish_system_control(self.ros_node, self.selected_cougs, start_config)
-                self.confirm_reject_label.setText("Starting Mission Command Complete")
+                self.replace_confirm_reject_label("Starting Mission Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 print(err_msg)
-                self.confirm_reject_label.setText(err_msg)
+                self.replace_confirm_reject_label(err_msg)
                 for i in self.selected_cougs:
                     self.recieve_console_update(err_msg, i)
 
         options = ["Start the node", "Record rosbag", "Enter rosbag prefix (string): ", "Arm Thruster", "Start DVL"]
-        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map)
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
             start_config = dlg.get_states()
             threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
         else:
             err_msg = "Starting All Missions command was cancelled."
             for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
-            self.confirm_reject_label.setText(err_msg)
+            self.replace_confirm_reject_label(err_msg)
 
     def spec_load_missions_button(self, coug_number):
         # Handler for 'Load Mission' button on a specific Coug tab.
-        self.confirm_reject_label.setText(f"Loading Coug {coug_number} mission...")
+        self.replace_confirm_reject_label(f"Loading Coug {coug_number} mission...")
         self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
 
         def deploy_in_thread():
             try:
                 deploy.main([coug_number])
-                self.confirm_reject_label.setText("Loading Mission Command Complete")
+                self.replace_confirm_reject_label("Loading Mission Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission loading failed: {e}"
                 print(err_msg)
-                self.confirm_reject_label.setText(err_msg)
+                self.replace_confirm_reject_label(err_msg)
                 self.recieve_console_update(err_msg, coug_number)
 
         threading.Thread(target=deploy_in_thread, daemon=True).start()
 
     def spec_start_missions_button(self, coug_number):
         # Handler for 'Start Mission' button on a specific Coug tab.
-        self.confirm_reject_label.setText(f"Starting Coug {coug_number} mission...")
+        self.replace_confirm_reject_label(f"Starting Coug {coug_number} mission...")
         self.recieve_console_update(f"Starting Coug {coug_number} mission...", coug_number)
 
         def deploy_in_thread(start_config):
             try:
                 startup_call.publish_system_control(self.ros_node, [coug_number], start_config)
-                self.confirm_reject_label.setText(f"Starting Mission Coug{coug_number} Command Complete")
+                self.replace_confirm_reject_label(f"Starting Mission Coug{coug_number} Command Complete")
 
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 print(err_msg)
-                self.confirm_reject_label.setText(err_msg)
+                self.replace_confirm_reject_label(err_msg)
                 self.recieve_console_update(err_msg, coug_number)
 
         options = list(self.option_map.keys())
-        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number)
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
             start_config = dlg.get_states()
             threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
         else:
             err_msg = f"Starting Coug{coug_number} Mission command was cancelled."
             for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
-            self.confirm_reject_label.setText(err_msg)
+            self.replace_confirm_reject_label(err_msg)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, coug_number):
         # Handler for 'Emergency Shutdown' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self)
+        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
-            self.confirm_reject_label.setText("Starting Emergency Shutdown...")
+            self.replace_confirm_reject_label("Starting Emergency Shutdown...")
             self.recieve_console_update(f"Starting Emergency Shutdown for Coug {coug_number}", coug_number)
             future = self.ros_node.cli.call_async(message)
             # Add callback to handle response
             future.add_done_callback(partial(self.handle_service_response, action="Emergency Shutdown", coug_number=coug_number))
             return future
         else:
-            self.confirm_reject_label.setText("Canceling Emergency Shutdown command...")
+            self.replace_confirm_reject_label("Canceling Emergency Shutdown command...")
             self.recieve_console_update(f"Canceling Emergency Shutdown for Coug {coug_number}", coug_number)
 
     #Connected to the "surface" signal
@@ -524,24 +554,24 @@ class MainWindow(QMainWindow):
         # Handler for 'Emergency Surface' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self)
+        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
-            self.confirm_reject_label.setText("Starting Emergency Surface...")
+            self.replace_confirm_reject_label("Starting Emergency Surface...")
             self.recieve_console_update(f"Starting Emergency Surface for Coug {coug_number}", coug_number)
             future = self.ros_node.cli2.call_async(message)
             # Add callback to handle response
             future.add_done_callback(partial(self.handle_service_response, action="Emergency Surface", coug_number=coug_number))
             return future
         else:
-            self.confirm_reject_label.setText("Canceling Emergency Surface command...")
+            self.replace_confirm_reject_label("Canceling Emergency Surface command...")
             self.recieve_console_update(f"Canceling Emergency Surface for Coug {coug_number}", coug_number)
 
     #Connected to the "ModemControl" service in base_station_interfaces
     def modem_shut_off_service(self, shutoff:bool):
         message = ModemControl.Request()
         message.modem_shut_off = shutoff
-        if shutoff: self.confirm_reject_label.setText("Wifi Connected, Shutting Off Modem")
-        else: self.confirm_reject_label.setText("Wifi Disconnected, Turning On Modem")
+        if shutoff: self.replace_confirm_reject_label("Wifi Connected, Shutting Off Modem")
+        else: self.replace_confirm_reject_label("Wifi Disconnected, Turning On Modem")
         for i in self.selected_cougs:
             if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", i)
             else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", i)
@@ -557,7 +587,7 @@ class MainWindow(QMainWindow):
             response = future.result()
             if response.success:
                 message = f"{action} Service Initiated Successfully"
-                self.confirm_reject_label.setText(message)
+                self.replace_confirm_reject_label(message)
                 if not coug_number:
                     for i in self.selected_cougs:
                         self.recieve_console_update(message, i)
@@ -565,7 +595,7 @@ class MainWindow(QMainWindow):
                     self.recieve_console_update(message, coug_number)
             else:
                 message = f"{action} Service Initialization Failed"
-                self.confirm_reject_label.setText(message)
+                self.replace_confirm_reject_label(message)
                 if not coug_number:
                     for i in self.selected_cougs:
                         self.recieve_console_update(message, i)
@@ -573,30 +603,30 @@ class MainWindow(QMainWindow):
                     self.recieve_console_update(message, coug_number)
        
         except Exception as e:
-            self.confirm_reject_label.setText(f"{action} service call failed: {e}")
+            self.replace_confirm_reject_label(f"{action} service call failed: {e}")
             if coug_number in self.selected_cougs: self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
             else: print(f"{action} service call failed: {e}")
 
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
         # Handler for 'Recall Cougs' button on the general tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self)
+        dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
-            self.confirm_reject_label.setText("Recalling the Cougs...")
+            self.replace_confirm_reject_label("Recalling the Cougs...")
             for i in self.selected_cougs: self.recieve_console_update("Recalling the Cougs...", i)
         else:
-            self.confirm_reject_label.setText("Canceling Recall All Cougs Command...")
+            self.replace_confirm_reject_label("Canceling Recall All Cougs Command...")
             for i in self.selected_cougs: self.recieve_console_update("Canceling Recall All Cougs Command...", i)
     
     #(NS) -> not yet connected to a signal
     def recall_spec_coug(self, coug_number):
         # Handler for 'Recall Coug' button on a specific Coug tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self)
+        dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self, background_color=self.background_color, text_color=self.text_color)
         if dlg.exec():
-            self.confirm_reject_label.setText(f"Recalling Coug {coug_number}...")
+            self.replace_confirm_reject_label(f"Recalling Coug {coug_number}...")
             self.recieve_console_update(f"Recalling Coug {coug_number}...", coug_number)
         else:
-            self.confirm_reject_label.setText("Canceling Recall Coug Command...")
+            self.replace_confirm_reject_label("Canceling Recall Coug Command...")
             self.recieve_console_update(f"Canceling Recall Coug {coug_number} Command...", coug_number)
 
     #template to make a vertical line
@@ -605,6 +635,7 @@ class MainWindow(QMainWindow):
         Vline = QFrame()
         Vline.setFrameShape(QFrame.Shape.VLine)
         Vline.setFrameShadow(QFrame.Shadow.Sunken)
+        Vline.setStyleSheet(f"background-color: {self.text_color};")
         return Vline
 
     #template to make a horizontal line
@@ -613,6 +644,7 @@ class MainWindow(QMainWindow):
         Hline = QFrame()
         Hline.setFrameShape(QFrame.Shape.HLine)
         Hline.setFrameShadow(QFrame.Shadow.Sunken)
+        Hline.setStyleSheet(f"background-color: {self.text_color};")
         return Hline
 
     #used to set all of the widgets on the "general" page tab
@@ -655,30 +687,24 @@ class MainWindow(QMainWindow):
         #Create and style the label
         general_label = QLabel("General Options:")
         general_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
+        general_label.setStyleSheet(f"color: {self.text_color};")
         general_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         #Load All Missions button
         self.Load_missions_button = QPushButton("Load All Missions")
         self.Load_missions_button.clicked.connect(self.load_missions_button)
-        # self.Load_missions_button.setStyleSheet("background-color: blue; color: black;")
+        self.Load_missions_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Start All Missions button
         self.Start_missions_button = QPushButton("Start All Missions")
         self.Start_missions_button.clicked.connect(self.start_missions_button)
-        # self.Start_missions_button.setStyleSheet("background-color: blue; color: black;")
+        self.Start_missions_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the cougs button
         self.recall_all_cougs = QPushButton("Recall Cougs (NS)")
         self.recall_all_cougs.clicked.connect(self.recall_cougs)
-        # self.recall_all_cougs.setStyleSheet("background-color: red; color: black;")
+        self.recall_all_cougs.setStyleSheet(self.danger_button_style_sheet)
 
-        # Change Tab Color button
-        self.change_tab_color_button = QPushButton("Change Tab Color")
-        self.change_tab_color_button.clicked.connect(self.open_tab_color_dialog)
-        
-        self.revert_tab_color_button = QPushButton("Revert Tab Color")
-        self.revert_tab_color_button.clicked.connect(self.revert_tab_color)
-        
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
         self.general_page_C0_layout.addSpacing(100)
@@ -690,9 +716,9 @@ class MainWindow(QMainWindow):
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_cougs)
         self.general_page_C0_layout.addSpacing(100)
-        self.general_page_C0_layout.addWidget(self.change_tab_color_button)
-        self.general_page_C0_layout.addSpacing(100)
-        self.general_page_C0_layout.addWidget(self.revert_tab_color_button)
+        # self.general_page_C0_layout.addWidget(self.change_tab_color_button)
+        # self.general_page_C0_layout.addSpacing(100)
+        # self.general_page_C0_layout.addWidget(self.revert_tab_color_button)
         
         # Add remaining buttons (red recall cougs at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -704,6 +730,7 @@ class MainWindow(QMainWindow):
         # Create and style the header label for each coug column
         title_label = QLabel(f"Coug {coug_number}:")
         title_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {self.text_color};")
         title_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addSpacing(20)
@@ -711,7 +738,10 @@ class MainWindow(QMainWindow):
         #section labels for each column
         section_titles = ["Connections", "Sensors", "Emergency Status"]
         for title in section_titles:
-            layout.addWidget(QLabel(title, font=QFont("Arial", 15)), alignment=Qt.AlignmentFlag.AlignTop)
+            label = QLabel(title)
+            label.setFont(QFont("Arial", 15))
+            label.setStyleSheet(f"color: {self.text_color};")
+            layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
             layout.addSpacing(20)
             #repeated tab_spacing variable used throughout the file, to keep tabs consistent
             self.tab_spacing = 60
@@ -755,7 +785,7 @@ class MainWindow(QMainWindow):
                 status = "No Data Recieved"
                 label = QLabel(f"{status}", font=QFont("Arial", 13))
                 label.setObjectName(f"Status_messages{coug_number}")
-                # label.setStyleSheet(f"color: orange;")
+                label.setStyleSheet(f"color: {self.text_color};")
                 layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
                 layout.addSpacing(40)
 
@@ -797,6 +827,7 @@ class MainWindow(QMainWindow):
         title_label = QLabel(title_text)
         title_label.setWordWrap(True)
         title_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {self.text_color};")
         title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         temp_layout.addWidget(title_label)
 
@@ -827,6 +858,9 @@ class MainWindow(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(scroll_content)
+        scroll_area.setStyleSheet(
+            f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+        )
         # Store the scroll area as an attribute for dynamic resizing
         setattr(self, f"coug{coug_number}_console_scroll_area", scroll_area)
 
@@ -875,6 +909,7 @@ class MainWindow(QMainWindow):
         text_label = QLabel(text)
         text_label.setFont(QFont("Arial", 13))
         text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
         temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Return the container widget with icon and text
@@ -885,6 +920,7 @@ class MainWindow(QMainWindow):
         # Create and style the label
         temp_label = QLabel(text)
         temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         return temp_label
 
@@ -921,15 +957,15 @@ class MainWindow(QMainWindow):
         setattr(self, f"coug{coug_number}_buttons_column_layout", temp_V_layout)
 
         #load mission (blue)
-        self.create_coug_button(coug_number, "load_mission", "Load Mission", "blue", lambda: self.spec_load_missions_button(coug_number))
-        #start mission (blue)
-        self.create_coug_button(coug_number, "start_mission", "Start Mission", "blue", lambda: self.spec_start_missions_button(coug_number))
+        self.create_coug_button(coug_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(coug_number))
+        #start mission f({self.normal_button_color})
+        self.create_coug_button(coug_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(coug_number))
         #system reboot (red)
-        self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", "red", lambda: self.emergency_surface_button(coug_number))
+        self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(coug_number), danger=True)
         #abort mission (red)
-        self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", "red", lambda: self.recall_spec_coug(coug_number))
+        self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", lambda: self.recall_spec_coug(coug_number), danger=True)
         #emergency shutdown (red)
-        self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", "red", lambda: self.emergency_shutdown_button(coug_number))
+        self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(coug_number), danger=True)
 
         temp_spacing = 50
         # Add buttons to the first and second sub-columns with spacing
@@ -979,6 +1015,7 @@ class MainWindow(QMainWindow):
         text_label.setObjectName(name)
         text_label.setFont(QFont("Arial", 13))
         text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
         # Add the label to the layout, vertically centered
         temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -1001,10 +1038,11 @@ class MainWindow(QMainWindow):
         text_label = QLabel(text)
         text_label.setFont(QFont("Arial", 13))
         text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
         return text_label
 
     #Dynamically creates a QPushButton with the given properties and stores it as an attribute.
-    def create_coug_button(self, coug_number, name, text, color, callback):
+    def create_coug_button(self, coug_number, name, text, callback, danger=False):
         """
         Dynamically creates a QPushButton with the given properties and stores it as an attribute.
 
@@ -1012,13 +1050,13 @@ class MainWindow(QMainWindow):
             coug_number (int): Which Coug this button is for.
             name (str): Short functional name for the button (e.g., "start_mission", "disarm_thruster").
             text (str): Text to display on the button.
-            color (str): Background color for the button.
             callback (function): Function to call when the button is clicked.
+            danger (bool): used to change between color buttons, dangerous and normal
         """
         button = QPushButton(text)
         button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         button.clicked.connect(callback)
-        button.setStyleSheet(f"background-color: {color}; color: black")
+        button.setStyleSheet(self.danger_button_style_sheet) if danger else button.setStyleSheet(self.normal_button_style_sheet)
         attr_name = f"{name}_coug{coug_number}_button"
         setattr(self, attr_name, button)
 
@@ -1050,6 +1088,7 @@ class MainWindow(QMainWindow):
         # Section: Connections
         temp_label = QLabel("Connections")
         temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         temp_layout.addSpacing(20)
         temp_layout.addWidget(temp_label)
@@ -1071,6 +1110,8 @@ class MainWindow(QMainWindow):
         # Section: Sensors
         temp_label = QLabel("Sensors")
         temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
+
         temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         temp_layout.addSpacing(20)
         temp_layout.addWidget(temp_label)
@@ -1162,6 +1203,7 @@ class MainWindow(QMainWindow):
         setattr(self, name, text_label)
         text_label.setObjectName(name) 
         text_label.setFont(QFont("Arial", 13))
+        text_label.setStyleSheet(f"color: {self.text_color};")
         text_label.setContentsMargins(0, 0, 0, 0)
         text_label.setWordWrap(True)  # Allow text to wrap if it's long
         text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -1228,7 +1270,7 @@ class MainWindow(QMainWindow):
             widget = self.general_page_coug_widgets.get(coug_number)
             new_status_label, status_color = self.get_status_label(coug_number, self.feedback_dict["Status_messages"][coug_number])
             # self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color) #TODO: get rid of the status color logic :(
-            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label)
+            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, self.text_color)
 
     def recieve_smoothed_output_message(self, coug_number, msg):
         self.smoothed_ouput_signal.emit(coug_number, msg)
@@ -1455,6 +1497,7 @@ class MainWindow(QMainWindow):
                 else:
                     updated_text = console_message
                 label.setText(updated_text)
+                label.setStyleSheet(f"color: {self.text_color};")
                 # Scroll to the bottom of the scroll area
                 scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
                 if scroll_area:
@@ -1495,13 +1538,16 @@ def OpenWindow(ros_node, borders=False):
     # Prepare splash image
     img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
     pixmap = QPixmap(img_path)
+    pixmap = pixmap.toImage()
+    pixmap.invertPixels()
+    pixmap = QPixmap.fromImage(pixmap)
     if pixmap.isNull():
         print(f"Warning: Could not load splash image '{img_path}'. Using solid color instead.")
         pixmap = QPixmap(window_width, window_height)
-        pixmap.fill(QColor("#5F9EA0"))
+        pixmap.fill(QColor(("#0F1C37")))
     else:
         background = QPixmap(window_width, window_height)
-        background.fill(QColor("#5F9EA0"))
+        background.fill(QColor("#0F1C37"))
         painter = QPainter(background)
         x = (window_width - pixmap.width()) // 2
         y = (window_height - pixmap.height()) // 2
@@ -1531,7 +1577,7 @@ def OpenWindow(ros_node, borders=False):
 
     # Show configuration dialog ON TOP of splash
     options = [f"Coug {i}" for i in range(1, 5)]
-    dlg = ConfigurationWindow(options, parent=splash)
+    dlg = ConfigurationWindow(options, parent=splash, background_color="#0F1C37", text_color="#FFFFFF")
     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
     dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
     dlg.move(
@@ -1599,10 +1645,42 @@ class AbortMissionsDialog(QDialog):
         message_text (str): The message to display in the dialog.
         parent (QWidget, optional): The parent widget.
     """
-    def __init__(self, window_title, message_text, parent=None):
+    def __init__(self, window_title, message_text, parent=None, background_color="white", text_color="black"):
         super().__init__(parent)
 
         self.setWindowTitle(window_title)
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {background_color};
+                color: {text_color};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text_color};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text_color};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text_color};
+                border: 1px solid {text_color};
+            }}
+
+            QLineEdit {{
+                background-color: {background_color};
+                color: {text_color};
+                border: 1px solid {text_color};
+                padding: 2px;
+            }}
+        """)
 
         QBtn = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1635,7 +1713,7 @@ class StartMissionsDialog(QDialog):
         message_text (str): The message to display in the dialog.
         parent (QWidget, optional): The parent widget.
     """
-    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0):
+    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0, background_color="white", text_color="black"):
         """
         Parameters:
             options (list of str): List of checkbox labels.
@@ -1649,6 +1727,40 @@ class StartMissionsDialog(QDialog):
 
         # Make the dialog not resizable
         self.setFixedSize(300, 200)  # Set to your preferred width and height
+
+        #TODO: the boxes currently fill in, change it so it's a checkmark instead
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {background_color};
+                color: {text_color};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text_color};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text_color};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text_color};
+                border: 1px solid {text_color};
+            }}
+
+            QLineEdit {{
+                background-color: {background_color};
+                color: {text_color};
+                border: 1px solid {text_color};
+                padding: 2px;
+            }}
+        """)
+
 
         self.inputs = {}
 
@@ -1698,7 +1810,7 @@ class ConfigurationWindow(QDialog):
     Custom configuration dialog with multiple checkboxes.
     Returns the checked states as a dictionary if accepted.
     """
-    def __init__(self, options, parent=None):
+    def __init__(self, options, parent=None, background_color="white", text_color="black"):
         """
         Parameters:
             options (list of str): List of checkbox labels.
@@ -1709,7 +1821,39 @@ class ConfigurationWindow(QDialog):
         layout = QVBoxLayout()
 
         # Make the dialog not resizable
-        self.setFixedSize(300, 200)  # Set to your preferred width and height
+        self.setFixedSize(300, 200)  
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {background_color};
+                color: {text_color};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text_color};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text_color};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text_color};
+                border: 1px solid {text_color};
+            }}
+
+            QLineEdit {{
+                background-color: {background_color};
+                color: {text_color};
+                border: 1px solid {text_color};
+                padding: 2px;
+            }}
+        """)
 
         # Create a checkbox for each option
         for opt in options:
@@ -1739,45 +1883,45 @@ class ConfigurationWindow(QDialog):
         """
         return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
 
-class TabColorDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Select Tab and Text Color")
-        self.setFixedSize(350, 200)
-        layout = QVBoxLayout()
+# class TabColorDialog(QDialog):
+#     def __init__(self, parent=None):
+#         super().__init__(parent)
+#         self.setWindowTitle("Select Tab and Text Color")
+#         self.setFixedSize(350, 200)
+#         layout = QVBoxLayout()
 
-        self.color_line = QLineEdit()
-        self.color_line.setPlaceholderText("Tab background color (e.g., 'red' or '#5F9EA0')")
-        layout.addWidget(self.color_line)
+#         self.color_line = QLineEdit()
+#         self.color_line.setPlaceholderText("Tab background color (e.g., 'red' or '#5F9EA0')")
+#         layout.addWidget(self.color_line)
 
-        self.pick_button = QPushButton("Pick Tab Color...")
-        self.pick_button.clicked.connect(self.open_color_picker)
-        layout.addWidget(self.pick_button)
+#         self.pick_button = QPushButton("Pick Tab Color...")
+#         self.pick_button.clicked.connect(self.open_color_picker)
+#         layout.addWidget(self.pick_button)
 
-        self.text_color_line = QLineEdit()
-        self.text_color_line.setPlaceholderText("Tab text color (e.g., 'white' or '#000000')")
-        layout.addWidget(self.text_color_line)
+#         self.text_color_line = QLineEdit()
+#         self.text_color_line.setPlaceholderText("Tab text color (e.g., 'white' or '#000000')")
+#         layout.addWidget(self.text_color_line)
 
-        self.pick_text_button = QPushButton("Pick Text Color...")
-        self.pick_text_button.clicked.connect(self.open_text_color_picker)
-        layout.addWidget(self.pick_text_button)
+#         self.pick_text_button = QPushButton("Pick Text Color...")
+#         self.pick_text_button.clicked.connect(self.open_text_color_picker)
+#         layout.addWidget(self.pick_text_button)
 
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        layout.addWidget(self.buttonBox)
+#         self.buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+#         self.buttonBox.accepted.connect(self.accept)
+#         self.buttonBox.rejected.connect(self.reject)
+#         layout.addWidget(self.buttonBox)
 
-        self.setLayout(layout)
+#         self.setLayout(layout)
 
-    def open_color_picker(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.color_line.setText(color.name())
+#     def open_color_picker(self):
+#         color = QColorDialog.getColor()
+#         if color.isValid():
+#             self.color_line.setText(color.name())
 
-    def open_text_color_picker(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.text_color_line.setText(color.name())
+#     def open_text_color_picker(self):
+#         color = QColorDialog.getColor()
+#         if color.isValid():
+#             self.text_color_line.setText(color.name())
 
-    def get_colors(self):
-        return self.color_line.text().strip(), self.text_color_line.text().strip()
+#     def get_colors(self):
+#         return self.color_line.text().strip(), self.text_color_line.text().strip()

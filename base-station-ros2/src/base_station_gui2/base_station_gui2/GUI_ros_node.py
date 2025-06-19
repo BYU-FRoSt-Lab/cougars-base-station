@@ -137,7 +137,7 @@ def ros_spin_thread(executor):
     executor.spin()
 
 def main():
-    """
+    """     
     Main entry point for the GUI application.
     Initializes ROS 2, starts the Qt application, and spins ROS in a background thread.
     """
