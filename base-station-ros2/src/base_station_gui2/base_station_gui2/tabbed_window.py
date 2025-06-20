@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
 )
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
-from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon
+from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon, QActionGroup
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
@@ -39,20 +39,68 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ros_node = ros_node
         self.setWindowTitle("CoUGARS_GUI")
+
+        self.button_padding = 15
+        self.button_font_size = 15
+
         #light_mode, dark_mode, blue_pastel, brown_sepia, intense_dark, cadetblue
         self.set_color_theme("dark_mode", first_time=True) #default to dark mode
 
-        toolbar = QToolBar("My main toolbar")
-        toolbar.setIconSize(QSize(16, 16))
-        self.addToolBar(toolbar)
-        Light_mode = QAction("Light Mode", self)
-        Light_mode.triggered.connect(lambda: self.set_color_theme("light_mode"))
-        Light_mode.setCheckable(True)
+        # Create an exclusive action group for theme actions
+        theme_action_group = QActionGroup(self)
+        theme_action_group.setExclusive(True)
+
+        dark_mode = QAction("Dark Mode", self)
+        dark_mode.triggered.connect(lambda: self.set_color_theme("dark_mode"))
+        dark_mode.setCheckable(True)
+        theme_action_group.addAction(dark_mode)
+
+        light_mode = QAction("Light Mode", self)
+        light_mode.triggered.connect(lambda: self.set_color_theme("light_mode"))
+        light_mode.setCheckable(True)
+        theme_action_group.addAction(light_mode)
+
+        blue_pastel = QAction("Blue Pastel", self)
+        blue_pastel.triggered.connect(lambda: self.set_color_theme("blue_pastel"))
+        blue_pastel.setCheckable(True)
+        theme_action_group.addAction(blue_pastel)
+
+        brown_sepia = QAction("Brown Sepia", self)
+        brown_sepia.triggered.connect(lambda: self.set_color_theme("brown_sepia"))
+        brown_sepia.setCheckable(True)
+        theme_action_group.addAction(brown_sepia)
+
+        intense_dark = QAction("Intense Dark", self)
+        intense_dark.triggered.connect(lambda: self.set_color_theme("intense_dark"))
+        intense_dark.setCheckable(True)
+        theme_action_group.addAction(intense_dark)
+
+        intense_light = QAction("Intense Light", self)
+        intense_light.triggered.connect(lambda: self.set_color_theme("intense_light"))
+        intense_light.setCheckable(True)
+        theme_action_group.addAction(intense_light)
+        
+        cadetblue = QAction("Cadetblue", self)
+        cadetblue.triggered.connect(lambda: self.set_color_theme("cadetblue"))
+        cadetblue.setCheckable(True)
+        theme_action_group.addAction(cadetblue)
+
+        # Set the default checked action
+        dark_mode.setChecked(True)
+
         self.setStatusBar(QStatusBar(self))
         menu = self.menuBar()
         file_menu = menu.addMenu("Theme")
         file_submenu = file_menu.addMenu("Set Theme")
-        file_submenu.addAction(Light_mode)
+        file_submenu.addAction(dark_mode)
+        file_submenu.addAction(light_mode)
+        file_submenu.addAction(blue_pastel)
+        file_submenu.addAction(brown_sepia)        # #button confirmation label
+        # self.confirm_reject_label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
+        # self.main_layout.addWidget(self.confirm_reject_label, alignment=Qt.AlignmentFlag.AlignTop)
+        file_submenu.addAction(intense_dark)
+        file_submenu.addAction(intense_light)
+        file_submenu.addAction(cadetblue)
 
         self.selected_cougs = []
         for coug_data, included in coug_dict.items():
@@ -211,9 +259,6 @@ class MainWindow(QMainWindow):
         self.main_layout = QVBoxLayout()
         #Add the tabs to the main layout
         self.main_layout.addWidget(self.tabs)
-        # #button confirmation label
-        # self.confirm_reject_label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
-        # self.main_layout.addWidget(self.confirm_reject_label, alignment=Qt.AlignmentFlag.AlignTop)
         # self.main_layout.addWidget(self.emergency_exit_gui_button)
 
         #create a container widget, and place the main layout inside of it
@@ -236,17 +281,52 @@ class MainWindow(QMainWindow):
         self.battery_data_signal.connect(self.update_battery_data)
 
     def set_color_theme(self, color_theme, first_time=False):
-        print(color_theme)
         
+        # Define a base style for pop-up windows
+        base_pop_up_style = """
+            QDialog {{
+                background-color: {bg};
+                color: {text};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QLineEdit {{
+                background-color: {bg};
+                color: {text};
+                border: 1px solid {text};
+                padding: 2px;
+            }}
+        """
+
+        # Extra checkbox rules for dark themes
+        extra_checkbox_rules = """
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text};
+                border: 1px solid {text};
+            }}
+        """
+
+        theme = color_theme.lower()
+
         #dark mode
-        if color_theme.lower() == "dark_mode":
+        if theme == "dark_mode":
             self.background_color = "#0F1C37"
             self.border_outline = "#FFFFFF"
             self.text_color = "#FFFFFF"
             self.normal_button_color = "#28625a"
             self.danger_button_color = "#953f10"
-            self.button_padding = 12
-            self.button_font_size = 15
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.selected_tab_color = self.text_color
@@ -254,267 +334,151 @@ class MainWindow(QMainWindow):
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
             self.check_box_color = self.text_color
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
-
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
-
-                QCheckBox::indicator:checked {{
-                    border: 1px solid {self.text_color};
-                }}
-
-                QCheckBox::indicator:unchecked {{
-                    background-color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                }}
-
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
+            self.pop_up_window_style = (
+                base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
+                extra_checkbox_rules.format(text=self.text_color)
+            )
 
         # light mode
-        elif color_theme == "light_mode":
+        elif theme == "light_mode":
             self.background_color = "#f4f6fc"
             self.border_outline = "#000000"
             self.text_color = "#000000"
             self.danger_button_color = "#faa94a"
             self.normal_button_color = "#99d1c5"
-            self.button_padding = 12
-            self.button_font_size = 15
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.selected_tab_color = self.normal_button_color
             self.selected_tab_text_color = self.border_outline
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
-
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
-
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # blue pastel
-        elif color_theme == "blue_pastel":
+        elif theme == "blue_pastel":
             self.background_color = "#caedee"
             self.border_outline = "#000000"
             self.text_color = "#000000"
             self.danger_button_color = "#ffdb4f"
             self.normal_button_color = "#81b673"
-            self.button_padding = 12
-            self.button_font_size = 15
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.selected_tab_color = self.normal_button_color
             self.selected_tab_text_color = self.border_outline
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
-
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
-
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # brown sepia
-        elif color_theme.lower() == "brown_sepia":
+        elif theme == "brown_sepia":
             self.background_color = "#f2edd1"
             self.border_outline = "#44312b"
             self.text_color = "#44312b"
             self.danger_button_color = "#44312b"
             self.normal_button_color = "#44312b"
-            self.button_padding = 12
-            self.button_font_size = 15
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.selected_tab_color = self.normal_button_color
             self.selected_tab_text_color = self.background_color
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
-
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
-
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # Seth's special mode for the color haters
-        elif color_theme.lower() == "cadetblue":
+        #Cadetblue
+        elif theme == "cadetblue":
             self.background_color = "cadetblue"
             self.border_outline = "#44312b"
             self.text_color = "#000000"
             self.danger_button_color = "red"
             self.normal_button_color = "blue"
-            self.button_padding = 12
-            self.button_font_size = 15
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.selected_tab_color = "blue"
             self.selected_tab_text_color = "white"
             self.not_selected_tab_color = "grey"
             self.not_selected_tab_text_color = "black"
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
-
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
-
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # Intense Dark
-        elif color_theme.lower() == "intense_dark":
+        elif theme == "intense_dark":
             self.background_color = "black"
-            self.border_outline = "red"
-            self.text_color = "red"
-            self.danger_button_color = "red"
-            self.normal_button_color = "red"
-            self.button_padding = 12
-            self.button_font_size = 15
+            self.border_outline = "white"
+            self.text_color = "white"
+            self.danger_button_color = "white"
+            self.normal_button_color = "white"
             self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
             self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
-            self.selected_tab_color = "red"
+            self.selected_tab_color = "white"
             self.selected_tab_text_color = "black"
             self.not_selected_tab_color = "black"
-            self.not_selected_tab_text_color = "red"
-            self.pop_up_window_style = (f"""
-                QDialog {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                }}
-                
-                QLabel, QCheckBox {{
-                    color: {self.text_color};
-                }}
+            self.not_selected_tab_text_color = "white"
+            self.pop_up_window_style = (
+                base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
+                extra_checkbox_rules.format(text=self.text_color)
+            )
 
-                QCheckBox::indicator {{
-                    width: 13px;
-                    height: 13px;
-                }}
+        # Intense Light
+        elif theme == "intense_light":
+            self.background_color = "white"
+            self.border_outline = "black"
+            self.text_color = "black"
+            self.danger_button_color = "black"
+            self.normal_button_color = "black"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "black"
+            self.selected_tab_text_color = "white"
+            self.not_selected_tab_color = "white"
+            self.not_selected_tab_text_color = "black"
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
-                QLineEdit {{
-                    background-color: {self.background_color};
-                    color: {self.text_color};
-                    border: 1px solid {self.text_color};
-                    padding: 2px;
-                }}
-            """)
-            if not first_time: self.apply_theme_to_widgets()
+        #the first time widgets aren't created yet, so no need to change them
+        if not first_time: self.apply_theme_to_widgets()
 
     def apply_theme_to_widgets(self):
-        # Update main container
-        self.set_background(self.container, self.background_color)
-        # Update tab widgets
-        for name, (widget, _) in self.tab_dict.items():
-            self.set_background(widget, self.background_color)
-        # Update tab bar
+
+        #get current wideth, and recolor the tabs themselves
         width_px = self.width() // (len(self.selected_cougs) + 1) - 10
-        self.resizeTabs(width_px)
-        # Update all labels and buttons
-        for label in self.findChildren(QLabel):
-            label.setStyleSheet(f"color: {self.text_color};")
-        for button in self.findChildren(QPushButton):
-            # Danger buttons
-            if "recall" in button.text().lower() or "emergency" in button.text().lower():
-                button.setStyleSheet(self.danger_button_style_sheet)
-            else:
-                button.setStyleSheet(self.normal_button_style_sheet)
-        # Update scroll areas
-        for i in self.selected_cougs:
-            scroll_area = getattr(self, f"coug{i}_console_scroll_area", None)
-            if scroll_area:
-                scroll_area.setStyleSheet(
-                    f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
-                )
+        self.repaintTabs(width_px)
 
-        self.repaint()
-        self.tabs.repaint()
-        self.container.repaint()
+        bg_color, text_color = self.background_color, self.text_color
+        for name in self.tab_dict:
+            widget = self.tab_dict[name][0]
+            #set background color of each tab
+            self.set_background(widget, self.background_color)
+            #set text color of each console log
+            self.set_console_log_colors(self.text_color, self.background_color)
+            for button in self.findChildren(QPushButton):
+                # Danger buttons
+                if "recall" in button.text().lower() or "emergency" in button.text().lower():
+                    button.setStyleSheet(self.danger_button_style_sheet)
+                # Normal buttons
+                else:
+                    button.setStyleSheet(self.normal_button_style_sheet)
+            #set text color of the labels
+            for label in self.findChildren(QLabel):
+                label.setStyleSheet(f"color: {self.text_color};")
 
-    def set_console_log_colors(self, bg_color, text_color):
+            # Update line colors
+            for line in self.findChildren(QFrame):
+                if line.frameShape() in (QFrame.Shape.HLine, QFrame.Shape.VLine):
+                    line.setStyleSheet(f"background-color: {self.text_color};")
+
+    def set_console_log_colors(self, text_color, background_color):
         """
         Sets the background and text color of all console log QLabel widgets.
         """
         for coug_number in self.selected_cougs:
-            label = self.findChild(QLabel, f"Console_messages{coug_number}")
-            if label:
-                label.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+            scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+            if scroll_area:
+                scroll_area.setStyleSheet(
+                    f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+                )
+                # Find the label inside the scroll area and set its text color
+                label = scroll_area.findChild(QLabel, f"Console_messages{coug_number}")
+                if label:
+                    label.setStyleSheet(f"color: {text_color};")
 
     def handle_console_log(self, msg):
         if msg.coug_number == 0:
@@ -600,6 +564,7 @@ class MainWindow(QMainWindow):
         parent_layout.insertWidget(index, new_label)
 
     def get_status_message_color(self, message):
+        #TODO: get rid of the colors here
         # Returns a color and possibly modified message string based on status.
         if not message: 
             message_color = "green"
@@ -619,7 +584,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         size = self.size()
         width_px = self.width() // (len(self.selected_cougs) + 1) - 10
-        self.resizeTabs(width_px)
+        self.repaintTabs(width_px)
         # Dynamically resize each console scroll area
         for i in self.selected_cougs:  # Assuming Coug 1-3
             scroll_area = getattr(self, f"coug{i}_console_scroll_area", None)
@@ -636,7 +601,7 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
 
     "/*resize the tabs according to the width of the window*/"
-    def resizeTabs(self, width_px): #TODO: what colors should these be 
+    def repaintTabs(self, width_px):
         # Sets the stylesheet for tab width and appearance.
         self.tabs.setStyleSheet(f"""
         QTabBar::tab {{
@@ -2040,46 +2005,3 @@ class ConfigurationWindow(QDialog):
         Returns a dict of {option: bool} for each checkbox.
         """
         return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
-
-# class TabColorDialog(QDialog):
-#     def __init__(self, parent=None):
-#         super().__init__(parent)
-#         self.setWindowTitle("Select Tab and Text Color")
-#         self.setFixedSize(350, 200)
-#         layout = QVBoxLayout()
-
-#         self.color_line = QLineEdit()
-#         self.color_line.setPlaceholderText("Tab background color (e.g., 'red' or '#5F9EA0')")
-#         layout.addWidget(self.color_line)
-
-#         self.pick_button = QPushButton("Pick Tab Color...")
-#         self.pick_button.clicked.connect(self.open_color_picker)
-#         layout.addWidget(self.pick_button)
-
-#         self.text_color_line = QLineEdit()
-#         self.text_color_line.setPlaceholderText("Tab text color (e.g., 'white' or '#000000')")
-#         layout.addWidget(self.text_color_line)
-
-#         self.pick_text_button = QPushButton("Pick Text Color...")
-#         self.pick_text_button.clicked.connect(self.open_text_color_picker)
-#         layout.addWidget(self.pick_text_button)
-
-#         self.buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-#         self.buttonBox.accepted.connect(self.accept)
-#         self.buttonBox.rejected.connect(self.reject)
-#         layout.addWidget(self.buttonBox)
-
-#         self.setLayout(layout)
-
-#     def open_color_picker(self):
-#         color = QColorDialog.getColor()
-#         if color.isValid():
-#             self.color_line.setText(color.name())
-
-#     def open_text_color_picker(self):
-#         color = QColorDialog.getColor()
-#         if color.isValid():
-#             self.text_color_line.setText(color.name())
-
-#     def get_colors(self):
-#         return self.color_line.text().strip(), self.text_color_line.text().strip()
