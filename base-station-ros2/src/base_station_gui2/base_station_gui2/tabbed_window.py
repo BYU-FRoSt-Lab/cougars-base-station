@@ -2,12 +2,12 @@ import sys
 import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
-    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox, QColorDialog
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
+    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
-from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter
+from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
@@ -39,26 +39,24 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ros_node = ros_node
         self.setWindowTitle("CoUGARS_GUI")
+        #light_mode, dark_mode, blue_pastel, brown_sepia, intense_dark, cadetblue
+        self.set_color_theme("dark_mode", first_time=True) #default to dark mode
+
+        toolbar = QToolBar("My main toolbar")
+        toolbar.setIconSize(QSize(16, 16))
+        self.addToolBar(toolbar)
+        Light_mode = QAction("Light Mode", self)
+        Light_mode.triggered.connect(lambda: self.set_color_theme("light_mode"))
+        Light_mode.setCheckable(True)
+        self.setStatusBar(QStatusBar(self))
+        menu = self.menuBar()
+        file_menu = menu.addMenu("Theme")
+        file_submenu = file_menu.addMenu("Set Theme")
+        file_submenu.addAction(Light_mode)
 
         self.selected_cougs = []
-
         for coug_data, included in coug_dict.items():
             if included: self.selected_cougs.append(int(str(coug_data[-1])))
-
-        #dark mode
-        self.background_color = "#0F1C37"
-        self.border_outline = "#FFFFFF"
-        self.text_color = "#FFFFFF"
-        self.normal_button_color = "#28625a"
-        self.danger_button_color = "#953f10"
-        self.button_padding = 12
-        self.button_font_size = 15
-        self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
-        self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
-        self.selected_tab_color =  "#FFFFFF"
-        self.selected_tab_text_color = self.background_color
-        self.not_selected_tab_text_color = "#FFFFFF"
-        self.not_selected_tab_color = self.background_color
 
         #confirmation label dictionary
         self.confirm_reject_labels = {}
@@ -237,44 +235,277 @@ class MainWindow(QMainWindow):
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
 
-    # def open_tab_color_dialog(self):
-    #     dlg = TabColorDialog(self)
-    #     if dlg.exec():
-    #         bg_color, text_color = dlg.get_colors()
-    #         for name in self.tab_dict:
-    #             widget = self.tab_dict[name][0]
-    #             # Get the current stylesheet
-    #             current_style = widget.styleSheet()
-    #             # Parse current style for background and color
-    #             bg_style = ""
-    #             txt_style = ""
-    #             for part in current_style.split(";"):
-    #                 if "background-color" in part:
-    #                     bg_style = part.strip() + ";"
-    #                 if "color" in part and "background-color" not in part:
-    #                     txt_style = part.strip() + ";"
-    #             # Update only the property that is set
-    #             style = ""
-    #             if bg_color:
-    #                 bg = QColor(bg_color)
-    #                 if bg.isValid():
-    #                     bg_style = f"background-color: {bg.name()};"
-    #                 else:
-    #                     QMessageBox.warning(self, "Invalid Color", f"'{bg_color}' is not a valid background color.")
-    #                     return
-    #             if text_color:
-    #                 txt = QColor(text_color)
-    #                 if txt.isValid():
-    #                     txt_style = f"color: {txt.name()};"
-    #                 else:
-    #                     QMessageBox.warning(self, "Invalid Color", f"'{text_color}' is not a valid text color.")
-    #                     return
-    #             style = f"{bg_style} {txt_style}".strip()
-    #             widget.setStyleSheet(style)
-    #             for btn in self.findChildren(QPushButton):
-    #                 btn.setStyleSheet(f"background-color: {text_color}; color: {bg_color};")
+    def set_color_theme(self, color_theme, first_time=False):
+        print(color_theme)
+        
+        #dark mode
+        if color_theme.lower() == "dark_mode":
+            self.background_color = "#0F1C37"
+            self.border_outline = "#FFFFFF"
+            self.text_color = "#FFFFFF"
+            self.normal_button_color = "#28625a"
+            self.danger_button_color = "#953f10"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.text_color
+            self.selected_tab_text_color = self.background_color
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.check_box_color = self.text_color
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
                 
-    #             self.set_console_log_colors(text_color, bg_color)
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QCheckBox::indicator:checked {{
+                    border: 1px solid {self.text_color};
+                }}
+
+                QCheckBox::indicator:unchecked {{
+                    background-color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+
+        # light mode
+        elif color_theme == "light_mode":
+            self.background_color = "#f4f6fc"
+            self.border_outline = "#000000"
+            self.text_color = "#000000"
+            self.danger_button_color = "#faa94a"
+            self.normal_button_color = "#99d1c5"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.border_outline
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
+                
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+
+        # blue pastel
+        elif color_theme == "blue_pastel":
+            self.background_color = "#caedee"
+            self.border_outline = "#000000"
+            self.text_color = "#000000"
+            self.danger_button_color = "#ffdb4f"
+            self.normal_button_color = "#81b673"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.border_outline
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
+                
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+
+        # brown sepia
+        elif color_theme.lower() == "brown_sepia":
+            self.background_color = "#f2edd1"
+            self.border_outline = "#44312b"
+            self.text_color = "#44312b"
+            self.danger_button_color = "#44312b"
+            self.normal_button_color = "#44312b"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.background_color
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
+                
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+
+        # Seth's special mode for the color haters
+        elif color_theme.lower() == "cadetblue":
+            self.background_color = "cadetblue"
+            self.border_outline = "#44312b"
+            self.text_color = "#000000"
+            self.danger_button_color = "red"
+            self.normal_button_color = "blue"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "blue"
+            self.selected_tab_text_color = "white"
+            self.not_selected_tab_color = "grey"
+            self.not_selected_tab_text_color = "black"
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
+                
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+
+        # Intense Dark
+        elif color_theme.lower() == "intense_dark":
+            self.background_color = "black"
+            self.border_outline = "red"
+            self.text_color = "red"
+            self.danger_button_color = "red"
+            self.normal_button_color = "red"
+            self.button_padding = 12
+            self.button_font_size = 15
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "red"
+            self.selected_tab_text_color = "black"
+            self.not_selected_tab_color = "black"
+            self.not_selected_tab_text_color = "red"
+            self.pop_up_window_style = (f"""
+                QDialog {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                }}
+                
+                QLabel, QCheckBox {{
+                    color: {self.text_color};
+                }}
+
+                QCheckBox::indicator {{
+                    width: 13px;
+                    height: 13px;
+                }}
+
+                QLineEdit {{
+                    background-color: {self.background_color};
+                    color: {self.text_color};
+                    border: 1px solid {self.text_color};
+                    padding: 2px;
+                }}
+            """)
+            if not first_time: self.apply_theme_to_widgets()
+
+    def apply_theme_to_widgets(self):
+        # Update main container
+        self.set_background(self.container, self.background_color)
+        # Update tab widgets
+        for name, (widget, _) in self.tab_dict.items():
+            self.set_background(widget, self.background_color)
+        # Update tab bar
+        width_px = self.width() // (len(self.selected_cougs) + 1) - 10
+        self.resizeTabs(width_px)
+        # Update all labels and buttons
+        for label in self.findChildren(QLabel):
+            label.setStyleSheet(f"color: {self.text_color};")
+        for button in self.findChildren(QPushButton):
+            # Danger buttons
+            if "recall" in button.text().lower() or "emergency" in button.text().lower():
+                button.setStyleSheet(self.danger_button_style_sheet)
+            else:
+                button.setStyleSheet(self.normal_button_style_sheet)
+        # Update scroll areas
+        for i in self.selected_cougs:
+            scroll_area = getattr(self, f"coug{i}_console_scroll_area", None)
+            if scroll_area:
+                scroll_area.setStyleSheet(
+                    f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+                )
+
+        self.repaint()
+        self.tabs.repaint()
+        self.container.repaint()
 
     def set_console_log_colors(self, bg_color, text_color):
         """
@@ -285,16 +516,6 @@ class MainWindow(QMainWindow):
             if label:
                 label.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
 
-    # def revert_tab_color(self):
-    #     for name in self.tab_dict:
-    #         widget = self.tab_dict[name][0]
-    #         widget.setStyleSheet("background-color: cadetblue; color: black;")
-
-    #         for btn in self.findChildren(QPushButton):
-    #             btn.setStyleSheet(f"background-color: white; color: cadetblue;")
-
-    #     self.set_console_log_colors("white", "cadetblue")
-    
     def handle_console_log(self, msg):
         if msg.coug_number == 0:
             for i in self.selected_cougs:
@@ -334,7 +555,7 @@ class MainWindow(QMainWindow):
     #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
     def close_window(self):
         #pop-up window
-        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self, background_color=self.background_color, text_color=self.text_color)
+        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         #if confirm is selected
         if dlg.exec():
             self.replace_confirm_reject_label("Closing Window...")
@@ -435,13 +656,13 @@ class MainWindow(QMainWindow):
         }}
         """)
 
-    #used to initialize the background of the tabs
     def set_background(self, widget, color):
         # Sets the background color of a widget.
         palette = widget.palette()
         palette.setColor(widget.backgroundRole(), QColor(color))
         widget.setAutoFillBackground(True)
         widget.setPalette(palette)
+        widget.setStyleSheet(f"background-color: {color};")
 
     def load_missions_button(self):
         self.replace_confirm_reject_label("Loading the missions...")
@@ -479,7 +700,7 @@ class MainWindow(QMainWindow):
                     self.recieve_console_update(err_msg, i)
 
         options = ["Start the node", "Record rosbag", "Enter rosbag prefix (string): ", "Arm Thruster", "Start DVL"]
-        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, background_color=self.background_color, text_color=self.text_color)
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             start_config = dlg.get_states()
             threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
@@ -523,7 +744,7 @@ class MainWindow(QMainWindow):
                 self.recieve_console_update(err_msg, coug_number)
 
         options = list(self.option_map.keys())
-        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number, background_color=self.background_color, text_color=self.text_color)
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             start_config = dlg.get_states()
             threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
@@ -537,7 +758,7 @@ class MainWindow(QMainWindow):
         # Handler for 'Emergency Shutdown' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color)
+        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Shutdown...")
             self.recieve_console_update(f"Starting Emergency Shutdown for Coug {coug_number}", coug_number)
@@ -554,7 +775,7 @@ class MainWindow(QMainWindow):
         # Handler for 'Emergency Surface' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = coug_number
-        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color)
+        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Surface...")
             self.recieve_console_update(f"Starting Emergency Surface for Coug {coug_number}", coug_number)
@@ -610,7 +831,7 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def recall_cougs(self):
         # Handler for 'Recall Cougs' button on the general tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color)
+        dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Recalling the Cougs...")
             for i in self.selected_cougs: self.recieve_console_update("Recalling the Cougs...", i)
@@ -621,7 +842,7 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def recall_spec_coug(self, coug_number):
         # Handler for 'Recall Coug' button on a specific Coug tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self, background_color=self.background_color, text_color=self.text_color)
+        dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label(f"Recalling Coug {coug_number}...")
             self.recieve_console_update(f"Recalling Coug {coug_number}...", coug_number)
@@ -1645,42 +1866,11 @@ class AbortMissionsDialog(QDialog):
         message_text (str): The message to display in the dialog.
         parent (QWidget, optional): The parent widget.
     """
-    def __init__(self, window_title, message_text, parent=None, background_color="white", text_color="black"):
+    def __init__(self, window_title, message_text, parent=None, background_color="white", text_color="black", pop_up_window_style=None):
         super().__init__(parent)
 
         self.setWindowTitle(window_title)
-
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {background_color};
-                color: {text_color};
-            }}
-            
-            QLabel, QCheckBox {{
-                color: {text_color};
-            }}
-
-            QCheckBox::indicator {{
-                width: 13px;
-                height: 13px;
-            }}
-
-            QCheckBox::indicator:checked {{
-                border: 1px solid {text_color};
-            }}
-
-            QCheckBox::indicator:unchecked {{
-                background-color: {text_color};
-                border: 1px solid {text_color};
-            }}
-
-            QLineEdit {{
-                background-color: {background_color};
-                color: {text_color};
-                border: 1px solid {text_color};
-                padding: 2px;
-            }}
-        """)
+        self.setStyleSheet(pop_up_window_style)
 
         QBtn = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1713,7 +1903,7 @@ class StartMissionsDialog(QDialog):
         message_text (str): The message to display in the dialog.
         parent (QWidget, optional): The parent widget.
     """
-    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0, background_color="white", text_color="black"):
+    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0, background_color="white", text_color="black", pop_up_window_style=None):
         """
         Parameters:
             options (list of str): List of checkbox labels.
@@ -1728,39 +1918,7 @@ class StartMissionsDialog(QDialog):
         # Make the dialog not resizable
         self.setFixedSize(300, 200)  # Set to your preferred width and height
 
-        #TODO: the boxes currently fill in, change it so it's a checkmark instead
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {background_color};
-                color: {text_color};
-            }}
-            
-            QLabel, QCheckBox {{
-                color: {text_color};
-            }}
-
-            QCheckBox::indicator {{
-                width: 13px;
-                height: 13px;
-            }}
-
-            QCheckBox::indicator:checked {{
-                border: 1px solid {text_color};
-            }}
-
-            QCheckBox::indicator:unchecked {{
-                background-color: {text_color};
-                border: 1px solid {text_color};
-            }}
-
-            QLineEdit {{
-                background-color: {background_color};
-                color: {text_color};
-                border: 1px solid {text_color};
-                padding: 2px;
-            }}
-        """)
-
+        self.setStyleSheet(pop_up_window_style)
 
         self.inputs = {}
 
