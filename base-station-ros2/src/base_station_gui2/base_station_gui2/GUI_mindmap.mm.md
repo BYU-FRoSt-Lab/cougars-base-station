@@ -93,7 +93,7 @@
   - GUI pressure
 
 ### BatteryState (name: coug{coug_number}/battery/data)
-- percentage
-  - GUI battery percentage
+- voltage
+  - GUI battery voltage
 
 ## Waypoint (TODO)

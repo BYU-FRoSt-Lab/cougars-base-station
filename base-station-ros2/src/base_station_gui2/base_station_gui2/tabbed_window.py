@@ -1,5 +1,4 @@
 import sys 
-from datetime import datetime
 import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
@@ -966,34 +965,34 @@ class MainWindow(QMainWindow):
 
             #The connections section contains the wifi, radio, and modem connections for each Coug respectively
             if title == "Connections": 
-                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], self.tab_spacing)
+                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], self.tab_spacing, coug_number)
                 wifi_widget.setObjectName(f"Wifi{coug_number}")
                 layout.addWidget(wifi_widget)
                 layout.addSpacing(20)
 
-                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], self.tab_spacing)
+                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], self.tab_spacing, coug_number)
                 radio_widget.setObjectName(f"Radio{coug_number}")
                 layout.addWidget(radio_widget)
                 layout.addSpacing(20)
 
-                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], self.tab_spacing)
+                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], self.tab_spacing, coug_number)
                 modem_widget.setObjectName(f"Modem{coug_number}")
                 layout.addWidget(modem_widget)
                 layout.addSpacing(40)
 
             #The connections section contains the DVL, GPS, and IMU sensors connections for each Coug respectively
             elif title == "Sensors":
-                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], self.tab_spacing)
+                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], self.tab_spacing, coug_number)
                 DVL_sensor_widget.setObjectName(f"DVL{coug_number}")
                 layout.addWidget(DVL_sensor_widget)
                 layout.addSpacing(20)
 
-                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], self.tab_spacing)
+                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], self.tab_spacing, coug_number)
                 GPS_sensor_widget.setObjectName(f"GPS{coug_number}")
                 layout.addWidget(GPS_sensor_widget)
                 layout.addSpacing(20)
                 
-                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], self.tab_spacing)
+                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], self.tab_spacing, coug_number)
                 IMU_sensor_widget.setObjectName(f"IMU{coug_number}")
                 layout.addWidget(IMU_sensor_widget)
                 layout.addSpacing(40)
@@ -1122,7 +1121,7 @@ class MainWindow(QMainWindow):
         return result
 
     #used to create an icon next to text in a pre-determined fashion
-    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, ):
+    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, coug_number=None):
         """
         Creates a QWidget containing an icon (optional) and a text label, arranged horizontally.
 
@@ -1163,7 +1162,7 @@ class MainWindow(QMainWindow):
             bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
             icon_label.setPixmap(bg_pixmap)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            icon_label.setObjectName(f"icon_{timestamp}")
+            icon_label.setObjectName(f"icon_{text}")
 
             icon_label.setContentsMargins(0, 0, 0, 0)
             icon_label.setFixedSize(24, 24)
@@ -1358,15 +1357,15 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add connection status icons (Wifi, Radio, Modem)
-        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], 0)
+        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], 0, coug_number)
         wifi_widget.setObjectName(f"Spec_Wifi{coug_number}")
         temp_layout.addWidget(wifi_widget)
 
-        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], 0)
+        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], 0, coug_number)
         radio_widget.setObjectName(f"Spec_Radio{coug_number}")
         temp_layout.addWidget(radio_widget)
 
-        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], 0)
+        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], 0, coug_number)
         modem_widget.setObjectName(f"Spec_Modem{coug_number}")
         temp_layout.addWidget(modem_widget)
         temp_layout.addSpacing(20)
@@ -1381,15 +1380,15 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add sensor status icons (DVL, GPS, IMU)
-        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], 0)
+        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], 0, coug_number)
         DVL_sensor_widget.setObjectName(f"Spec_DVL{coug_number}")
         temp_layout.addWidget(DVL_sensor_widget)
 
-        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], 0)
+        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], 0, coug_number)
         GPS_sensor_widget.setObjectName(f"Spec_GPS{coug_number}")
         temp_layout.addWidget(GPS_sensor_widget)
         
-        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], 0)
+        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], 0, coug_number)
         IMU_sensor_widget.setObjectName(f"Spec_IMU{coug_number}")
         temp_layout.addWidget(IMU_sensor_widget)
 
@@ -1698,37 +1697,46 @@ class MainWindow(QMainWindow):
             # Update connection status icons for each Coug
             # for coug_number, data in self.feedback_dict[feedback_key].items(): 
             for coug_number in conn_message.vehicle_ids:
-                data = self.feedback_dict[feedback_key][coug_number]
-                status = 1 if conn_message.connections[coug_number-1] else 0
-                self.feedback_dict[feedback_key][coug_number] = status
-                prefix = feedback_key.split("_")[0]
-                new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
-                layout = self.general_page_coug_layouts.get(coug_number)
-                widget = self.general_page_coug_widgets.get(coug_number)
-                self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+                if not coug_number in self.feedback_dict[feedback_key]: continue
+                else:
+                    data = self.feedback_dict[feedback_key][coug_number]
+                    status = 1 if conn_message.connections[coug_number-1] else 0
+                    self.feedback_dict[feedback_key][coug_number] = status
+                    prefix = feedback_key.split("_")[0]
+                    new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
+                    layout = self.general_page_coug_layouts.get(coug_number)
+                    widget = self.general_page_coug_widgets.get(coug_number)
+                    self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
 
-                new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
-                layout = getattr(self, f"coug{coug_number}_column0_layout")
-                widget = getattr(self, f"coug{coug_number}_column0_widget")
-                self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
+                    new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
+                    layout = getattr(self, f"coug{coug_number}_column0_layout")
+                    widget = getattr(self, f"coug{coug_number}_column0_widget")
+                    self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
 
             # Update seconds since last ping for each Coug
             ping_list = list(conn_message.last_ping)
             count = 0
             for coug_number in conn_message.vehicle_ids:
-            # for coug_number, ping in enumerate(ping_list, start=1):
                 ping = ping_list[count]
-                if coug_number not in self.selected_cougs: continue
-                self.feedback_dict[feedback_key_seconds][coug_number] = ping
-                layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
-                widget = getattr(self, f"coug{coug_number}_buttons_column_widget", None)
-                new_seconds_label = self.create_seconds_label(conn_type, ping)
-                if conn_type:
-                    old_label = f"coug{coug_number}_radio_seconds_widget"
+                if coug_number not in self.selected_cougs: 
+                    count += 1
+                    continue
                 else:
-                    old_label = f"coug{coug_number}_modem_seconds_widget"
-                self.replace_label(old_label, layout, widget, new_seconds_label)
-                count += 1
+                    self.feedback_dict[feedback_key_seconds][coug_number] = ping
+                    layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
+                    widget = getattr(self, f"coug{coug_number}_buttons_column_widget", None)
+                    new_seconds_label = self.create_seconds_label(conn_type, ping)
+                    if conn_type:
+                        old_label = f"coug{coug_number}_radio_seconds_widget"
+                        existing_label = widget.findChild(QLabel, old_label)
+                        new_text = f"Radio: {ping}"
+                        if existing_label: existing_label.setText(new_text)
+                    else:
+                        old_label = f"coug{coug_number}_modem_seconds_widget"
+                        existing_label = widget.findChild(QLabel, old_label)
+                        new_text = f"Accoustics: {ping}"
+                        if existing_label: existing_label.setText(new_text)
+                    count += 1
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
@@ -1778,21 +1786,25 @@ class MainWindow(QMainWindow):
         layout = self.general_page_coug_layouts.get(coug_number)
         widget = self.general_page_coug_widgets.get(coug_number)
         status = self.feedback_dict[prefix][coug_number]
-        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing)
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
         self.replace_label(f"{prefix}{coug_number}", layout, widget, new_label)
     
     def replace_specific_icon_widget(self, coug_number, prefix):
         layout = getattr(self, f"coug{coug_number}_column0_layout")
         widget = getattr(self, f"coug{coug_number}_column0_widget")
         status = self.feedback_dict[prefix][coug_number]
-        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0)
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
         self.replace_label(f"Spec_{prefix}{coug_number}", layout, widget, new_label)
+        # existing_label = widget.findChild(QLabel, f"Spec_{prefix}{coug_number}")
+        # if existing_label: existing_label.setText(new_text)
 
     def replace_specific_status_widget(self, coug_number, prefix):
         layout = getattr(self, f"coug{coug_number}_column01_layout")
         widget = getattr(self, f"coug{coug_number}_column01_widget")
-        new_label = self.create_normal_label(self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number]), f"{prefix}{coug_number}")
-        self.replace_label(f"{prefix}{coug_number}", layout, widget, new_label)
+        # new_label = self.create_normal_label(self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number]), f"{prefix}{coug_number}")
+        new_text = self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number])
+        existing_label = widget.findChild(QLabel, f"{prefix}{coug_number}")
+        if existing_label: existing_label.setText(new_text)
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
