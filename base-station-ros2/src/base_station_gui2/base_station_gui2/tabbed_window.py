@@ -1,4 +1,5 @@
 import sys 
+from datetime import datetime
 import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
@@ -95,9 +96,7 @@ class MainWindow(QMainWindow):
         file_submenu.addAction(dark_mode)
         file_submenu.addAction(light_mode)
         file_submenu.addAction(blue_pastel)
-        file_submenu.addAction(brown_sepia)        # #button confirmation label
-        # self.confirm_reject_label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
-        # self.main_layout.addWidget(self.confirm_reject_label, alignment=Qt.AlignmentFlag.AlignTop)
+        file_submenu.addAction(brown_sepia)        
         file_submenu.addAction(intense_dark)
         file_submenu.addAction(intense_light)
         file_submenu.addAction(cadetblue)
@@ -334,6 +333,8 @@ class MainWindow(QMainWindow):
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
             self.check_box_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.text_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = (
                 base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
                 extra_checkbox_rules.format(text=self.text_color)
@@ -352,6 +353,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = self.border_outline
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # blue pastel
@@ -367,6 +370,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = self.border_outline
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # brown sepia
@@ -382,6 +387,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = self.background_color
             self.not_selected_tab_color = self.background_color
             self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # Seth's special mode for the color haters
@@ -398,6 +405,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = "white"
             self.not_selected_tab_color = "grey"
             self.not_selected_tab_text_color = "black"
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         # Intense Dark
@@ -413,6 +422,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = "black"
             self.not_selected_tab_color = "black"
             self.not_selected_tab_text_color = "white"
+            self.dark_icon_bkgrnd_color = self.text_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = (
                 base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
                 extra_checkbox_rules.format(text=self.text_color)
@@ -431,6 +442,8 @@ class MainWindow(QMainWindow):
             self.selected_tab_text_color = "white"
             self.not_selected_tab_color = "white"
             self.not_selected_tab_text_color = "black"
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
 
         #the first time widgets aren't created yet, so no need to change them
@@ -464,6 +477,25 @@ class MainWindow(QMainWindow):
             for line in self.findChildren(QFrame):
                 if line.frameShape() in (QFrame.Shape.HLine, QFrame.Shape.VLine):
                     line.setStyleSheet(f"background-color: {self.text_color};")
+
+            # Find all QLabel widgets whose objectName starts with "icon"
+            icon_labels = [label for label in self.findChildren(QLabel) if label.objectName().startswith("icon")]
+            for ic_label in icon_labels:
+                # Use the original icon pixmap if available
+                orig_pixmap = getattr(ic_label, "_original_icon_pixmap", None)
+                if orig_pixmap is not None:
+                    icon_type = getattr(ic_label, "_icon_type", None)
+                    if icon_type == QStyle.StandardPixmap.SP_MessageBoxCritical:
+                        icon_bkgrnd = self.light_icon_bkgrnd_color
+                    elif icon_type == QStyle.StandardPixmap.SP_DialogApplyButton:
+                        icon_bkgrnd = self.light_icon_bkgrnd_color
+                    elif icon_type == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+                        icon_bkgrnd = self.dark_icon_bkgrnd_color
+                    else:
+                        print("Unknown icon type.")
+                        continue
+                    new_pixmap = self.paintIconBackground(orig_pixmap, bg_color=icon_bkgrnd)
+                    ic_label.setPixmap(new_pixmap)
 
     def set_console_log_colors(self, text_color, background_color):
         """
@@ -1060,8 +1092,37 @@ class MainWindow(QMainWindow):
         # Return the container widget holding the scrollable log
         return temp_container
 
+
+    def paintIconBackground(self, icon_pixmap, bg_color="#28625a", diameter=24):
+        """
+        Draws a colored circle behind the given icon pixmap.
+
+        Parameters:
+            icon_pixmap (QPixmap): The icon to draw.
+            bg_color (str): The background color (hex or color name).
+            diameter (int): The diameter of the background circle.
+
+        Returns:
+            QPixmap: The new pixmap with the background.
+        """
+        # Create a transparent pixmap
+        result = QPixmap(diameter, diameter)
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(bg_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, diameter, diameter)
+        # Center the icon in the circle
+        icon_size = icon_pixmap.size()
+        x = (diameter - icon_size.width()) // 2
+        y = (diameter - icon_size.height()) // 2
+        painter.drawPixmap(x, y, icon_pixmap)
+        painter.end()
+        return result
+
     #used to create an icon next to text in a pre-determined fashion
-    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None):
+    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, ):
         """
         Creates a QWidget containing an icon (optional) and a text label, arranged horizontally.
 
@@ -1085,10 +1146,27 @@ class MainWindow(QMainWindow):
         # If an icon is provided, create a QLabel for it and add to the layout
         if icon:
             icon_label = QLabel()
-            # Set the icon pixmap (16x16 pixels)
-            icon_label.setPixmap(self.style().standardIcon(icon).pixmap(16, 16))
+            icon_pixmap = self.style().standardIcon(icon).pixmap(16, 16)
+            icon_label._original_icon_pixmap = icon_pixmap  # Store original
+            icon_label._icon_type = icon # Store the icon type (e.g., QStyle.StandardPixmap.SP_MessageBoxCritical)
+            
+            if icon == QStyle.StandardPixmap.SP_MessageBoxCritical:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon == QStyle.StandardPixmap.SP_DialogApplyButton:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+                icon_bkgrnd = self.dark_icon_bkgrnd_color
+            else:
+                print("Unknown icon type.")
+                return
+            
+            bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
+            icon_label.setPixmap(bg_pixmap)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            icon_label.setObjectName(f"icon_{timestamp}")
+
             icon_label.setContentsMargins(0, 0, 0, 0)
-            icon_label.setFixedSize(16, 16)
+            icon_label.setFixedSize(24, 24)
             temp_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Create the text label and add to the layout
