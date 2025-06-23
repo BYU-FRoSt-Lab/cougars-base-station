@@ -14,8 +14,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 
 
-
 rosidl_generate_interfaces(${PROJECT_NAME}
+"srv/ModemControl.srv"
 "srv/BeaconId.srv"
 "msg/Status.msg"
 "msg/Connections.msg"

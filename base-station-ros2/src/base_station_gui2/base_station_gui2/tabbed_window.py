@@ -1,0 +1,2096 @@
+import sys 
+import random, time, os
+from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
+    QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
+    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
+)
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
+
+from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon, QActionGroup
+
+from base_station_interfaces.srv import BeaconId, ModemControl
+from functools import partial
+from transforms3d.euler import quat2euler
+import math
+from base_station_gui2.temp_mission_control import deploy
+from base_station_gui2.cougars_bringup.scripts import startup_call
+import threading
+
+class MainWindow(QMainWindow):
+    # Initializes GUI window with a ros node inside
+    update_connections_signal = pyqtSignal(object)
+    update_console_signal = pyqtSignal(object, int)
+    kill_confirm_signal = pyqtSignal(object)
+    safety_status_signal = pyqtSignal(int, object)
+    smoothed_ouput_signal = pyqtSignal(int, object)
+    depth_data_signal = pyqtSignal(int, object)
+    pressure_data_signal = pyqtSignal(int, object)
+    battery_data_signal = pyqtSignal(int, object)
+    surface_confirm_signal = pyqtSignal(object)
+    def __init__(self, ros_node, coug_dict):
+        """
+        Initializes GUI window with a ros node inside
+
+        Parameters:
+            ros_node (node): node passed in from ros in order to access the publisher
+        """
+        
+        super().__init__()
+        self.ros_node = ros_node
+        self.setWindowTitle("CoUGARS_GUI")
+
+        self.button_padding = 15
+        self.button_font_size = 15
+
+        #light_mode, dark_mode, blue_pastel, brown_sepia, intense_dark, cadetblue
+        self.set_color_theme("dark_mode", first_time=True) #default to dark mode
+
+        # Create an exclusive action group for theme actions
+        theme_action_group = QActionGroup(self)
+        theme_action_group.setExclusive(True)
+
+        dark_mode = QAction("Dark Mode", self)
+        dark_mode.triggered.connect(lambda: self.set_color_theme("dark_mode"))
+        dark_mode.setCheckable(True)
+        theme_action_group.addAction(dark_mode)
+
+        light_mode = QAction("Light Mode", self)
+        light_mode.triggered.connect(lambda: self.set_color_theme("light_mode"))
+        light_mode.setCheckable(True)
+        theme_action_group.addAction(light_mode)
+
+        blue_pastel = QAction("Blue Pastel", self)
+        blue_pastel.triggered.connect(lambda: self.set_color_theme("blue_pastel"))
+        blue_pastel.setCheckable(True)
+        theme_action_group.addAction(blue_pastel)
+
+        brown_sepia = QAction("Brown Sepia", self)
+        brown_sepia.triggered.connect(lambda: self.set_color_theme("brown_sepia"))
+        brown_sepia.setCheckable(True)
+        theme_action_group.addAction(brown_sepia)
+
+        intense_dark = QAction("Intense Dark", self)
+        intense_dark.triggered.connect(lambda: self.set_color_theme("intense_dark"))
+        intense_dark.setCheckable(True)
+        theme_action_group.addAction(intense_dark)
+
+        intense_light = QAction("Intense Light", self)
+        intense_light.triggered.connect(lambda: self.set_color_theme("intense_light"))
+        intense_light.setCheckable(True)
+        theme_action_group.addAction(intense_light)
+        
+        cadetblue = QAction("Cadetblue", self)
+        cadetblue.triggered.connect(lambda: self.set_color_theme("cadetblue"))
+        cadetblue.setCheckable(True)
+        theme_action_group.addAction(cadetblue)
+
+        # Set the default checked action
+        dark_mode.setChecked(True)
+
+        self.setStatusBar(QStatusBar(self))
+        menu = self.menuBar()
+        file_menu = menu.addMenu("Theme")
+        file_submenu = file_menu.addMenu("Set Theme")
+        file_submenu.addAction(dark_mode)
+        file_submenu.addAction(light_mode)
+        file_submenu.addAction(blue_pastel)
+        file_submenu.addAction(brown_sepia)        
+        file_submenu.addAction(intense_dark)
+        file_submenu.addAction(intense_light)
+        file_submenu.addAction(cadetblue)
+
+        self.selected_cougs = []
+        for coug_data, included in coug_dict.items():
+            if included: self.selected_cougs.append(int(str(coug_data[-1])))
+
+        #confirmation label dictionary
+        self.confirm_reject_labels = {}
+
+        ###This is how the coug info gets into the GUI
+        self.feedback_dict = {
+            #0->negative, 1->positive, 2->waiting
+            #Cougs 1-3 connections
+            "Wifi": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Radio": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Modem": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #0->negative, 1->positive, 2->waiting
+            #Cougs 1-3 sensors
+            "DVL": {coug_num: 2 for coug_num in self.selected_cougs},
+            "GPS": {coug_num: 2 for coug_num in self.selected_cougs},
+            "IMU": {coug_num: 2 for coug_num in self.selected_cougs},
+            "Battery": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 status messages
+            "Status_messages": {coug_num: "" for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 message logs, lists of strings
+            "Console_messages": {coug_num: [] for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 message logs, lists of strings
+            "Missions": {coug_num: "" for coug_num in self.selected_cougs},    
+
+            #Cougs 1-3 seconds since last connection, list of ints
+            "Modem_seconds": {coug_num: 2 for coug_num in self.selected_cougs},    
+
+            #Cougs 1-3 seconds since last radio connection, list of ints
+            "Radio_seconds": {coug_num: 2 for coug_num in self.selected_cougs},     
+
+            #Cougs 1-3 X Position in the DVL frame
+            "XPos": {coug_num: 2 for coug_num in self.selected_cougs},        
+            
+            #Cougs 1-3 Y Position in the DVL frame
+            "YPos": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Depth, list of ints
+            "Depth": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Heading, list of ints
+            "Heading": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Waypoint, list of ints
+            "Waypoint": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Linear Velocities, list of ints
+            "DVL_vel": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Angular Velocities, list of ints
+            "Angular_vel": {coug_num: 2 for coug_num in self.selected_cougs},
+
+            #Cougs 1-3 Pressures, list of ints
+            "Pressure": {coug_num: 2 for coug_num in self.selected_cougs}
+        }
+
+        #this is used to connect the feedback_dict keys to what is actually printed, in _update_status_gui
+        self.key_to_text_dict = {
+            "XPos": "x (meters): ",
+            "YPos": "y (meters): ",
+            "Depth": "Depth (meters): ",
+            "Heading": "Heading (deg): ",
+            "Waypoint": "Current Waypoint: ",
+            "DVL_vel": "DVL Velocity (m/s): ",
+            "Battery": "Battery (volts): ",
+            "Pressure": "Pressure (Pa): ",
+            "Angular_vel": "Angular Velocity (rad/s): "
+        }
+
+        self.option_map = {
+            "Start the node": "start_node",
+            "Record rosbag": "record_rosbag",
+            "Enter rosbag prefix (string): ": "rosbag_prefix",
+            "Arm Thruster": "arm_thruster",
+            "Start DVL": "start_dvl"
+        }
+
+        #This is a dictionary to map the feedback_dict to the correct symbols
+        #"x" symbol -> SP_MessageBoxCritical
+        #"check" symbol -> SP_DialogApplyButton
+        # "waiting" symbol -> SP_TitleBarContextHelpButton
+        self.icons_dict = {
+            0: QStyle.StandardPixmap.SP_MessageBoxCritical,
+            1: QStyle.StandardPixmap.SP_DialogApplyButton,
+            2: QStyle.StandardPixmap.SP_TitleBarContextHelpButton
+        }
+
+        #Create the tabs
+        self.tabs = QTabWidget()
+        #Orient the tabs at the tob of the screen
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
+        #The tabs' order can't be changed or moved
+        self.tabs.setMovable(False)
+
+        #Placeholders for the tabs layout, to be accessed later. 
+        tab_names = ["General"] + [f"Coug {i}" for i in self.selected_cougs]
+        self.tab_dict = {name: [None, QHBoxLayout()] for name in tab_names}
+
+        #create the widgets from the tab dict, assign layouts, and add each to self.tabs
+        for name in self.tab_dict:
+            # Create content layout
+            content_widget = QWidget()
+            content_layout = QVBoxLayout()
+
+            # Main content widget
+            content = QWidget()
+            content.setLayout(self.tab_dict[name][1])
+
+            # Add line and content to layout
+            content_layout.addWidget(self.make_hline())
+
+            label = QLabel("Confirmation/Rejection messages from command buttons will appear here")
+            label.setStyleSheet(f"color: {self.text_color}; font-size: 14px;") 
+            self.confirm_reject_labels[name] = label
+
+            if name.lower() != "general":
+                # For Coug tabs, add specific widgets and console log
+                content_layout.addWidget(self.set_specific_coug_widgets(int(name[-1])))
+                content_layout.addWidget(self.make_hline())
+                content_layout.addWidget(self.create_specific_coug_console_log(int(name[-1])))
+                content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
+            else:
+                # For General tab, add general widgets
+                content_layout.addWidget(content)
+                self.set_general_page_widgets()
+                content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
+
+            # Set the combined layout
+            content_widget.setLayout(content_layout)
+            self.tab_dict[name][0] = content_widget
+
+            # Add to tabs
+            self.tabs.addTab(content_widget, name)
+            self.set_background(content_widget, self.background_color)
+
+        # Connect tab change to scroll-to-bottom for console logs
+        self.tabs.currentChanged.connect(self.scroll_console_to_bottom_on_tab)
+
+        #Emergency exit GUI button
+        # self.emergency_exit_gui_button = QPushButton("Close GUI")
+        # self.emergency_exit_gui_button.clicked.connect(self.close_window)
+        # self.emergency_exit_gui_button.setStyleSheet(f"background-color: {self.background_color}; color: {self.text_color}; border: 2px solid {self.border_outline};")
+
+        #Ctrl+C shortcut to close the window
+        shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        shortcut.activated.connect(self.close)
+
+        #The overall layout is vertical
+        self.main_layout = QVBoxLayout()
+        #Add the tabs to the main layout
+        self.main_layout.addWidget(self.tabs)
+        # self.main_layout.addWidget(self.emergency_exit_gui_button)
+
+        #create a container widget, and place the main layout inside of it
+        self.container = QWidget()
+        self.container.setObjectName("MyContainer")
+        self.container.setLayout(self.main_layout)
+        #the container with the main layout is set as the central widget
+        self.setCentralWidget(self.container)
+
+        #creates a signal that is sent from recieve_connections, and sent to _update_connections_gui. 
+        #this avoids the error of the gui not working on the main thread
+        self.update_connections_signal.connect(self._update_connections_gui)
+        self.update_console_signal.connect(self._update_console_gui)
+        self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
+        self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
+        self.safety_status_signal.connect(self._update_safety_status_information)
+        self.smoothed_ouput_signal.connect(self._update_gui_smoothed_output)
+        self.depth_data_signal.connect(self.update_depth_data)
+        self.pressure_data_signal.connect(self.update_pressure_data)
+        self.battery_data_signal.connect(self.update_battery_data)
+
+    def set_color_theme(self, color_theme, first_time=False):
+        
+        # Define a base style for pop-up windows
+        base_pop_up_style = """
+            QDialog {{
+                background-color: {bg};
+                color: {text};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QLineEdit {{
+                background-color: {bg};
+                color: {text};
+                border: 1px solid {text};
+                padding: 2px;
+            }}
+        """
+
+        # Extra checkbox rules for dark themes
+        extra_checkbox_rules = """
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text};
+                border: 1px solid {text};
+            }}
+        """
+
+        theme = color_theme.lower()
+
+        #dark mode
+        if theme == "dark_mode":
+            self.background_color = "#0F1C37"
+            self.border_outline = "#FFFFFF"
+            self.text_color = "#FFFFFF"
+            self.normal_button_color = "#28625a"
+            self.danger_button_color = "#953f10"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.text_color
+            self.selected_tab_text_color = self.background_color
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.check_box_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.text_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = (
+                base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
+                extra_checkbox_rules.format(text=self.text_color)
+            )
+
+        # light mode
+        elif theme == "light_mode":
+            self.background_color = "#f4f6fc"
+            self.border_outline = "#000000"
+            self.text_color = "#000000"
+            self.danger_button_color = "#faa94a"
+            self.normal_button_color = "#99d1c5"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.border_outline
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+        # blue pastel
+        elif theme == "blue_pastel":
+            self.background_color = "#caedee"
+            self.border_outline = "#000000"
+            self.text_color = "#000000"
+            self.danger_button_color = "#ffdb4f"
+            self.normal_button_color = "#81b673"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.border_outline
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+        # brown sepia
+        elif theme == "brown_sepia":
+            self.background_color = "#f2edd1"
+            self.border_outline = "#44312b"
+            self.text_color = "#44312b"
+            self.danger_button_color = "#44312b"
+            self.normal_button_color = "#44312b"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = self.normal_button_color
+            self.selected_tab_text_color = self.background_color
+            self.not_selected_tab_color = self.background_color
+            self.not_selected_tab_text_color = self.text_color
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+        # Seth's special mode for the color haters
+        #Cadetblue
+        elif theme == "cadetblue":
+            self.background_color = "cadetblue"
+            self.border_outline = "#44312b"
+            self.text_color = "#000000"
+            self.danger_button_color = "red"
+            self.normal_button_color = "blue"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: #FFFFFF; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "blue"
+            self.selected_tab_text_color = "white"
+            self.not_selected_tab_color = "grey"
+            self.not_selected_tab_text_color = "black"
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+        # Intense Dark
+        elif theme == "intense_dark":
+            self.background_color = "black"
+            self.border_outline = "white"
+            self.text_color = "white"
+            self.danger_button_color = "white"
+            self.normal_button_color = "white"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "white"
+            self.selected_tab_text_color = "black"
+            self.not_selected_tab_color = "black"
+            self.not_selected_tab_text_color = "white"
+            self.dark_icon_bkgrnd_color = self.text_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = (
+                base_pop_up_style.format(bg=self.background_color, text=self.text_color) +
+                extra_checkbox_rules.format(text=self.text_color)
+            )
+
+        # Intense Light
+        elif theme == "intense_light":
+            self.background_color = "white"
+            self.border_outline = "black"
+            self.text_color = "black"
+            self.danger_button_color = "black"
+            self.normal_button_color = "black"
+            self.danger_button_style_sheet = f"background-color: {self.danger_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.normal_button_style_sheet = f"background-color: {self.normal_button_color}; color: {self.background_color}; border: 2px solid {self.border_outline}; padding-top: {self.button_padding}px; padding-bottom: {self.button_padding}px; font-size: {self.button_font_size}px;"
+            self.selected_tab_color = "black"
+            self.selected_tab_text_color = "white"
+            self.not_selected_tab_color = "white"
+            self.not_selected_tab_text_color = "black"
+            self.dark_icon_bkgrnd_color = self.background_color
+            self.light_icon_bkgrnd_color = self.background_color
+            self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+        #the first time widgets aren't created yet, so no need to change them
+        if not first_time: self.apply_theme_to_widgets()
+
+    def apply_theme_to_widgets(self):
+
+        #get current wideth, and recolor the tabs themselves
+        width_px = self.width() // (len(self.selected_cougs) + 1) - 10
+        self.repaintTabs(width_px)
+
+        bg_color, text_color = self.background_color, self.text_color
+        for name in self.tab_dict:
+            widget = self.tab_dict[name][0]
+            #set background color of each tab
+            self.set_background(widget, self.background_color)
+            #set text color of each console log
+            self.set_console_log_colors(self.text_color, self.background_color)
+            for button in self.findChildren(QPushButton):
+                # Danger buttons
+                if "recall" in button.text().lower() or "emergency" in button.text().lower():
+                    button.setStyleSheet(self.danger_button_style_sheet)
+                # Normal buttons
+                else:
+                    button.setStyleSheet(self.normal_button_style_sheet)
+            #set text color of the labels
+            for label in self.findChildren(QLabel):
+                label.setStyleSheet(f"color: {self.text_color};")
+
+            # Update line colors
+            for line in self.findChildren(QFrame):
+                if line.frameShape() in (QFrame.Shape.HLine, QFrame.Shape.VLine):
+                    line.setStyleSheet(f"background-color: {self.text_color};")
+
+            # Find all QLabel widgets whose objectName starts with "icon"
+            icon_labels = [label for label in self.findChildren(QLabel) if label.objectName().startswith("icon")]
+            for ic_label in icon_labels:
+                # Use the original icon pixmap if available
+                orig_pixmap = getattr(ic_label, "_original_icon_pixmap", None)
+                if orig_pixmap is not None:
+                    icon_type = getattr(ic_label, "_icon_type", None)
+                    if icon_type == QStyle.StandardPixmap.SP_MessageBoxCritical:
+                        icon_bkgrnd = self.light_icon_bkgrnd_color
+                    elif icon_type == QStyle.StandardPixmap.SP_DialogApplyButton:
+                        icon_bkgrnd = self.light_icon_bkgrnd_color
+                    elif icon_type == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+                        icon_bkgrnd = self.dark_icon_bkgrnd_color
+                    else:
+                        print("Unknown icon type.")
+                        continue
+                    new_pixmap = self.paintIconBackground(orig_pixmap, bg_color=icon_bkgrnd)
+                    ic_label.setPixmap(new_pixmap)
+
+    def set_console_log_colors(self, text_color, background_color):
+        """
+        Sets the background and text color of all console log QLabel widgets.
+        """
+        for coug_number in self.selected_cougs:
+            scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+            if scroll_area:
+                scroll_area.setStyleSheet(
+                    f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+                )
+                # Find the label inside the scroll area and set its text color
+                label = scroll_area.findChild(QLabel, f"Console_messages{coug_number}")
+                if label:
+                    label.setStyleSheet(f"color: {text_color};")
+
+    def handle_console_log(self, msg):
+        if msg.coug_number == 0:
+            for i in self.selected_cougs:
+                self.recieve_console_update(msg.message, i)
+        elif msg.coug_number in self.selected_cougs:
+            self.recieve_console_update(msg.message, msg.coug_number)
+
+    def scroll_console_to_bottom_on_tab(self, index):
+        """
+        Ensures the console log for a Coug tab is always scrolled to the bottom when the tab is selected.
+
+        This function is connected to the QTabWidget's currentChanged signal. When the user switches
+        to a Coug tab, it finds the corresponding QScrollArea for that Coug's console log and scrolls
+        it to the bottom, so the latest messages are always visible.
+
+        Parameters:
+            index (int): The index of the newly selected tab.
+        """
+        # Get the name of the tab at the given index
+        tab_name = self.tabs.tabText(index)
+        # Only act if the tab is a Coug tab (e.g., "Coug 1", "Coug 2", "Coug 3")
+        if tab_name.startswith("Coug"):
+            # Extract the Coug number from the tab name
+            coug_number = int(tab_name.split()[-1])
+            # Get the scroll area for this Coug's console log
+            scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+            if scroll_area:
+                # Process any pending events to ensure the layout is up to date
+                QApplication.processEvents()
+                # Scroll the vertical scrollbar to the maximum (bottom)
+                scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
+
+    def replace_confirm_reject_label(self, confirm_reject_text):
+        for label in self.confirm_reject_labels.values():
+            label.setText(confirm_reject_text)
+
+    #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
+    def close_window(self):
+        #pop-up window
+        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        #if confirm is selected
+        if dlg.exec():
+            self.replace_confirm_reject_label("Closing Window...")
+            print("Closing the Window now...")
+            self.close()  
+        else:
+            self.replace_confirm_reject_label("Canceling Close Window command...")
+            for i in self.selected_cougs:
+                self.recieve_console_update("Canceling Close Window command...", i)
+
+    #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
+    def replace_label(self, widget_name, parent_layout, parent_widget, new_label, color=""):
+        """
+        Replaces a label inside of the GUI
+
+        Parameters:
+            widget_name: the name of the widget to be changed
+            parent_layout: the parent layout of the widget to be changed
+            parent_widget: the parent widget of the widget to be changed
+            new_label: the new text/icon the label will be changed to
+            color: optional color to change the label to
+        """
+        #find the widget in reference to its parent widget
+        temp_widget = parent_widget.findChild(QWidget, widget_name)
+        if temp_widget:
+            #the index of the widget in respect to its parent layout
+            index = parent_layout.indexOf(temp_widget)
+        else:
+            print(f"not found. widget_name: {widget_name} : parent_widget: {parent_widget} temp_widget: {temp_widget}")
+            for i in self.selected_cougs: self.recieve_console_update("GUI error. See terminal.", i)
+            return
+
+        parent_layout.removeWidget(temp_widget)
+        #set parent to none so that it doesn't have any lingering consequences
+        temp_widget.setParent(None)
+
+        #The new label has the same name as the old one, so that it can be changed again
+        new_label.setObjectName(widget_name)
+        #set the optional color, if there wasn't a color passed, then it doesn't change anything
+        new_label.setStyleSheet(f"color: {self.text_color};")
+        #insert the new widget in the same index as the old one was, so the order of the text doesn't
+        parent_layout.insertWidget(index, new_label)
+
+    def get_status_message_color(self, message):
+        #TODO: get rid of the colors here
+        # Returns a color and possibly modified message string based on status.
+        if not message: 
+            message_color = "green"
+            message_label = "Good"
+        elif message == 1: 
+            message_color = "red"
+            message_label = "EMERGENCY: Recall Coug Immediately"
+        elif message == 2:
+            message_color = "yellow"
+            message_label = "Surfaced/Disarmed"
+        else: 
+            message_label = "No Data Received"
+            message_color = "orange"
+        return message_color, message_label
+
+    "/*Override the resizeEvent method in the sub class*/"
+    def resizeEvent(self, event):
+        size = self.size()
+        width_px = self.width() // (len(self.selected_cougs) + 1) - 10
+        self.repaintTabs(width_px)
+        # Dynamically resize each console scroll area
+        for i in self.selected_cougs:  # Assuming Coug 1-3
+            scroll_area = getattr(self, f"coug{i}_console_scroll_area", None)
+            if scroll_area:
+                scroll_area.setFixedHeight(int(self.height() * 0.2))
+            # Dynamically set width of column0_widget
+            column0_widget = getattr(self, f"coug{i}_column0_widget", None)
+            if column0_widget:
+                column0_widget.setMaximumWidth(int(self.width() * 0.16))  # 16% of window width
+            column01_widget = getattr(self, f"coug{i}_column01_widget", None)
+            if column01_widget:
+                column01_widget.setMaximumWidth(int(self.width() * 0.16))
+
+        super().resizeEvent(event)
+
+    "/*resize the tabs according to the width of the window*/"
+    def repaintTabs(self, width_px):
+        # Sets the stylesheet for tab width and appearance.
+        self.tabs.setStyleSheet(f"""
+        QTabBar::tab {{
+            height: 30px;
+            width: {width_px - 15}px;
+            font-size: 12pt;
+            padding: 5px;
+            background: {self.not_selected_tab_color};  /* background color of non-selected tab */
+            color: {self.not_selected_tab_text_color};           /* font color of non-selected tab */
+            border: 2px solid {self.not_selected_tab_text_color}; 
+        }}
+        QTabBar::tab:selected {{
+            background: {self.selected_tab_color};       /* background color of selected tab */
+            color: {self.selected_tab_text_color};           /* font color of selected tab */
+            border: 2px solid {self.selected_tab_text_color}; 
+            font-weight: bold;
+        }}
+        """)
+
+    def set_background(self, widget, color):
+        # Sets the background color of a widget.
+        palette = widget.palette()
+        palette.setColor(widget.backgroundRole(), QColor(color))
+        widget.setAutoFillBackground(True)
+        widget.setPalette(palette)
+        widget.setStyleSheet(f"background-color: {color};")
+
+    def load_missions_button(self):
+        self.replace_confirm_reject_label("Loading the missions...")
+        for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
+
+        def deploy_in_thread():
+            try:
+                deploy.main(self.selected_cougs)
+                self.replace_confirm_reject_label("Loading Mission Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission loading failed: {e}"
+                print(err_msg)
+                self.replace_confirm_reject_label(err_msg)
+                for i in self.selected_cougs:
+                    self.recieve_console_update(err_msg, i)
+
+        threading.Thread(target=deploy_in_thread, daemon=True).start()
+    
+    def start_missions_button(self):
+        # Handler for 'Start Missions' button on the general tab.
+        self.replace_confirm_reject_label("Starting all missions...")
+        for i in self.selected_cougs: self.recieve_console_update("Starting the missions...", i)
+
+        def deploy_in_thread(start_config):
+            try:
+                startup_call.publish_system_control(self.ros_node, self.selected_cougs, start_config)
+                self.replace_confirm_reject_label("Starting Mission Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission starting failed: {e}"
+                print(err_msg)
+                self.replace_confirm_reject_label(err_msg)
+                for i in self.selected_cougs:
+                    self.recieve_console_update(err_msg, i)
+
+        options = ["Start the node", "Record rosbag", "Enter rosbag prefix (string): ", "Arm Thruster", "Start DVL"]
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
+        else:
+            err_msg = "Starting All Missions command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.replace_confirm_reject_label(err_msg)
+
+    def spec_load_missions_button(self, coug_number):
+        # Handler for 'Load Mission' button on a specific Coug tab.
+        self.replace_confirm_reject_label(f"Loading Coug {coug_number} mission...")
+        self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
+
+        def deploy_in_thread():
+            try:
+                deploy.main([coug_number])
+                self.replace_confirm_reject_label("Loading Mission Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission loading failed: {e}"
+                print(err_msg)
+                self.replace_confirm_reject_label(err_msg)
+                self.recieve_console_update(err_msg, coug_number)
+
+        threading.Thread(target=deploy_in_thread, daemon=True).start()
+
+    def spec_start_missions_button(self, coug_number):
+        # Handler for 'Start Mission' button on a specific Coug tab.
+        self.replace_confirm_reject_label(f"Starting Coug {coug_number} mission...")
+        self.recieve_console_update(f"Starting Coug {coug_number} mission...", coug_number)
+
+        def deploy_in_thread(start_config):
+            try:
+                startup_call.publish_system_control(self.ros_node, [coug_number], start_config)
+                self.replace_confirm_reject_label(f"Starting Mission Coug{coug_number} Command Complete")
+
+            except Exception as e:
+                err_msg = f"Mission starting failed: {e}"
+                print(err_msg)
+                self.replace_confirm_reject_label(err_msg)
+                self.recieve_console_update(err_msg, coug_number)
+
+        options = list(self.option_map.keys())
+        dlg = StartMissionsDialog(options, parent=self, passed_option_map=self.option_map, vehicle=coug_number, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
+        else:
+            err_msg = f"Starting Coug{coug_number} Mission command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.replace_confirm_reject_label(err_msg)
+
+    #Connected to the "kill" signal
+    def emergency_shutdown_button(self, coug_number):
+        # Handler for 'Emergency Shutdown' button, with confirmation dialog.
+        message = BeaconId.Request()
+        message.beacon_id = coug_number
+        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            self.replace_confirm_reject_label("Starting Emergency Shutdown...")
+            self.recieve_console_update(f"Starting Emergency Shutdown for Coug {coug_number}", coug_number)
+            future = self.ros_node.cli.call_async(message)
+            # Add callback to handle response
+            future.add_done_callback(partial(self.handle_service_response, action="Emergency Shutdown", coug_number=coug_number))
+            return future
+        else:
+            self.replace_confirm_reject_label("Canceling Emergency Shutdown command...")
+            self.recieve_console_update(f"Canceling Emergency Shutdown for Coug {coug_number}", coug_number)
+
+    #Connected to the "surface" signal
+    def emergency_surface_button(self, coug_number):
+        # Handler for 'Emergency Surface' button, with confirmation dialog.
+        message = BeaconId.Request()
+        message.beacon_id = coug_number
+        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            self.replace_confirm_reject_label("Starting Emergency Surface...")
+            self.recieve_console_update(f"Starting Emergency Surface for Coug {coug_number}", coug_number)
+            future = self.ros_node.cli2.call_async(message)
+            # Add callback to handle response
+            future.add_done_callback(partial(self.handle_service_response, action="Emergency Surface", coug_number=coug_number))
+            return future
+        else:
+            self.replace_confirm_reject_label("Canceling Emergency Surface command...")
+            self.recieve_console_update(f"Canceling Emergency Surface for Coug {coug_number}", coug_number)
+
+    #Connected to the "ModemControl" service in base_station_interfaces
+    def modem_shut_off_service(self, shutoff:bool):
+        message = ModemControl.Request()
+        message.modem_shut_off = shutoff
+        if shutoff: self.replace_confirm_reject_label("Wifi Connected, Shutting Off Modem")
+        else: self.replace_confirm_reject_label("Wifi Disconnected, Turning On Modem")
+        for i in self.selected_cougs:
+            if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", i)
+            else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", i)
+        future = self.ros_node.cli3.call_async(message)
+        # Add callback to handle response
+        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", coug_number=0)) #0->for all cougs
+        return future
+
+    #used by various buttons to handle services dynamically
+    def handle_service_response(self, future, action, coug_number):
+        # Handles the result of an asynchronous ROS service call.
+        try:
+            response = future.result()
+            if response.success:
+                message = f"{action} Service Initiated Successfully"
+                self.replace_confirm_reject_label(message)
+                if not coug_number:
+                    for i in self.selected_cougs:
+                        self.recieve_console_update(message, i)
+                elif coug_number in self.selected_cougs:
+                    self.recieve_console_update(message, coug_number)
+            else:
+                message = f"{action} Service Initialization Failed"
+                self.replace_confirm_reject_label(message)
+                if not coug_number:
+                    for i in self.selected_cougs:
+                        self.recieve_console_update(message, i)
+                elif coug_number in self.selected_cougs:
+                    self.recieve_console_update(message, coug_number)
+       
+        except Exception as e:
+            self.replace_confirm_reject_label(f"{action} service call failed: {e}")
+            if coug_number in self.selected_cougs: self.recieve_console_update(f"{action} service call failed: {e}", coug_number)
+            else: print(f"{action} service call failed: {e}")
+
+    #(NS) -> not yet connected to a signal
+    def recall_cougs(self):
+        # Handler for 'Recall Cougs' button on the general tab, with confirmation dialog.
+        dlg = AbortMissionsDialog("Recall Cougs?", "Are you sure that you want recall the Cougs? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            self.replace_confirm_reject_label("Recalling the Cougs...")
+            for i in self.selected_cougs: self.recieve_console_update("Recalling the Cougs...", i)
+        else:
+            self.replace_confirm_reject_label("Canceling Recall All Cougs Command...")
+            for i in self.selected_cougs: self.recieve_console_update("Canceling Recall All Cougs Command...", i)
+    
+    #(NS) -> not yet connected to a signal
+    def recall_spec_coug(self, coug_number):
+        # Handler for 'Recall Coug' button on a specific Coug tab, with confirmation dialog.
+        dlg = AbortMissionsDialog("Recall Coug?", "Are you sure that you want to recall this Coug?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            self.replace_confirm_reject_label(f"Recalling Coug {coug_number}...")
+            self.recieve_console_update(f"Recalling Coug {coug_number}...", coug_number)
+        else:
+            self.replace_confirm_reject_label("Canceling Recall Coug Command...")
+            self.recieve_console_update(f"Canceling Recall Coug {coug_number} Command...", coug_number)
+
+    #template to make a vertical line
+    def make_vline(self):
+        # Returns a vertical line QFrame for use in layouts.
+        Vline = QFrame()
+        Vline.setFrameShape(QFrame.Shape.VLine)
+        Vline.setFrameShadow(QFrame.Shadow.Sunken)
+        Vline.setStyleSheet(f"background-color: {self.text_color};")
+        return Vline
+
+    #template to make a horizontal line
+    def make_hline(self):
+        # Returns a horizontal line QFrame for use in layouts.
+        Hline = QFrame()
+        Hline.setFrameShape(QFrame.Shape.HLine)
+        Hline.setFrameShadow(QFrame.Shadow.Sunken)
+        Hline.setStyleSheet(f"background-color: {self.text_color};")
+        return Hline
+
+    #used to set all of the widgets on the "general" page tab
+    def set_general_page_widgets(self):
+        # Sets up the widgets and layouts for the General tab.
+        self.general_page_layout = self.tab_dict["General"][1]
+
+        # Create the first column (General Options)
+        self.general_page_C0_widget = QWidget()
+        self.general_page_C0_layout = QVBoxLayout()
+        self.general_page_C0_widget.setLayout(self.general_page_C0_layout)
+
+        # Store widgets and layouts for each Coug column
+        self.general_page_coug_widgets = {}
+        self.general_page_coug_layouts = {}
+
+        # Add the first column to the layout
+        self.general_page_layout.addWidget(self.general_page_C0_widget)
+
+        # For each selected Coug, create a column and add to the layout, separated by vertical lines
+        for idx, coug_number in enumerate(self.selected_cougs):
+            self.general_page_layout.addWidget(self.make_vline())
+            widget = QWidget()
+            layout = QVBoxLayout()
+            widget.setLayout(layout)
+            self.general_page_layout.addWidget(widget)
+            self.general_page_coug_widgets[coug_number] = widget
+            self.general_page_coug_layouts[coug_number] = layout
+
+        # Add the buttons to the first column
+        self.set_general_page_C0_widgets()
+
+        # Set the widgets for each Coug column
+        for coug_number in self.selected_cougs:
+            self.set_general_page_column_widgets(self.general_page_coug_layouts[coug_number], coug_number)
+
+    #set the widgets of the first column on the general page
+    def set_general_page_C0_widgets(self):
+
+        #Create and style the label
+        general_label = QLabel("General Options:")
+        general_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
+        general_label.setStyleSheet(f"color: {self.text_color};")
+        general_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+        #Load All Missions button
+        self.Load_missions_button = QPushButton("Load All Missions")
+        self.Load_missions_button.clicked.connect(self.load_missions_button)
+        self.Load_missions_button.setStyleSheet(self.normal_button_style_sheet)
+
+        #Start All Missions button
+        self.Start_missions_button = QPushButton("Start All Missions")
+        self.Start_missions_button.clicked.connect(self.start_missions_button)
+        self.Start_missions_button.setStyleSheet(self.normal_button_style_sheet)
+
+        #Recall all the cougs button
+        self.recall_all_cougs = QPushButton("Recall Cougs (NS)")
+        self.recall_all_cougs.clicked.connect(self.recall_cougs)
+        self.recall_all_cougs.setStyleSheet(self.danger_button_style_sheet)
+
+        # Add widgets to the layout
+        self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
+        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addWidget(self.Load_missions_button, alignment=Qt.AlignmentFlag.AlignTop)
+        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addWidget(self.Start_missions_button)
+        self.general_page_C0_layout.addSpacing(100)
+
+        # Add spacer to push the rest of the buttons down
+        self.general_page_C0_layout.addWidget(self.recall_all_cougs)
+        self.general_page_C0_layout.addSpacing(100)
+        # self.general_page_C0_layout.addWidget(self.change_tab_color_button)
+        # self.general_page_C0_layout.addSpacing(100)
+        # self.general_page_C0_layout.addWidget(self.revert_tab_color_button)
+        
+        # Add remaining buttons (red recall cougs at the bottom)
+        spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.general_page_C0_layout.addItem(spacer)
+            
+    #template to set the rest of widgets on the rest of the columns on the general page
+    def set_general_page_column_widgets(self, layout, coug_number):
+        # Sets up the widgets for each Coug column on the General tab.
+        # Create and style the header label for each coug column
+        title_label = QLabel(f"Coug {coug_number}:")
+        title_label.setFont(QFont("Arial", 17, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {self.text_color};")
+        title_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        layout.addWidget(title_label, alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addSpacing(20)
+
+        #section labels for each column
+        section_titles = ["Connections", "Sensors", "Emergency Status"]
+        for title in section_titles:
+            label = QLabel(title)
+            label.setFont(QFont("Arial", 15))
+            label.setStyleSheet(f"color: {self.text_color};")
+            layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
+            layout.addSpacing(20)
+            #repeated tab_spacing variable used throughout the file, to keep tabs consistent
+            self.tab_spacing = 60
+
+            #The connections section contains the wifi, radio, and modem connections for each Coug respectively
+            if title == "Connections": 
+                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], self.tab_spacing, coug_number)
+                wifi_widget.setObjectName(f"Wifi{coug_number}")
+                layout.addWidget(wifi_widget)
+                layout.addSpacing(20)
+
+                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], self.tab_spacing, coug_number)
+                radio_widget.setObjectName(f"Radio{coug_number}")
+                layout.addWidget(radio_widget)
+                layout.addSpacing(20)
+
+                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], self.tab_spacing, coug_number)
+                modem_widget.setObjectName(f"Modem{coug_number}")
+                layout.addWidget(modem_widget)
+                layout.addSpacing(40)
+
+            #The connections section contains the DVL, GPS, and IMU sensors connections for each Coug respectively
+            elif title == "Sensors":
+                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], self.tab_spacing, coug_number)
+                DVL_sensor_widget.setObjectName(f"DVL{coug_number}")
+                layout.addWidget(DVL_sensor_widget)
+                layout.addSpacing(20)
+
+                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], self.tab_spacing, coug_number)
+                GPS_sensor_widget.setObjectName(f"GPS{coug_number}")
+                layout.addWidget(GPS_sensor_widget)
+                layout.addSpacing(20)
+                
+                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], self.tab_spacing, coug_number)
+                IMU_sensor_widget.setObjectName(f"IMU{coug_number}")
+                layout.addWidget(IMU_sensor_widget)
+                layout.addSpacing(40)
+
+            #The status section contains the status message for each Coug respectively
+            elif title == "Emergency Status":
+                status = "No Data Recieved"
+                label = QLabel(f"{status}", font=QFont("Arial", 13))
+                label.setObjectName(f"Status_messages{coug_number}")
+                label.setStyleSheet(f"color: {self.text_color};")
+                layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
+                layout.addSpacing(40)
+
+        # Add spacer to push content up
+        spacer = QSpacerItem(0, 0, QSizePolicy .Policy.Minimum, QSizePolicy.Policy.Expanding)
+        layout.addItem(spacer)
+
+    #This is used to set the widgets on the other tabs, namely Coug1, Coug2, Coug3, etc
+    def set_specific_coug_widgets(self, coug_number):
+        # Sets up the widgets for a specific Coug tab.
+        #temporary container for the entire tab
+        temp_container = QWidget()
+        temp_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        temp_layout = QHBoxLayout(temp_container)
+        temp_layout.setSpacing(0)
+        temp_layout.setContentsMargins(0, 0, 0, 0)
+
+        #col0 contains connections and sensor icons
+        temp_layout.addWidget(self.create_specific_coug_column0(coug_number), alignment=Qt.AlignmentFlag.AlignTop)
+        #col1 contains mission and coug1 status
+        temp_layout.addWidget(self.create_specific_coug_column01(coug_number), alignment=Qt.AlignmentFlag.AlignTop)
+
+        #vline
+        temp_layout.addWidget(self.make_vline())
+        #col2 - seconds since last connected and buttons
+        temp_layout.addWidget(self.create_coug_buttons_column(coug_number))
+        return temp_container
+
+    #The scrolling log at the bottom of the specific coug tabs. 
+    def create_specific_coug_console_log(self, coug_number): 
+        # Creates the scrollable console log area for a specific Coug tab.
+        temp_container = QWidget()
+        temp_layout = QVBoxLayout(temp_container)
+        setattr(self, f"coug{coug_number}_console_layout", temp_layout)
+        setattr(self, f"coug{coug_number}_console_widget", temp_container)
+
+        # First text label (bold title)
+        title_text = "Console information/message log"
+        title_label = QLabel(title_text)
+        title_label.setWordWrap(True)
+        title_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {self.text_color};")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        temp_layout.addWidget(title_label)
+
+        # Second text label (wrapped long message)
+        message_text = ""
+
+        # Create a QLabel from the message_text for displaying the log
+        message_label = QLabel(message_text)
+        message_label.setWordWrap(True) # Enable word wrapping for readability
+        font = QFont()
+        #second font is for emojis, that aren't available in arial
+        font.setFamily("Arial, Noto Color Emoji")
+        font.setPointSize(13)
+        message_label.setFont(font)
+        message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop) 
+        message_label.setContentsMargins(0, 0, 0, 0)
+        message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        message_label.setObjectName(f"Console_messages{coug_number}")
+
+
+        # Create a QWidget to hold the message label, and a layout for it
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.addWidget(message_label)
+
+        # Create QScrollArea and set scroll content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(scroll_content)
+        scroll_area.setStyleSheet(
+            f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+        )
+        # Store the scroll area as an attribute for dynamic resizing
+        setattr(self, f"coug{coug_number}_console_scroll_area", scroll_area)
+
+        # Add scroll_area to your layout
+        temp_layout.addWidget(scroll_area)
+
+        # Add a spacer to push content up and allow for vertical expansion
+        spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        temp_layout.addItem(spacer)
+
+        # Return the container widget holding the scrollable log
+        return temp_container
+
+
+    def paintIconBackground(self, icon_pixmap, bg_color="#28625a", diameter=24):
+        """
+        Draws a colored circle behind the given icon pixmap.
+
+        Parameters:
+            icon_pixmap (QPixmap): The icon to draw.
+            bg_color (str): The background color (hex or color name).
+            diameter (int): The diameter of the background circle.
+
+        Returns:
+            QPixmap: The new pixmap with the background.
+        """
+        # Create a transparent pixmap
+        result = QPixmap(diameter, diameter)
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(bg_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, diameter, diameter)
+        # Center the icon in the circle
+        icon_size = icon_pixmap.size()
+        x = (diameter - icon_size.width()) // 2
+        y = (diameter - icon_size.height()) // 2
+        painter.drawPixmap(x, y, icon_pixmap)
+        painter.end()
+        return result
+
+    #used to create an icon next to text in a pre-determined fashion
+    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, coug_number=None):
+        """
+        Creates a QWidget containing an icon (optional) and a text label, arranged horizontally.
+
+        Parameters:
+            text (str): The text to display next to the icon.
+            icon (QStyle.StandardPixmap, optional): The standard Qt icon to display. If None, no icon is shown.
+            temp_tab_spacing (int, optional): Left margin for the layout, used for tab alignment.
+
+        Returns:
+            QWidget: A container widget with the icon and text label.
+        """
+        # Create a container widget and a horizontal layout for icon and text
+        temp_container = QWidget()
+        temp_layout = QHBoxLayout(temp_container)
+
+        # If a tab spacing value is provided, set the left margin accordingly
+        if temp_tab_spacing: 
+            temp_layout.setContentsMargins(temp_tab_spacing, 0, 0, 0)
+        temp_layout.setSpacing(20)  # Space between icon and text
+
+        # If an icon is provided, create a QLabel for it and add to the layout
+        if icon:
+            icon_label = QLabel()
+            icon_pixmap = self.style().standardIcon(icon).pixmap(16, 16)
+            icon_label._original_icon_pixmap = icon_pixmap  # Store original
+            icon_label._icon_type = icon # Store the icon type (e.g., QStyle.StandardPixmap.SP_MessageBoxCritical)
+            
+            if icon == QStyle.StandardPixmap.SP_MessageBoxCritical:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon == QStyle.StandardPixmap.SP_DialogApplyButton:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+                icon_bkgrnd = self.dark_icon_bkgrnd_color
+            else:
+                print("Unknown icon type.")
+                return
+            
+            bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
+            icon_label.setPixmap(bg_pixmap)
+            icon_label.setObjectName(f"icon_{text}")
+
+            icon_label.setContentsMargins(0, 0, 0, 0)
+            icon_label.setFixedSize(24, 24)
+            temp_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        # Create the text label and add to the layout
+        text_label = QLabel(text)
+        text_label.setFont(QFont("Arial", 13))
+        text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
+        temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        # Return the container widget with icon and text
+        return temp_container
+
+    #used to create the title labels throughout the window
+    def create_title_label(self, text):
+        # Create and style the label
+        temp_label = QLabel(text)
+        temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
+        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        return temp_label
+
+    #used to create the buttons column on the specific coug pages
+    def create_coug_buttons_column(self, coug_number):
+        """
+        Creates the button column for a specific Coug tab, including mission control and emergency buttons,
+        as well as labels for seconds since last connection.
+
+        Parameters:
+            coug_number (int): The vehicle number for which to create the button column.
+
+        Returns:
+            QWidget: The vertical container widget holding all buttons and labels for the Coug.
+        """
+        # Create temporary containers and layouts for organizing buttons and labels
+        temp_sub_container1 = QWidget()
+        temp_layout1 = QVBoxLayout(temp_sub_container1)
+        temp_layout1.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        #temp container for the second column of buttons
+        temp_sub_container2 = QWidget()
+        temp_layout2 = QVBoxLayout(temp_sub_container2)
+        temp_layout2.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        #temp container for the button columns put together horizontally
+        temp_container = QWidget()
+        temp_layout = QHBoxLayout(temp_container)
+
+        #temp container for the entire column, the buttons and the last connected labels
+        temp_V_container = QWidget()
+        temp_V_layout = QVBoxLayout(temp_V_container)
+        setattr(self, f"coug{coug_number}_buttons_column_widget", temp_V_container)
+        setattr(self, f"coug{coug_number}_buttons_column_layout", temp_V_layout)
+
+        #load mission (blue)
+        self.create_coug_button(coug_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(coug_number))
+        #start mission f({self.normal_button_color})
+        self.create_coug_button(coug_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(coug_number))
+        #system reboot (red)
+        self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(coug_number), danger=True)
+        #abort mission (red)
+        self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", lambda: self.recall_spec_coug(coug_number), danger=True)
+        #emergency shutdown (red)
+        self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(coug_number), danger=True)
+
+        temp_spacing = 50
+        # Add buttons to the first and second sub-columns with spacing
+        temp_layout1.addWidget(getattr(self, f"load_mission_coug{coug_number}_button"))
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addWidget(getattr(self, f"start_mission_coug{coug_number}_button"))
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout2.addWidget(getattr(self, f"emergency_surface_coug{coug_number}_button"))
+        temp_layout2.addSpacing(temp_spacing)
+        temp_layout2.addWidget(getattr(self, f"recall_coug{coug_number}_button"))
+        temp_layout2.addSpacing(temp_spacing)
+        temp_layout2.addWidget(getattr(self, f"emergency_shutdown_coug{coug_number}_button"))
+
+        # Add the two button columns to the main horizontal layout
+        temp_layout.addWidget(temp_sub_container1)
+        temp_layout.addWidget(temp_sub_container2)
+
+        # Add a title label and connection time labels to the vertical layout
+        temp_V_layout.addWidget(self.create_title_label("Seconds since last connected"))
+        self.insert_label(temp_V_layout, "Radio: xxx", coug_number, 1)
+        self.insert_label(temp_V_layout, "Accoustics: xxx", coug_number, 0)
+        temp_V_layout.addWidget(self.make_hline())
+        temp_V_layout.addWidget(temp_container)
+        
+        # Return the vertical container holding all buttons and labels
+        return temp_V_container
+
+    def insert_label(self, temp_layout, text, coug_number, conn_type):
+        """
+        Inserts a QLabel into the given layout for displaying the seconds since last connection
+        for either radio or modem, and stores it as an attribute for later access.
+
+        Parameters:
+            temp_layout (QLayout): The layout to add the label to.
+            text (str): The text to display in the label.
+            coug_number (int): The vehicle number (Coug) this label is for.
+            conn_type (int): 1 for radio, 0 for modem (used to determine label name).
+        """
+        text_label = QLabel(text)
+        # Set the object name based on connection type for easy lookup later
+        if conn_type:
+            name = f"coug{coug_number}_radio_seconds_widget"
+        else:
+            name = f"coug{coug_number}_modem_seconds_widget"
+        setattr(self, name, text_label)
+        text_label.setObjectName(name)
+        text_label.setFont(QFont("Arial", 13))
+        text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
+        # Add the label to the layout, vertically centered
+        temp_layout.addWidget(text_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+    def create_seconds_label(self, conn_type, seconds):
+        """
+        Creates a QLabel displaying the seconds since last connection for either radio or modem.
+
+        Parameters:
+            conn_type (int): 1 for radio, 0 for modem.
+            seconds (int): The number of seconds since last connection.
+
+        Returns:
+            QLabel: The label displaying the connection time.
+        """
+        # Set the label text based on connection type
+        if conn_type:
+            text = f"Radio: {seconds}"
+        else:
+            text = f"Accoustics: {seconds}"
+        text_label = QLabel(text)
+        text_label.setFont(QFont("Arial", 13))
+        text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setStyleSheet(f"color: {self.text_color};")
+        return text_label
+
+    #Dynamically creates a QPushButton with the given properties and stores it as an attribute.
+    def create_coug_button(self, coug_number, name, text, callback, danger=False):
+        """
+        Dynamically creates a QPushButton with the given properties and stores it as an attribute.
+
+        Parameters:
+            coug_number (int): Which Coug this button is for.
+            name (str): Short functional name for the button (e.g., "start_mission", "disarm_thruster").
+            text (str): Text to display on the button.
+            callback (function): Function to call when the button is clicked.
+            danger (bool): used to change between color buttons, dangerous and normal
+        """
+        button = QPushButton(text)
+        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        button.clicked.connect(callback)
+        button.setStyleSheet(self.danger_button_style_sheet) if danger else button.setStyleSheet(self.normal_button_style_sheet)
+        attr_name = f"{name}_coug{coug_number}_button"
+        setattr(self, attr_name, button)
+
+    def create_specific_coug_column0(self, coug_number):
+        """
+        Creates the first column for a specific Coug tab, displaying connection and sensor status icons.
+
+        Parameters:
+            coug_number (int): The vehicle number for which to create the column.
+
+        Returns:
+            QWidget: The container widget holding all connection and sensor status icons for the Coug.
+        """
+        # Create a vertical layout for the column and store it as an attribute
+        temp_layout = QVBoxLayout()
+        setattr(self, f"coug{coug_number}_column0_layout", temp_layout)
+        temp_layout.setContentsMargins(0, 0, 0, 0)
+        temp_layout.setSpacing(0) 
+
+        # Create the container widget for this column and store it as an attribute
+        temp_container = QWidget()
+        setattr(self, f"coug{coug_number}_column0_widget", temp_container)
+        container_layout = QVBoxLayout(temp_container)
+        container_layout.addLayout(temp_layout)
+
+        # Add the Coug title label at the top
+        temp_layout.addWidget(self.create_title_label(f"Coug {coug_number}"), alignment=Qt.AlignmentFlag.AlignTop)
+        
+        # Section: Connections
+        temp_label = QLabel("Connections")
+        temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
+        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        temp_layout.addSpacing(20)
+        temp_layout.addWidget(temp_label)
+
+        # Add connection status icons (Wifi, Radio, Modem)
+        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][coug_number]], 0, coug_number)
+        wifi_widget.setObjectName(f"Spec_Wifi{coug_number}")
+        temp_layout.addWidget(wifi_widget)
+
+        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][coug_number]], 0, coug_number)
+        radio_widget.setObjectName(f"Spec_Radio{coug_number}")
+        temp_layout.addWidget(radio_widget)
+
+        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][coug_number]], 0, coug_number)
+        modem_widget.setObjectName(f"Spec_Modem{coug_number}")
+        temp_layout.addWidget(modem_widget)
+        temp_layout.addSpacing(20)
+
+        # Section: Sensors
+        temp_label = QLabel("Sensors")
+        temp_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        temp_label.setStyleSheet(f"color: {self.text_color};")
+
+        temp_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        temp_layout.addSpacing(20)
+        temp_layout.addWidget(temp_label)
+
+        # Add sensor status icons (DVL, GPS, IMU)
+        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][coug_number]], 0, coug_number)
+        DVL_sensor_widget.setObjectName(f"Spec_DVL{coug_number}")
+        temp_layout.addWidget(DVL_sensor_widget)
+
+        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][coug_number]], 0, coug_number)
+        GPS_sensor_widget.setObjectName(f"Spec_GPS{coug_number}")
+        temp_layout.addWidget(GPS_sensor_widget)
+        
+        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][coug_number]], 0, coug_number)
+        IMU_sensor_widget.setObjectName(f"Spec_IMU{coug_number}")
+        temp_layout.addWidget(IMU_sensor_widget)
+
+        # Return the container widget holding all status icons
+        return temp_container
+
+    #create the second sub-column in the first column of the specific cougar pages (starts with "Nodes")
+    def create_specific_coug_column01(self, coug_number):
+        """     
+        Creates the second sub-column in the first column of the specific Coug pages.
+        This column displays the mission section and the status widgets for the given Coug.
+
+        Parameters:
+            coug_number (int): The vehicle number for which to create the column.
+
+        Returns:
+            QWidget: The container widget holding the mission and status widgets for the Coug.
+        """
+        # Create a vertical layout for the column and set margins and spacing
+        temp_layout = QVBoxLayout()
+        temp_layout.setContentsMargins(0, 0, 0, 0)
+        # temp_layout.setSpacing(0) 
+
+        # Create the container widget for this column and store it as an attribute
+        temp_container = QWidget()
+        # Optionally set a maximum width for the container
+        # temp_container.setMaximumWidth(220)
+        setattr(self, f"coug{coug_number}_column01_layout", temp_layout)
+        setattr(self, f"coug{coug_number}_column01_widget", temp_container)
+        container_layout = QVBoxLayout(temp_container)
+        container_layout.addLayout(temp_layout)
+
+        # Add an (optional) title label at the top
+        temp_layout.addWidget(self.create_title_label(f""), alignment=Qt.AlignmentFlag.AlignTop)
+
+        # Status widgets section
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_title_label(f"Coug {coug_number} status"), alignment=Qt.AlignmentFlag.AlignTop)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("x (meters): x", f"XPos{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("y (meters): y", f"YPos{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Depth (meters): d", f"Depth{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("DVL Velocity (m/s): v", f"DVL_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Angular Velocity (rad/s): a", f"Angular_vel{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Battery (volts): b", f"Battery{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(10)
+        temp_layout.addWidget(self.create_normal_label("Pressure (Pa): p", f"Pressure{coug_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addStretch()
+
+        # Return the container widget holding the mission and status widgets
+        return temp_container
+
+    def create_normal_label(self, text, name): 
+        """
+        Creates a QLabel with the given text and object name, sets its font and margins, 
+        and stores it as an attribute for later access.
+
+        Parameters:
+            text (str): The text to display in the label.
+            name (str): The object name and attribute name for the label.
+
+        Returns:
+            QLabel: The created label.
+        """
+        text_label = QLabel(text)
+        setattr(self, name, text_label)
+        text_label.setObjectName(name) 
+        text_label.setFont(QFont("Arial", 13))
+        text_label.setStyleSheet(f"color: {self.text_color};")
+        text_label.setContentsMargins(0, 0, 0, 0)
+        text_label.setWordWrap(True)  # Allow text to wrap if it's long
+        text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        return text_label
+
+    def recieve_safety_status_message(self, coug_number, safety_message):
+        # #header
+        # std_msgs/Header header
+        # #0 = good, 1 = not publishing
+        # std_msgs/Int8 depth_status
+        # #imu status
+        # std_msgs/Bool imu_published
+        # #0=good, bit 1 = publishing?, bit 2 = good enough gps fix?
+        # std_msgs/Int8 gps_status
+        # #0 = good, 1= not publishing
+        # std_msgs/Int8 modem_status
+        # #0=good, bit 1=publishing?, bit 2= standard dev below threshold
+        # std_msgs/Int8 dvl_status
+        # #0= ok, 1 = surfacing, 2=surfaced/disarmed
+        # std_msgs/Int8 emergency_status
+        # #what node is sending this, 1= coug, 0= base station
+        #or, 1= wifi, 0= modem
+        # std_msgs/Int8 sender_id
+        self.safety_status_signal.emit(coug_number, safety_message)
+    
+    def _update_safety_status_information(self, coug_number, safety_message):
+        # safety_message.wifi_status ##TODO: Ask Eli to add this
+
+        #Wifi widget, only if it changes
+        if self.feedback_dict["Wifi"][coug_number] != safety_message.sender_id.data:
+            self.feedback_dict["Wifi"][coug_number] = safety_message.sender_id.data
+            modem_off = True if self.feedback_dict["Wifi"][coug_number] else False
+            self.modem_shut_off_service(modem_off)
+
+        #logic is opposite, switch 0 and 1
+        if safety_message.gps_status.data: gps_data = 0
+        else: gps_data = 1
+        self.feedback_dict["GPS"][coug_number] = gps_data
+
+        if safety_message.dvl_status.data: dvl_data = 0
+        else: dvl_data = 1
+        self.feedback_dict["DVL"][coug_number] = dvl_data 
+        
+        if safety_message.imu_published.data: imu_data = 0
+        else: imu_data = 1
+        self.feedback_dict["IMU"][coug_number] = imu_data
+        
+        #replace general page widgets
+        self.replace_general_page_icon_widget(coug_number, "GPS")
+        self.replace_general_page_icon_widget(coug_number, "DVL")
+        self.replace_general_page_icon_widget(coug_number, "Wifi")
+        self.replace_general_page_icon_widget(coug_number, "IMU")
+
+        #replace specific page widgets
+        self.replace_specific_icon_widget(coug_number, "GPS")
+        self.replace_specific_icon_widget(coug_number, "DVL")
+        self.replace_specific_icon_widget(coug_number, "Wifi")
+        self.replace_specific_icon_widget(coug_number, "IMU")
+
+        #replace emergency status label
+        if self.feedback_dict["Status_messages"][coug_number] != safety_message.emergency_status.data:
+            self.feedback_dict["Status_messages"][coug_number] = safety_message.emergency_status.data
+            layout = self.general_page_coug_layouts.get(coug_number)
+            widget = self.general_page_coug_widgets.get(coug_number)
+            new_status_label, status_color = self.get_status_label(coug_number, self.feedback_dict["Status_messages"][coug_number])
+            # self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, status_color) #TODO: get rid of the status color logic :(
+            self.replace_label(f"Status_messages{coug_number}", layout, widget, new_status_label, self.text_color)
+
+    def recieve_smoothed_output_message(self, coug_number, msg):
+        self.smoothed_ouput_signal.emit(coug_number, msg)
+
+    def _update_gui_smoothed_output(self, coug_number, msg):
+        position = msg.pose.pose.position
+        x = position.x
+        y = position.y
+        #won't use z, will use depth data instead
+        
+        # Quaternion from Odometry message
+        q = (
+            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
+            msg.pose.pose.orientation.x,
+            msg.pose.pose.orientation.y,
+            msg.pose.pose.orientation.z
+        )
+
+        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
+        _, _, yaw = quat2euler(q)
+
+        # heading
+        heading_deg = math.degrees(yaw) % 360
+
+        l_vel = msg.twist.twist.linear
+        a_vel = msg.twist.twist.angular
+
+        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
+        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
+
+        #update feedback dict 
+        self.feedback_dict["XPos"][coug_number] = round(x, 2)
+        self.feedback_dict["YPos"][coug_number] = round(y, 2)
+        self.feedback_dict["DVL_vel"][coug_number] = round(total_linear_vel, 2)
+        self.feedback_dict["Angular_vel"][coug_number] = round(total_angular_vel, 2)
+        self.feedback_dict["Heading"][coug_number] = round(heading_deg, 2)
+
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "XPos")
+        self.replace_specific_status_widget(coug_number, "YPos")
+        self.replace_specific_status_widget(coug_number, "DVL_vel")
+        self.replace_specific_status_widget(coug_number, "Angular_vel")
+        self.replace_specific_status_widget(coug_number, "Heading")
+
+    def recieve_depth_data_message(self, coug_number, msg):
+        self.depth_data_signal.emit(coug_number, msg)
+
+    def update_depth_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Depth"][coug_number] = round(msg.pose.pose.position.z, 2)
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Depth")
+
+    def recieve_pressure_data_message(self, coug_number, msg):
+        self.pressure_data_signal.emit(coug_number, msg)
+
+    def update_pressure_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Pressure"][coug_number] = round(msg.fluid_pressure, 2)
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Pressure")
+
+    def recieve_battery_data_message(self, coug_number, msg):
+        self.battery_data_signal.emit(coug_number, msg)
+        
+    def update_battery_data(self, coug_number, msg):
+        #update feedback dict 
+        self.feedback_dict["Battery"][coug_number] = round(msg.voltage, 1)
+        #replace specific page status widget
+        self.replace_specific_status_widget(coug_number, "Battery")
+
+    def recieve_kill_confirmation_message(self, kill_message): 
+        """
+        Slot to receive a kill confirmation message from the ROS topic.
+        Emits a signal to update the GUI with the received message.
+        
+        Parameters:
+            kill_message: The message object received from the 'confirm_e_kill' topic (std_msgs/Bool).
+        """
+        self.kill_confirm_signal.emit(kill_message)
+
+    def _update_kill_confirmation_gui(self, kill_message): 
+        """
+        Slot connected to kill_confirm_signal.
+        Updates the GUI console with a confirmation or failure message for all Cougs,
+        depending on the value of the kill_message.
+        
+        Parameters:
+            kill_message: The message object received from the 'confirm_e_kill' topic (std_msgs/Bool).
+        """
+        value = kill_message.data if hasattr(kill_message, 'data') else kill_message
+        if value: 
+            for i in self.selected_cougs:
+                self.recieve_console_update("Kill Command Confirmed", i)
+        else: 
+            for i in self.selected_cougs:
+                self.recieve_console_update("Kill Command Failed", i)
+
+    def recieve_surface_confirmation_message(self, surf_message): 
+        """
+        Slot to receive a surface confirmation message from the ROS topic.
+        Emits a signal to update the GUI with the received message.
+        
+        Parameters:
+            surf_message: The message object received from the 'confirm_e_surface' topic (std_msgs/Bool).
+        """
+        self.surface_confirm_signal.emit(surf_message)
+
+    def _update_surf_confirmation_gui(self, surf_message):
+        """
+        Slot connected to surface_confirm_signal.
+        Updates the GUI console with a confirmation or failure message for all Cougs,
+        depending on the value of the surf_message.
+        
+        Parameters:
+            surf_message: The message object received from the 'confirm_e_surface' topic (std_msgs/Bool).
+        """
+        value = surf_message.data if hasattr(surf_message, 'data') else surf_message
+        if value: 
+            for i in self.selected_cougs:
+                self.recieve_console_update("Surface Command Confirmed", i)
+        else: 
+            for i in self.selected_cougs:
+                self.recieve_console_update("Surface Command Failed", i)
+
+    def recieve_connections(self, conn_message):
+        """
+        Slot to receive a Connections message and emit a signal to update the GUI.
+
+        Parameters:
+            conn_message: The Connections message object.
+        """
+        # message: Connections
+        # std_msgs/Header header
+        # 0 for acoustic modem, 1 for radio
+        # uint8 connection_type
+        # connection status, list of bool, representing connections of Coug1, Coug2, etc
+        # bool[] connections
+        # time since last ping response, representing last responses in seconds of Coug1, Coug2, etc
+        # uint8[] last_ping
+        self.update_connections_signal.emit(conn_message)
+
+    def _update_connections_gui(self, conn_message):
+        """
+        Updates the GUI to reflect the latest connection status and ping times for each Coug.
+
+        Parameters:
+            conn_message: The Connections message object containing connection_type, connections, and last_ping.
+        """
+        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
+        try:
+            if conn_message.connection_type:
+                feedback_key = "Radio"
+                feedback_key_seconds = "Radio_seconds"
+                conn_type = 1
+            else:
+                feedback_key = "Modem"
+                feedback_key_seconds = "Modem_seconds"
+                conn_type = 0
+
+            # Update connection status icons for each Coug
+            # for coug_number, data in self.feedback_dict[feedback_key].items(): 
+            for coug_number in conn_message.vehicle_ids:
+                if not coug_number in self.feedback_dict[feedback_key]: continue
+                else:
+                    data = self.feedback_dict[feedback_key][coug_number]
+                    status = 1 if conn_message.connections[coug_number-1] else 0
+                    self.feedback_dict[feedback_key][coug_number] = status
+                    prefix = feedback_key.split("_")[0]
+                    new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
+                    layout = self.general_page_coug_layouts.get(coug_number)
+                    widget = self.general_page_coug_widgets.get(coug_number)
+                    self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+
+                    new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
+                    layout = getattr(self, f"coug{coug_number}_column0_layout")
+                    widget = getattr(self, f"coug{coug_number}_column0_widget")
+                    self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
+
+            # Update seconds since last ping for each Coug
+            ping_list = list(conn_message.last_ping)
+            count = 0
+            for coug_number in conn_message.vehicle_ids:
+                ping = ping_list[count]
+                if coug_number not in self.selected_cougs: 
+                    count += 1
+                    continue
+                else:
+                    self.feedback_dict[feedback_key_seconds][coug_number] = ping
+                    layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
+                    widget = getattr(self, f"coug{coug_number}_buttons_column_widget", None)
+                    new_seconds_label = self.create_seconds_label(conn_type, ping)
+                    if conn_type:
+                        old_label = f"coug{coug_number}_radio_seconds_widget"
+                        existing_label = widget.findChild(QLabel, old_label)
+                        new_text = f"Radio: {ping}"
+                        if existing_label: existing_label.setText(new_text)
+                    else:
+                        old_label = f"coug{coug_number}_modem_seconds_widget"
+                        existing_label = widget.findChild(QLabel, old_label)
+                        new_text = f"Accoustics: {ping}"
+                        if existing_label: existing_label.setText(new_text)
+                    count += 1
+
+        except Exception as e:
+            print("Exception in update_connections_gui:", e)
+            if coug_number in self.selected_cougs: self.recieve_console_update("Exception in update_connections_gui:", coug_number)
+            
+    def get_status_label(self, coug_number, status_message):
+        status_color, message_text = self.get_status_message_color(status_message)
+        temp_label = QLabel(f"{message_text}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+        return temp_label, status_color
+
+    def recieve_console_update(self, console_message, coug_number):
+        """
+        Slot to receive a console message and emit a signal to update the GUI.
+
+        Parameters:
+            console_message: The console message object.
+        """
+        self.update_console_signal.emit(console_message, coug_number)
+    
+    def _update_console_gui(self, console_message, coug_number):
+        """
+        Appends a new console message to the specific Coug's console log label.
+        """
+        try:
+            label = self.findChild(QLabel, f"Console_messages{coug_number}")
+            if label:
+                current_text = label.text()
+                if current_text:
+                    updated_text = current_text + "\n" + console_message
+                else:
+                    updated_text = console_message
+                label.setText(updated_text)
+                label.setStyleSheet(f"color: {self.text_color};")
+                # Scroll to the bottom of the scroll area
+                scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
+                if scroll_area:
+                    # Defer scrolling to after the event loop processes the label update
+                    QTimer.singleShot(50, lambda: scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum()))
+            else:
+                print(f"Console log label not found for Coug {coug_number}")
+                self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)
+        except Exception as e:
+            print(f"Exception in _update_console_gui: {e}")
+            if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
+
+    def replace_general_page_icon_widget(self, coug_number, prefix):
+        layout = self.general_page_coug_layouts.get(coug_number)
+        widget = self.general_page_coug_widgets.get(coug_number)
+        status = self.feedback_dict[prefix][coug_number]
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
+        self.replace_label(f"{prefix}{coug_number}", layout, widget, new_label)
+    
+    def replace_specific_icon_widget(self, coug_number, prefix):
+        layout = getattr(self, f"coug{coug_number}_column0_layout")
+        widget = getattr(self, f"coug{coug_number}_column0_widget")
+        status = self.feedback_dict[prefix][coug_number]
+        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
+        self.replace_label(f"Spec_{prefix}{coug_number}", layout, widget, new_label)
+        # existing_label = widget.findChild(QLabel, f"Spec_{prefix}{coug_number}")
+        # if existing_label: existing_label.setText(new_text)
+
+    def replace_specific_status_widget(self, coug_number, prefix):
+        layout = getattr(self, f"coug{coug_number}_column01_layout")
+        widget = getattr(self, f"coug{coug_number}_column01_widget")
+        # new_label = self.create_normal_label(self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number]), f"{prefix}{coug_number}")
+        new_text = self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][coug_number])
+        existing_label = widget.findChild(QLabel, f"{prefix}{coug_number}")
+        if existing_label: existing_label.setText(new_text)
+
+#used by ros to open a window. Needed in order to start PyQt on a different thread than ros
+def OpenWindow(ros_node, borders=False):
+    app = QApplication(sys.argv)
+    window_width, window_height = 1200, 800
+
+    # Prepare splash image
+    img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
+    pixmap = QPixmap(img_path)
+    pixmap = pixmap.toImage()
+    pixmap.invertPixels()
+    pixmap = QPixmap.fromImage(pixmap)
+    if pixmap.isNull():
+        print(f"Warning: Could not load splash image '{img_path}'. Using solid color instead.")
+        pixmap = QPixmap(window_width, window_height)
+        pixmap.fill(QColor(("#0F1C37")))
+    else:
+        background = QPixmap(window_width, window_height)
+        background.fill(QColor("#0F1C37"))
+        painter = QPainter(background)
+        x = (window_width - pixmap.width()) // 2
+        y = (window_height - pixmap.height()) // 2
+        painter.drawPixmap(x, y, pixmap)
+        painter.end()
+        pixmap = background
+
+    pixmap = pixmap.scaled(window_width, window_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    splash = CustomSplash(pixmap)
+    splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+    splash.show()
+
+    # Move splash to the center of the screen
+    screen = app.primaryScreen()
+    if QApplication.screens():
+        mouse_pos = QCursor.pos()
+        for scr in QApplication.screens():
+            if scr.geometry().contains(mouse_pos):
+                screen = scr
+                break
+    screen_geometry = screen.geometry()
+    x = screen_geometry.x() + (screen_geometry.width() - window_width) // 2
+    y = screen_geometry.y() + (screen_geometry.height() - window_height) // 2
+    splash.move(x, y)
+
+    app.processEvents()
+
+    # Show configuration dialog ON TOP of splash
+    options = [f"Coug {i}" for i in range(1, 5)]
+    dlg = ConfigurationWindow(options, parent=splash, background_color="#0F1C37", text_color="#FFFFFF")
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+    dlg.move(
+        x + (window_width - dlg.width()) // 2,
+        y + (window_height - dlg.height()) // 2
+    )
+
+    selected_cougs = None
+    if dlg.exec():
+        #example selected_cougs: {'Coug 1': True, 'Coug 2': True, 'Coug 3': False, 'Coug 4': True}
+        selected_cougs = dlg.get_states()
+    else:
+        sys.exit(0)
+
+    # Raise the splash again in case it lost focus
+    splash.raise_()
+    splash.showMessage("Loading main window...")
+
+    if borders:
+        app.setStyleSheet("""*{border: 1px solid red;}""")
+
+    result = {}
+
+    def build_main_window():
+        window = MainWindow(ros_node, selected_cougs)
+        window.resize(window_width, window_height)
+        window.move(x, y)
+        result['window'] = window
+        QTimer.singleShot(3000, lambda: (
+            window.show(),
+            window.activateWindow(),
+            splash.close()
+        ))
+
+    QTimer.singleShot(500, build_main_window)
+
+    #return the app, the result, and the selected coug numbers
+    return app, result, [int(str(coug_data[-1])) for coug_data, included in selected_cougs.items() if included]
+
+class CustomSplash(QWidget):
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.label = QLabel(self)
+        self.label.setPixmap(pixmap)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.resize(pixmap.size())
+        # Optional: Add a message label
+        self.message_label = QLabel("", self)
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter)
+        self.message_label.setStyleSheet("color: white; font-size: 18pt; font-weight: bold;")
+        self.message_label.setGeometry(0, pixmap.height() - 60, pixmap.width(), 60)
+
+    def showMessage(self, text):
+        self.message_label.setText(text)
+
+class AbortMissionsDialog(QDialog):
+    """
+    Custom dialog for confirming or aborting mission-related actions (e.g., shutdown, recall).
+    Presents a message and Accept/Decline buttons.
+
+    Parameters:
+        window_title (str): The title of the dialog window.
+        message_text (str): The message to display in the dialog.
+        parent (QWidget, optional): The parent widget.
+    """
+    def __init__(self, window_title, message_text, parent=None, background_color="white", text_color="black", pop_up_window_style=None):
+        super().__init__(parent)
+
+        self.setWindowTitle(window_title)
+        self.setStyleSheet(pop_up_window_style)
+
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        # Change button labels
+        ok_button = self.buttonBox.button(QDialogButtonBox.StandardButton.Ok)
+        ok_button.setText("Accept")
+
+        cancel_button = self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_button.setText("Decline")
+
+        layout = QVBoxLayout()
+        message = QLabel(message_text)
+        layout.addWidget(message)
+        layout.addWidget(self.buttonBox)
+        self.setLayout(layout)
+
+class StartMissionsDialog(QDialog):
+    """
+    Custom dialog for starting the vehicle missions
+    Presents a window with configuration options
+
+    Parameters:
+        window_title (str): The title of the dialog window.
+        message_text (str): The message to display in the dialog.
+        parent (QWidget, optional): The parent widget.
+    """
+    def __init__(self, options, parent=None, passed_option_map=None, vehicle=0, background_color="white", text_color="black", pop_up_window_style=None):
+        """
+        Parameters:
+            options (list of str): List of checkbox labels.
+        """
+        super().__init__(parent)
+        if not vehicle: self.setWindowTitle("Start All Missions Configuration")
+        else: self.setWindowTitle(f"Start Coug{vehicle} Mission Configuration")
+        self.checkboxes = {}
+        self.passed_option_map = passed_option_map
+        layout = QVBoxLayout()
+
+        # Make the dialog not resizable
+        self.setFixedSize(300, 200)  # Set to your preferred width and height
+
+        self.setStyleSheet(pop_up_window_style)
+
+        self.inputs = {}
+
+        for opt in options:
+            if "rosbag prefix" in opt.lower():
+                le = QLineEdit()
+                le.setPlaceholderText("Enter Rosbag Prefix...")
+                self.inputs[opt] = le
+                layout.addWidget(le)
+            else:
+                cb = QCheckBox(opt)
+                cb.setChecked(False)
+                self.checkboxes[opt] = cb
+                layout.addWidget(cb)
+
+        # OK/Cancel buttons
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttonBox.accepted.connect(self.validate_and_accept)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+    
+    def validate_and_accept(self):
+        valid = False
+        states = self.get_states()
+        #if record rosbag was chosen, a prefix must be given, as well as the opposite
+        if states["record_rosbag"] and not states["rosbag_prefix"]: 
+            QMessageBox.warning(self, "Prefix Required to Record Rosbag", "Please enter a rosbag prefix before continuing")
+        elif not states["record_rosbag"] and states["rosbag_prefix"]: 
+            QMessageBox.warning(self, "Record Rosbag Required to have Prefix", "Please select record rosbag before continuing")
+        else:
+            self.accept()
+            return
+
+    def get_states(self):
+        """
+        Returns a dict of {easy_key: value} for each option.
+        """
+        result = {}
+        for opt, cb in self.checkboxes.items():
+            result[self.passed_option_map[opt]] = cb.isChecked()
+        for opt, le in self.inputs.items():
+            result[self.passed_option_map[opt]] = le.text()
+        return result
+
+class ConfigurationWindow(QDialog):
+    """
+    Custom configuration dialog with multiple checkboxes.
+    Returns the checked states as a dictionary if accepted.
+    """
+    def __init__(self, options, parent=None, background_color="white", text_color="black"):
+        """
+        Parameters:
+            options (list of str): List of checkbox labels.
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Configuration")
+        self.checkboxes = {}
+        layout = QVBoxLayout()
+
+        # Make the dialog not resizable
+        self.setFixedSize(300, 200)  
+
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {background_color};
+                color: {text_color};
+            }}
+            
+            QLabel, QCheckBox {{
+                color: {text_color};
+            }}
+
+            QCheckBox::indicator {{
+                width: 13px;
+                height: 13px;
+            }}
+
+            QCheckBox::indicator:checked {{
+                border: 1px solid {text_color};
+            }}
+
+            QCheckBox::indicator:unchecked {{
+                background-color: {text_color};
+                border: 1px solid {text_color};
+            }}
+
+            QLineEdit {{
+                background-color: {background_color};
+                color: {text_color};
+                border: 1px solid {text_color};
+                padding: 2px;
+            }}
+        """)
+
+        # Create a checkbox for each option
+        for opt in options:
+            cb = QCheckBox(opt)
+            cb.setChecked(False)  # Default to unchecked
+            self.checkboxes[opt] = cb
+            layout.addWidget(cb)
+
+        # OK/Cancel buttons
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttonBox.accepted.connect(self.validate_and_accept)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+    
+    def validate_and_accept(self):
+        valid = False
+        states = self.get_states()
+        for coug_data, included in states.items():
+            if included: 
+                self.accept()
+                return
+        QMessageBox.warning(self, "Selection Required", "Please select at least one Coug before continuing.")
+
+    def get_states(self):
+        """
+        Returns a dict of {option: bool} for each checkbox.
+        """
+        return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
