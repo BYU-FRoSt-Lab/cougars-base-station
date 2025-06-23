@@ -92,7 +92,7 @@ class RFBridge(Node):
         self.init_publisher = self.create_publisher(String, 'init', 10)
         self.status_publisher = self.create_publisher(Status, 'status', 10)
         self.rf_connection_publisher = self.create_publisher(Connections, 'connections', 10)
-        self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'print_to_gui', 10)
+        self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
 
         self.e_kill_service = self.create_service(BeaconId, 'radio_e_kill', self.send_e_kill_callback)
         self.status_service = self.create_service(BeaconId, 'radio_status_request', self.request_status_callback)
@@ -300,18 +300,18 @@ class RFBridge(Node):
 
 
     def confirm_e_kill(self, data):
-        self.get_logger().info(f"Confirmation emergency kill for Coug {data.get('src_id')} is {'successful' if data.get('success') else 'unsuccessful'}")
+        self.get_logger().info(f"Confirmation emergency kill for Coug {data.get('src_id')} was {'successful' if data.get('success') else 'unsuccessful'}")
         if data.get("success"):
             self.print_to_gui_publisher.publish(
                 ConsoleLog(
-                    message=f"Emergency kill command sent to Coug {data.get('src_id')}",
+                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
                     coug_number=data.get('src_id', 0),
                 )
             )
         else:
             self.print_to_gui_publisher.publish(
                 ConsoleLog(
-                    message=f"Emergency kill command sent to Coug {data.get('src_id')}",
+                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
                     coug_number=data.get('src_id', 0),
                 )
             )
