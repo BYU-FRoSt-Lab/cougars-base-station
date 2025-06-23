@@ -4,17 +4,16 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 from base_station_interfaces.msg import Status
-from base_station_interfaces.msg import Connections
+from base_station_interfaces.msg import Connections, ConsoleLog
+from base_station_interfaces.srv import BeaconId
 from std_msgs.msg import String
 from std_msgs.msg import Bool
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import BatteryState, FluidPressure
-from geometry_msgs.msg import TwistWithCovarianceStamped
-from dvl_msgs.msg import DVLDR
+from std_msgs.msg import Int8
 import time
 
 
-from digi.xbee.devices import XBeeDevice
+from digi.xbee.devices import XBeeDevice, RemoteXBeeDevice, XBee64BitAddress
+from digi.xbee.exception import TransmitException
 
 import json
 import threading
@@ -74,33 +73,29 @@ class RFBridge(Node):
         # self.latest_battery = "NO_DATA"
         # self.latest_dvl_velocity = "NO_DATA"
         # self.latest_dvl_position = "NO_DATA"
-        self.declare_parameter('vehicles_in_mission', [1, 2, 3])
+        self.declare_parameter('vehicles_in_mission', [1,2,3])
         self.vehicles_in_mission = self.get_parameter('vehicles_in_mission').get_parameter_value().integer_array_value
 
-        self.declare_parameter('ping_frequency', 1)
+        self.declare_parameter('ping_frequency', 2)
         self.ping_frequency = self.get_parameter('ping_frequency').get_parameter_value().integer_value
 
         self.declare_parameter('vehicle_id', 15)
         self.vehicle_id = self.get_parameter('vehicle_id').get_parameter_value().integer_value
 
         #XBee configuration
-        self.xbee_port = self.declare_parameter('xbee_port', '/dev/ttyUSB0').value
+        self.xbee_port = self.declare_parameter('xbee_port', '/dev/frost/xbee_radio').value
         self.xbee_baud = self.declare_parameter('xbee_baud', 9600).value
         self.device = XBeeDevice(self.xbee_port, self.xbee_baud)
-        try:
-            self.device.open()
-            self.get_logger().info(f"Opened XBee device on {self.xbee_port} at {self.xbee_baud} baud.")
-        except Exception as e:
-            self.get_logger().error(f"Failed to open XBee device: {e}")
-            raise
-
 
         # ROS publishers and subscribers
         self.publisher = self.create_publisher(String, 'rf_received', 10)
         self.init_publisher = self.create_publisher(String, 'init', 10)
         self.status_publisher = self.create_publisher(Status, 'status', 10)
-        self.rf_connection_publisher = self.create_publisher(Connections, 'rf_connection', 10)
-        self.confirm_e_kill_publisher = self.create_publisher(Bool, 'confirm_e_kill', 10)
+        self.rf_connection_publisher = self.create_publisher(Connections, 'connections', 10)
+        self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
+
+        self.e_kill_service = self.create_service(BeaconId, 'radio_e_kill', self.send_e_kill_callback)
+        self.status_service = self.create_service(BeaconId, 'radio_status_request', self.request_status_callback)
 
         self.subscription = self.create_subscription(
             String,
@@ -108,18 +103,30 @@ class RFBridge(Node):
             self.tx_callback,
             10)
         
-        self.check_connections_timer = self.create_timer(2.0, self.check_connections)
+        try:
+            self.device.open()
+            self.get_logger().info(f"Opened XBee device on {self.xbee_port} at {self.xbee_baud} baud.")
+                    # Register XBee data receive callback
+            self.device.add_data_received_callback(self.data_receive_callback)
+            self.get_logger().info("RF Bridge node started using digi-xbee library.")
 
-        # Register XBee data receive callback
-        self.device.add_data_received_callback(self.data_receive_callback)
-        self.get_logger().info("RF Bridge node started using digi-xbee library.")
+            self.timer = self.create_timer(self.ping_frequency, self.check_connections)
 
-        # Thread-safe shutdown flag
-        self.running = True
-        self.ping_timestamp = {}
-        self.connections = {}
-        for vehicle in self.vehicles_in_mission:
-            self.connections[vehicle] = False
+
+            # Thread-safe shutdown flag
+            self.running = True
+            self.ping_timestamp = {}
+            self.connections = {}
+            self.radio_addresses = {}
+            self.max_msgs_missed = 3  # Number of missed messages before considering a vehicle disconnected
+            for vehicle in self.vehicles_in_mission:
+                self.connections[vehicle] = False
+                self.ping_timestamp[vehicle] = 0
+        except Exception as e:
+            self.get_logger().error(f"Failed to open XBee device: {e}")
+
+
+
 
 
     def tx_callback(self, msg):
@@ -131,33 +138,44 @@ class RFBridge(Node):
             self.get_logger().error(f"XBee transmission error: {str(e)}")
             self.get_logger().error(traceback.format_exc())
 
-    def send_message(self, msg):
+    def send_message(self, msg, address):
         try:
-            self.device.send_data_broadcast(msg)
+            remote_device = RemoteXBeeDevice(self.device, address)
+            self.device.send_data(remote_device, msg)
             self.get_logger().debug(f"Sent via XBee: {msg}")
-        except Exception as e:
-            self.get_logger().error(f"XBee transmission error: {str(e)}")
+            return True
+        except TransmitException as e:
+            self.get_logger().error(f"XBee transmission error - TransmitException: {e}")
             self.get_logger().error(traceback.format_exc())
+            return False
+        except Exception as e:
+            self.get_logger().error(f"XBee transmission error - Exception: {str(e)}")
+            self.get_logger().error(traceback.format_exc())
+            return False
 
 
     def data_receive_callback(self, xbee_message):
         try:
             payload = xbee_message.data.decode('utf-8', errors='replace')
-            self.get_logger().info(f"Received from {xbee_message.remote_device.get_64bit_addr()}: {payload}")
-            
+            sender_address = xbee_message.remote_device.get_64bit_addr()
+            self.get_logger().debug(f"Received from {sender_address}: {payload}")
+
             try:
                 data = json.loads(payload)
             except json.JSONDecodeError:
-                self.get_logger().error("Received invalid JSON payload.")
-                return
+                data = payload  # If JSON decoding fails, treat payload as a string
 
-            message_type = data.get("Message")
+            if isinstance(data, dict):
+                message_type = data.get("message")
+            else:
+                message_type = data
+
             if message_type == "STATUS":
                 self.recieve_status(data)
             elif message_type == "E_KILL":
                 self.confirm_e_kill(data)
             elif message_type == "PING":
-                self.recieve_ping(data)
+                self.recieve_ping(data.get("src_id"), sender_address)
             else:
                 self.get_logger().warn(f"Unknown message type: {message_type}")
         except Exception as e:
@@ -168,71 +186,135 @@ class RFBridge(Node):
 
     def check_connections(self):
         msg = Connections()
-        msg.type 
-        vehicle_num = 0
+        msg.connection_type = 1
+        self.get_logger().debug(f"Sending PING")
+        ping = "PING"
+        if len(self.radio_addresses) < len(self.vehicles_in_mission):
+            try:
+                self.device.send_data_broadcast(ping)
+            except Exception as e:
+                self.get_logger().error(f"Failed to send broadcast PING: {e}")
+        else:
+            for vehicle in self.radio_addresses:
+                self.send_message(ping, self.radio_addresses[vehicle])
+
         for vehicle in self.vehicles_in_mission:
-            # make ping message
-            ping = {
-            "target_vehicle_id" : vehicle,
-            "src_id" : self.vehicle_id,
-            "message" : "PING",
-            }
-            self.send_message(json.dumps(ping))
-            last_ping = time.time() - self.ping_timestamp[vehicle]
-            if (last_ping >= self.ping_frequency*2):
+            last_ping = int(time.time() - self.ping_timestamp[vehicle])
+            if (last_ping >= self.ping_frequency*self.max_msgs_missed):
                 self.connections[vehicle] = False 
             msg.connections.append(self.connections[vehicle])
             msg.last_ping.append(last_ping)
-
-        
+        msg.vehicle_ids = list(self.vehicles_in_mission)
         self.rf_connection_publisher.publish(msg)
 
+        if self.debug_mode:
+            self.get_logger().debug(f"Connections: {self.connections}")
+
+
+    def request_status_callback(self, request, response):
+
+        try:
+            target_vehicle_id = request.beacon_id
+            if target_vehicle_id is None:
+                self.get_logger().error("Status request missing target vehicle ID.")
+                response.success = False
+                return response
+
+            self.get_logger().debug(f"Received status request for Coug {target_vehicle_id}")
+
+            status_request_msg = "STATUS"
+
+            response.success = self.send_message(status_request_msg, self.radio_addresses.get(target_vehicle_id, None))
+        except Exception as e:
+            self.get_logger().error(f"Error processing status request: {e}")
+            response.success = False
+
+        return response
+
+    def make_int8(self, val):
+        msg = Int8()
+        msg.data = val
+        return msg
 
     def recieve_status(self, data):
-        self.get_logger().info(f"Coug {data['vehicle_id']}'s Status:")
+        self.get_logger().info(f"Coug {data.get('src_id', 'unknown')}'s Status:")
         self.get_logger().info(f"    Data: {data}")
+        safety_status = data.get('safety_status', {})
+        smoothed_odom = data.get('smoothed_odom', {})
+        battery_state = data.get('battery_state', {})
+        depth_data = data.get('depth_data', {})
+        pressure_data = data.get('pressure_data', {})
 
         status = Status()
-        status.vehicle_id = data['vehicle_id']
-        status.x = data['x']
-        status.y = data['y']
-        status.heading = data['heading']
-        status.dvl_vel = data['dvl_vel']
-        status.battery_voltage = data['battery_voltage']
-        status.dvl_running = data['dvl_running']
-        status.gps_connection = data['gps_connection']
-        status.leak_detection = data['leak_detection']
+        status.vehicle_id = data.get('src_id', 0)
+        status.safety_status.depth_status = self.make_int8(safety_status.get('depth_status', 0))
+        status.safety_status.gps_status = self.make_int8(safety_status.get('gps_status', 0))
+        status.safety_status.modem_status = self.make_int8(safety_status.get('modem_status', 0))
+        status.safety_status.dvl_status = self.make_int8(safety_status.get('dvl_status', 0))
+        status.safety_status.emergency_status = self.make_int8(safety_status.get('emergency_status', 0))
+        status.smoothed_odom.pose.pose.position.x = smoothed_odom.get('x', 0.0)
+        status.smoothed_odom.pose.pose.position.y = smoothed_odom.get('y', 0.0)
+        status.smoothed_odom.pose.pose.position.z = smoothed_odom.get('z', 0.0)
+        # status.smoothed_odom.pose.pose.orientation.z = data.get('heading', 0)
+        status.smoothed_odom.twist.twist.linear.x = smoothed_odom.get('x_vel', 0.0)
+        status.smoothed_odom.twist.twist.linear.y = smoothed_odom.get('y_vel', 0.0)
+        status.smoothed_odom.twist.twist.linear.z = smoothed_odom.get('z_vel', 0.0)
+        status.battery_state.voltage = battery_state.get('voltage', 0.0)
+        status.battery_state.percentage = battery_state.get('percentage', 0.0)
+        status.depth_data.pose.pose.position.z = -depth_data.get('depth', 0.0)
+        status.pressure.fluid_pressure = pressure_data.get('pressure', 0.0)
         self.status_publisher.publish(status)
 
-        self.get_logger().info(f"X pos: {status.x}")
-        self.get_logger().info(f"Y pos: {status.y}")
-        self.get_logger().info(f"Heading pos: {status.heading}")
-        self.get_logger().info(f"Dvl velocity: {status.dvl_vel}")
-        self.get_logger().info(f"Battery voltage: {status.battery_voltage}")
-        self.get_logger().info(f"Dvl {'is' if status.dvl_running else 'not'} running")
-        self.get_logger().info(f"Gps {'is' if status.gps_connection else 'not'} connected")
-        self.get_logger().info(f"{'No' if not status.leak_detection else ''} Leak Detected")
 
 
 
-    def recieve_ping(self, msg):
-        vehicle_id = msg["src_id"]
-        self.ping_timestamp[vehicle_id] = time.time()
-        self.connections[vehicle_id] = True
+    def recieve_ping(self, sender_id, sender_address):
+        # self.get_logger().info(f"Received PING from {sender_id}")
+        if sender_id not in self.vehicles_in_mission:
+            self.get_logger().warn(f"Received PING from unknown vehicle ID {sender_id}. Ignoring.")
+            return
+        self.radio_addresses[sender_id] = sender_address
+        self.ping_timestamp[sender_id] = time.time()
+        self.connections[sender_id] = True
 
+
+    def send_e_kill_callback(self, request, response):
+        try:
+            target_vehicle_id = request.beacon_id
+            if target_vehicle_id is None:
+                self.get_logger().error("Emergency kill request missing target vehicle ID.")
+                response.success = False
+                return response
+
+            self.get_logger().debug(f"Received emergency kill request for Coug {target_vehicle_id}")
+
+            e_kill_msg = "E_KILL"
+
+            self.send_message(e_kill_msg, self.radio_addresses.get(target_vehicle_id, None))
+            response.success = True
+        except Exception as e:
+            self.get_logger().error(f"Error processing emergency kill request: {e}")
+            response.success = False
+
+        return response
 
 
     def confirm_e_kill(self, data):
+        self.get_logger().info(f"Confirmation emergency kill for Coug {data.get('src_id')} was {'successful' if data.get('success') else 'unsuccessful'}")
         if data.get("success"):
-            self.get_logger().info(f"Emergency kill command was successful for Coug {data.get('src_id')}")
+            self.print_to_gui_publisher.publish(
+                ConsoleLog(
+                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
+                    coug_number=data.get('src_id', 0),
+                )
+            )
         else:
-            self.get_logger().warn(f"Emergency kill command failed for Coug {data.get('src_id')}")
-
-        success_msg = Bool()
-        success_msg.data = data.get("success", False)
-        self.confirm_e_kill_publisher.publish(success_msg)
-
-
+            self.print_to_gui_publisher.publish(
+                ConsoleLog(
+                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
+                    coug_number=data.get('src_id', 0),
+                )
+            )
 
 
     def destroy_node(self):

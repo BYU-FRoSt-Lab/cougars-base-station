@@ -9,7 +9,7 @@ services:
       - DISPLAY=$DISPLAY
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ~/frostlab/couguv/CoUGARs/cougars-base-station/sim-packages:/home/ue4/ros2_ws/src
+      - ~/frostlab/couguv/cougars/cougars-base-station/sim-packages:/home/ue4/ros2_ws/src
       - ~/frostlab/HoloOceanCustomDynamics:/home/ue4/holoocean
       - ~/.local/share/holoocean:/home/ue4/.local/share/holoocean
       - /dev/shm:/dev/shm

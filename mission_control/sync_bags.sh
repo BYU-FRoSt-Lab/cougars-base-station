@@ -35,7 +35,7 @@ IP_ADDRESS="192.168.0.10$VEHICLE_SUFFIX"
 printInfo "Using IP address: $IP_ADDRESS"
 # Variables
 REMOTE_USER="frostlab"
-REMOTE_FOLDER="/home/frostlab/CoUGARs/bag"
+REMOTE_FOLDER="/home/frostlab/cougars/bag"
 LOCAL_FOLDER="$HOME/bag/$VEHICLE_ID"
 
 # TODO add a setup ssh script to setup ssh keys

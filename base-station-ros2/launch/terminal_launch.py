@@ -46,6 +46,12 @@ def generate_launch_description():
             name='base_station_gui2',
             output='screen'
         ),
+        launch_ros.actions.Node(
+            package='base_station_coms',
+            executable='base_station_radio.py',
+            name='base_station_radio',
+            parameters=[param_file]
+        ),
     ])
 
 if __name__ == '__main__':
