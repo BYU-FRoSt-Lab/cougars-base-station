@@ -1161,7 +1161,6 @@ class MainWindow(QMainWindow):
             
             bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
             icon_label.setPixmap(bg_pixmap)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             icon_label.setObjectName(f"icon_{text}")
 
             icon_label.setContentsMargins(0, 0, 0, 0)

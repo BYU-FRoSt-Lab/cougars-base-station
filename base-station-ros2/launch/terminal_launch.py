@@ -39,6 +39,12 @@ def generate_launch_description():
             executable='base_station_modem',
             name='base_station_modem',
             parameters=[param_file]
+        ),        
+        launch_ros.actions.Node(
+            package='base_station_gui2',
+            executable='talker',
+            name='base_station_gui2',
+            output='screen'
         ),
     ])
 
