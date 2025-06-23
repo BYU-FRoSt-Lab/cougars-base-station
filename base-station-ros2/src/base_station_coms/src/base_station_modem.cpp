@@ -158,8 +158,20 @@ public:
         status_msg.depth_data.pose.pose.position.z = status->depth;
         status_msg.pressure.fluid_pressure = status->pressure;
         this->status_publisher_->publish(status_msg);
-    }
 
+    RCLCPP_INFO(this->get_logger(), "position (x, y, z): (%.2f, %.2f, %.2f)", 
+        static_cast<double>(status->x), 
+        static_cast<double>(status->y), 
+        static_cast<double>(status->depth));
+    RCLCPP_INFO(this->get_logger(), "velocity (x, y): (%.2f, %.2f)", 
+        static_cast<double>(status->x_vel), 
+        static_cast<double>(status->y_vel));
+    RCLCPP_INFO(this->get_logger(), "battery voltage: %.2f", static_cast<double>(status->battery_voltage));
+    RCLCPP_INFO(this->get_logger(), "battery percentage: %.2f", static_cast<double>(status->battery_percentage));
+    RCLCPP_INFO(this->get_logger(), "pressure: %.2f", static_cast<double>(status->pressure));
+
+    }
+ 
     // publishes succes or failure of emergency kill command
     void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
         std::string message;
@@ -197,26 +209,34 @@ public:
         std::vector<uint32_t> last_ping;
 
 
-        for (auto vehicle_id : vehicles_in_mission_) {
-            auto it = last_message_time_.find(vehicle_id);
-            if (it != last_message_time_.end()) {
-                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %li", vehicle_id);
+        // for (auto vehicle_id : this->vehicles_in_mission_) {
+        //     auto it = last_message_time_.find(vehicle_id);
+        //     if (it != last_message_time_.end()) {
+        //         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %li", vehicle_id);
 
-                double dt = (now - it->second).seconds();
-                connections.push_back(dt < 10);
-                last_ping.push_back(static_cast<uint32_t>(dt));
+        //         double dt = (now - it->second).seconds();
+        //         connections.push_back(dt < 10);
+        //         last_ping.push_back(static_cast<uint32_t>(dt));
 
-            } else {
-                RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %li", vehicle_id);
-                connections.push_back(false);
-            }
-        }
+        //     } else {
+        //         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %li", vehicle_id);
+        //         double dt = (now - it->second).seconds();
+        //         connections.push_back(true);
+        //         last_ping.push_back(static_cast<uint32_t>(dt));
+        //     }
+        // }
 
         base_station_interfaces::msg::Connections msg;
         msg.header.stamp = now;
         msg.connection_type = 0; // 0 for acoustic modem
+
+        msg.vehicle_ids.clear();
+        for (auto id : this->vehicles_in_mission_) {
+            msg.vehicle_ids.push_back(static_cast<uint32_t>(id));
+            msg.last_ping.push_back(0);
+        }
+
         msg.connections = connections;
-        msg.last_ping = last_ping;
         modem_connections_publisher_->publish(msg);
 
     }
