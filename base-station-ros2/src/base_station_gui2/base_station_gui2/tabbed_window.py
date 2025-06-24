@@ -15,7 +15,9 @@ from transforms3d.euler import quat2euler
 import math
 from base_station_gui2.temp_mission_control import deploy
 from base_station_gui2.cougars_bringup.scripts import startup_call
+from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
 import threading
+import subprocess
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
@@ -664,9 +666,9 @@ class MainWindow(QMainWindow):
         self.replace_confirm_reject_label("Loading the missions...")
         for i in self.selected_cougs: self.recieve_console_update("Loading the missions...", i)
 
-        def deploy_in_thread():
+        def deploy_in_thread(selected_files):
             try:
-                deploy.main(self.selected_cougs)
+                deploy.main(self.selected_cougs, selected_files)
                 self.replace_confirm_reject_label("Loading Mission Command Complete")
 
             except Exception as e:
@@ -676,8 +678,17 @@ class MainWindow(QMainWindow):
                 for i in self.selected_cougs:
                     self.recieve_console_update(err_msg, i)
 
-        threading.Thread(target=deploy_in_thread, daemon=True).start()
-    
+        dlg = LoadMissionsDialog(parent=self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_cougs=self.selected_cougs)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            print(f"{start_config}")
+            selected_files = list(start_config['selected_files'].values())
+            threading.Thread(target=deploy_in_thread, args=(selected_files,), daemon=True).start()
+        else:
+            err_msg = "Mission Loading command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.replace_confirm_reject_label(err_msg)
+
     def start_missions_button(self):
         # Handler for 'Start Missions' button on the general tab.
         self.replace_confirm_reject_label("Starting all missions...")
@@ -706,22 +717,30 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label(err_msg)
 
     def spec_load_missions_button(self, coug_number):
-        # Handler for 'Load Mission' button on a specific Coug tab.
-        self.replace_confirm_reject_label(f"Loading Coug {coug_number} mission...")
-        self.recieve_console_update(f"Loading Coug {coug_number} mission...", coug_number)
+        msg = f"Loading Coug{coug_number} mission..."
+        self.replace_confirm_reject_label(msg)
+        for i in self.selected_cougs: self.recieve_console_update(msg, i)
 
-        def deploy_in_thread():
+        def deploy_in_thread(selected_file):
             try:
-                deploy.main([coug_number])
-                self.replace_confirm_reject_label("Loading Mission Command Complete")
+                deploy.main([coug_number], [selected_file])
+                self.replace_confirm_reject_label(f"Loading Coug{coug_number} Mission Command Complete")
 
             except Exception as e:
-                err_msg = f"Mission loading failed: {e}"
+                err_msg = f"Mission loading for coug{coug_number} failed: {e}"
                 print(err_msg)
                 self.replace_confirm_reject_label(err_msg)
                 self.recieve_console_update(err_msg, coug_number)
 
-        threading.Thread(target=deploy_in_thread, daemon=True).start()
+        dlg = LoadMissionsDialog(parent=self, vehicle=coug_number, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        if dlg.exec():
+            start_config = dlg.get_states()
+            print(f"config files chosen: {start_config}")
+            threading.Thread(target=deploy_in_thread, args=(start_config['selected_file'],), daemon=True).start()
+        else:
+            err_msg = "Mission Loading command was cancelled."
+            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.replace_confirm_reject_label(err_msg)
 
     def spec_start_missions_button(self, coug_number):
         # Handler for 'Start Mission' button on a specific Coug tab.
@@ -748,6 +767,27 @@ class MainWindow(QMainWindow):
             err_msg = f"Starting Coug{coug_number} Mission command was cancelled."
             for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
             self.replace_confirm_reject_label(err_msg)
+
+    def spec_load_waypoint_button(self, coug_number): 
+        self.replace_confirm_reject_label(f"Loading waypoint planner for Coug {coug_number}...")
+        self.recieve_console_update(f"Loading waypoint planner for Coug {coug_number}...", coug_number)
+        
+        def run_waypoint_planner():
+            try:
+                import tkinter
+                root = tkinter.Tk()
+                app = WaypointPlannerApp(root)
+                root.mainloop()
+                self.replace_confirm_reject_label("Waypoint planner closed successfully")
+                self.recieve_console_update("Waypoint planner closed successfully", coug_number)
+            except Exception as e:
+                err_msg = f"Waypoint planner failed: {e}"
+                print(err_msg)
+                self.replace_confirm_reject_label(err_msg)
+                self.recieve_console_update(err_msg, coug_number)
+        
+        # Run in a separate thread to avoid blocking the GUI
+        threading.Thread(target=run_waypoint_planner, daemon=True).start()
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, coug_number):
@@ -933,9 +973,6 @@ class MainWindow(QMainWindow):
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_cougs)
         self.general_page_C0_layout.addSpacing(100)
-        # self.general_page_C0_layout.addWidget(self.change_tab_color_button)
-        # self.general_page_C0_layout.addSpacing(100)
-        # self.general_page_C0_layout.addWidget(self.revert_tab_color_button)
         
         # Add remaining buttons (red recall cougs at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -1218,15 +1255,18 @@ class MainWindow(QMainWindow):
         setattr(self, f"coug{coug_number}_buttons_column_widget", temp_V_container)
         setattr(self, f"coug{coug_number}_buttons_column_layout", temp_V_layout)
 
-        #load mission (blue)
+        #load mission (normal button)
         self.create_coug_button(coug_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(coug_number))
-        #start mission f({self.normal_button_color})
+        #start mission (normal button)
         self.create_coug_button(coug_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(coug_number))
-        #system reboot (red)
+        #plot waypoint mission (normal button)
+        self.create_coug_button(coug_number, "plot_waypoint", "Plot Waypoints", lambda: self.spec_load_waypoint_button(coug_number))
+
+        #emergency surface (danger button)
         self.create_coug_button(coug_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(coug_number), danger=True)
-        #abort mission (red)
+        #abort mission (danger button)
         self.create_coug_button(coug_number, "recall", f"Recall Coug {coug_number} (NS)", lambda: self.recall_spec_coug(coug_number), danger=True)
-        #emergency shutdown (red)
+        #emergency shutdown (danger button)
         self.create_coug_button(coug_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(coug_number), danger=True)
 
         temp_spacing = 50
@@ -1235,6 +1275,7 @@ class MainWindow(QMainWindow):
         temp_layout1.addSpacing(temp_spacing)
         temp_layout1.addWidget(getattr(self, f"start_mission_coug{coug_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addWidget(getattr(self, f"plot_waypoint_coug{coug_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_coug{coug_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
@@ -1962,6 +2003,166 @@ class AbortMissionsDialog(QDialog):
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
 
+class LoadMissionsDialog(QDialog):
+    """
+    Custom dialog for loading the vehicle missions
+    Presents a window with configuration options
+
+    Parameters:
+        
+    """
+    def __init__(self, parent=None, vehicle=0, background_color="white", text_color="black", pop_up_window_style=None, selected_cougs=None):
+        """
+        Parameters:
+            options (list of str): List of checkbox labels.
+        """
+        super().__init__(parent)
+        if not vehicle: self.setWindowTitle("Load All Missions")
+        else: self.setWindowTitle(f"Load Coug{vehicle} Mission")
+        self.checkboxes = {}
+        layout = QVBoxLayout()
+
+        # Make the dialog not resizable
+        self.setFixedSize(300, 200)  # Set to your preferred width and height
+
+        self.setStyleSheet(pop_up_window_style)
+
+        self.file_display_labels = {}  # Store file display labels for each tab
+
+        if not vehicle:
+            self.selected_files = {}  # Store files per tab
+            #Create the tabs
+            self.pop_up_tabs = QTabWidget()
+            #Orient the tabs at the tob of the screen
+            self.pop_up_tabs.setTabPosition(QTabWidget.TabPosition.North)
+            #The tabs' order can't be changed or moved
+            self.pop_up_tabs.setMovable(False)
+            tab_names = [f"Coug {i}" for i in selected_cougs]
+            
+            # Create separate content widgets for each tab
+            for name in tab_names: 
+                content_widget = QWidget()
+                content_layout = QVBoxLayout(content_widget)
+                
+                # Add file selection widgets to each tab
+                file_section_label = QLabel("Select Mission File:")
+                file_section_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+                content_layout.addWidget(file_section_label)
+
+                # File display for this tab
+                file_display_label = QLabel("No file selected")
+                file_display_label.setWordWrap(True)
+                file_display_label.setStyleSheet(f"border: 1px solid {text_color}; padding: 8px; min-height: 40px; color: {text_color}; background-color: {background_color};")
+                content_layout.addWidget(file_display_label)
+
+                # Store the file display label for this tab
+                self.file_display_labels[name] = file_display_label
+                
+                # Browse button for this tab
+                browse_button = QPushButton("Browse Files...")
+                browse_button.setStyleSheet(f"background-color: {background_color}; color: {text_color}; border: 1px solid {text_color}; padding: 5px;")
+                browse_button.clicked.connect(lambda checked, tab=name: self.browse_file(tab))
+                content_layout.addWidget(browse_button)
+                
+                self.pop_up_tabs.addTab(content_widget, name)
+            
+            # Add the tab widget to the main layout
+            layout.addWidget(self.pop_up_tabs)
+            
+        else:
+            # For single vehicle, add file selection directly to layout
+            # File selection section
+            self.selected_file = None  # Initialize for single vehicle mode
+            file_section_label = QLabel("Select Mission File:")
+            file_section_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+            layout.addWidget(file_section_label)
+
+            # File display
+            self.file_display_label = QLabel("No file selected")
+            self.file_display_label.setWordWrap(True)
+            self.file_display_label.setStyleSheet(f"border: 1px solid {text_color}; padding: 8px; min-height: 40px; color: {text_color}; background-color: {background_color};")
+            layout.addWidget(self.file_display_label)
+            
+            # Browse button
+            browse_button = QPushButton("Browse Files...")
+            browse_button.setStyleSheet(f"background-color: {background_color}; color: {text_color}; border: 1px solid {text_color}; padding: 5px;")
+            browse_button.clicked.connect(self.browse_file)
+            layout.addWidget(browse_button)
+
+        # OK/Cancel buttons
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttonBox.accepted.connect(self.validate_and_accept)
+        layout.addWidget(buttonBox)
+        self.setLayout(layout)
+
+    def browse_file(self, tab_name=None):
+        """Open file dialog to select a single mission file for specific tab"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        if tab_name:
+            # Tabbed mode
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                f"Select Mission File for {tab_name}",
+                "",
+                "Mission Files (*.yaml *.yml *.json);;All Files (*)"
+            )
+            
+            if file_path:
+                self.selected_files[tab_name] = file_path
+                self.update_file_display(tab_name)
+        else:
+            # Single vehicle mode
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Mission File",
+                "",
+                "Mission Files (*.yaml *.yml *.json);;All Files (*)"
+            )
+            
+            if file_path:
+                self.selected_file = file_path
+                self.update_file_display()
+
+    def update_file_display(self, tab_name=None):
+        """Update the display showing selected file"""
+        if tab_name:
+            # Update specific tab
+            if tab_name in self.selected_files:
+                file_name = os.path.basename(self.selected_files[tab_name])
+                self.file_display_labels[tab_name].setText(file_name)
+            else:
+                self.file_display_labels[tab_name].setText("No file selected")
+        else:
+            # Update all tabs (for single vehicle mode)
+            if hasattr(self, 'file_display_label') and hasattr(self, 'selected_file'):
+                if self.selected_file:
+                    file_name = os.path.basename(self.selected_file)
+                    self.file_display_label.setText(file_name)
+                else:
+                    self.file_display_label.setText("No file selected")
+
+    def validate_and_accept(self):
+        if hasattr(self, 'selected_files'):
+            # Tabbed mode - check all tabs have files
+            if len(self.selected_files) == len(self.file_display_labels) and all(self.selected_files.values()):
+                self.accept()
+            else:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Files Required", "Please select a mission file for each Coug before continuing.")
+        elif hasattr(self, 'selected_file') and self.selected_file:
+            self.accept()
+        else:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "File Required", "Please select a mission file before continuing.")
+
+    def get_states(self):
+        """Returns a dict containing the selected file path(s)."""
+        if hasattr(self, 'selected_files'):
+            return {"selected_files": self.selected_files}
+        else:
+            return {"selected_file": getattr(self, 'selected_file', None)}
+
 class StartMissionsDialog(QDialog):
     """
     Custom dialog for starting the vehicle missions
@@ -2096,9 +2297,8 @@ class ConfigurationWindow(QDialog):
         self.setLayout(layout)
     
     def validate_and_accept(self):
-        valid = False
         states = self.get_states()
-        for coug_data, included in states.items():
+        for included in states.values():
             if included: 
                 self.accept()
                 return
