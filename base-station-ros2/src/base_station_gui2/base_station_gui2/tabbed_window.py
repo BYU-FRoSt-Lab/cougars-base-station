@@ -1694,52 +1694,67 @@ class MainWindow(QMainWindow):
                 conn_type = 0
 
             # Update connection status icons for each Coug
-            # for coug_number, data in self.feedback_dict[feedback_key].items(): 
-            for coug_number in conn_message.vehicle_ids:
-                if not coug_number in self.feedback_dict[feedback_key]: continue
-                else:
-                    data = self.feedback_dict[feedback_key][coug_number]
-                    status = 1 if conn_message.connections[coug_number-1] else 0
+            for i, coug_number in enumerate(conn_message.vehicle_ids):
+                try:
+                    if coug_number not in self.feedback_dict[feedback_key]:
+                        continue
+                    
+                    # Use the index i instead of coug_number-1
+                    status = 1 if conn_message.connections[i] else 0
                     self.feedback_dict[feedback_key][coug_number] = status
                     prefix = feedback_key.split("_")[0]
-                    new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
+                    
+                    # Update general page
                     layout = self.general_page_coug_layouts.get(coug_number)
                     widget = self.general_page_coug_widgets.get(coug_number)
-                    self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
+                    if layout and widget:
+                        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, coug_number)
+                        self.replace_label(f"{feedback_key}{coug_number}", layout, widget, new_label)
 
-                    new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
-                    layout = getattr(self, f"coug{coug_number}_column0_layout")
-                    widget = getattr(self, f"coug{coug_number}_column0_widget")
-                    self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
+                    # Update specific page
+                    layout = getattr(self, f"coug{coug_number}_column0_layout", None)
+                    widget = getattr(self, f"coug{coug_number}_column0_widget", None)
+                    if layout and widget:
+                        new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, coug_number)
+                        self.replace_label(f"Spec_{feedback_key}{coug_number}", layout, widget, new_label2)
+                        
+                except Exception as e:
+                    print(f"Exception updating connection status for coug {coug_number}: {e}")
 
             # Update seconds since last ping for each Coug
-            ping_list = list(conn_message.last_ping)
-            count = 0
-            for coug_number in conn_message.vehicle_ids:
-                ping = ping_list[count]
-                if coug_number not in self.selected_cougs: 
-                    count += 1
-                    continue
-                else:
+            for i, coug_number in enumerate(conn_message.vehicle_ids):
+                try:
+                    if coug_number not in self.selected_cougs:
+                        continue
+                    
+                    # Use the index i instead of count
+                    ping = conn_message.last_ping[i]
                     self.feedback_dict[feedback_key_seconds][coug_number] = ping
+                    
                     layout = getattr(self, f"coug{coug_number}_buttons_column_layout", None)
                     widget = getattr(self, f"coug{coug_number}_buttons_column_widget", None)
-                    new_seconds_label = self.create_seconds_label(conn_type, ping)
-                    if conn_type:
-                        old_label = f"coug{coug_number}_radio_seconds_widget"
-                        existing_label = widget.findChild(QLabel, old_label)
-                        new_text = f"Radio: {ping}"
-                        if existing_label: existing_label.setText(new_text)
-                    else:
-                        old_label = f"coug{coug_number}_modem_seconds_widget"
-                        existing_label = widget.findChild(QLabel, old_label)
-                        new_text = f"Accoustics: {ping}"
-                        if existing_label: existing_label.setText(new_text)
-                    count += 1
+                    
+                    if layout and widget:
+                        if conn_type:
+                            old_label = f"coug{coug_number}_radio_seconds_widget"
+                            existing_label = widget.findChild(QLabel, old_label)
+                            new_text = f"Radio: {ping}"
+                            if existing_label:
+                                existing_label.setText(new_text)
+                        else:
+                            old_label = f"coug{coug_number}_modem_seconds_widget"
+                            existing_label = widget.findChild(QLabel, old_label)
+                            new_text = f"Accoustics: {ping}"
+                            if existing_label:
+                                existing_label.setText(new_text)
+                                
+                except Exception as e:
+                    print(f"Exception updating ping time for coug {coug_number}: {e}")
 
         except Exception as e:
             print("Exception in update_connections_gui:", e)
-            if coug_number in self.selected_cougs: self.recieve_console_update("Exception in update_connections_gui:", coug_number)
+            for i in self.selected_cougs:
+                self.recieve_console_update(f"Exception in update_connections_gui: {e}", i)
             
     def get_status_label(self, coug_number, status_message):
         status_color, message_text = self.get_status_message_color(status_message)
