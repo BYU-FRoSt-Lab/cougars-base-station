@@ -1509,8 +1509,8 @@ class MainWindow(QMainWindow):
         else: dvl_data = 1
         self.feedback_dict["DVL"][coug_number] = dvl_data 
         
-        if safety_message.imu_published.data: imu_data = 0
-        else: imu_data = 1
+        if safety_message.imu_published.data: imu_data = 1
+        else: imu_data = 0
         self.feedback_dict["IMU"][coug_number] = imu_data
         
         #replace general page widgets
