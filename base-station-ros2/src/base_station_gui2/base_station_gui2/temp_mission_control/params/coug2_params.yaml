@@ -49,9 +49,9 @@ coug2:
   coug_kinematics:
     ros__parameters:
       trim_ratio: 0.0 # multiplied by the velocity
-      top_fin_offset: 0.0 # offset in degrees for the top fin (from front of vehicle) (-30.0)
-      right_fin_offset: -20.0 # offset starboard side in degrees (from front of vehicle) (15)
-      left_fin_offset: 45.0 # offset port side in degrees for the left fin (from front of vehicle) (32)
+      top_fin_offset: 55.0 # offset in degrees for the top fin (from front of vehicle) (-30.0)
+      right_fin_offset: -34.0 # offset starboard side in degrees (from front of vehicle) (15)
+      left_fin_offset: -27.0 # offset port side in degrees for the left fin (from front of vehicle) (32)
       demo_mode: false # if true, disables the thruster
       fin_0_direction: 1 # 1 for forward, -1 for reverse
       fin_1_direction: 1 # 1 for forward, -1 for reverse
