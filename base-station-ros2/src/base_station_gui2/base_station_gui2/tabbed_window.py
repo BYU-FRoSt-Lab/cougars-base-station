@@ -30,7 +30,8 @@ class MainWindow(QMainWindow):
     pressure_data_signal = pyqtSignal(int, object)
     battery_data_signal = pyqtSignal(int, object)
     surface_confirm_signal = pyqtSignal(object)
-    def __init__(self, ros_node, coug_dict):
+
+    def __init__(self, ros_node, coug_list):
         """
         Initializes GUI window with a ros node inside
 
@@ -102,9 +103,7 @@ class MainWindow(QMainWindow):
         file_submenu.addAction(intense_light)
         file_submenu.addAction(cadetblue)
 
-        self.selected_cougs = []
-        for coug_data, included in coug_dict.items():
-            if included: self.selected_cougs.append(int(str(coug_data[-1])))
+        self.selected_cougs = coug_list
 
         #confirmation label dictionary
         self.confirm_reject_labels = {}
@@ -224,10 +223,11 @@ class MainWindow(QMainWindow):
             self.confirm_reject_labels[name] = label
 
             if name.lower() != "general":
+                coug_number = int(name.split()[-1])  # This works for any number of digits in custom numbers
                 # For Coug tabs, add specific widgets and console log
-                content_layout.addWidget(self.set_specific_coug_widgets(int(name[-1])))
+                content_layout.addWidget(self.set_specific_coug_widgets(coug_number))
                 content_layout.addWidget(self.make_hline())
-                content_layout.addWidget(self.create_specific_coug_console_log(int(name[-1])))
+                content_layout.addWidget(self.create_specific_coug_console_log(coug_number))
                 content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
             else:
                 # For General tab, add general widgets
@@ -245,15 +245,6 @@ class MainWindow(QMainWindow):
 
         # Connect tab change to scroll-to-bottom for console logs
         self.tabs.currentChanged.connect(self.scroll_console_to_bottom_on_tab)
-
-        #Emergency exit GUI button
-        # self.emergency_exit_gui_button = QPushButton("Close GUI")
-        # self.emergency_exit_gui_button.clicked.connect(self.close_window)
-        # self.emergency_exit_gui_button.setStyleSheet(f"background-color: {self.background_color}; color: {self.text_color}; border: 2px solid {self.border_outline};")
-
-        #Ctrl+C shortcut to close the window
-        shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
-        shortcut.activated.connect(self.close)
 
         #The overall layout is vertical
         self.main_layout = QVBoxLayout()
@@ -323,6 +314,7 @@ class MainWindow(QMainWindow):
         #dark mode
         if theme == "dark_mode":
             self.background_color = "#0F1C37"
+
             self.border_outline = "#FFFFFF"
             self.text_color = "#FFFFFF"
             self.normal_button_color = "#28625a"
@@ -719,7 +711,7 @@ class MainWindow(QMainWindow):
     def spec_load_missions_button(self, coug_number):
         msg = f"Loading Coug{coug_number} mission..."
         self.replace_confirm_reject_label(msg)
-        for i in self.selected_cougs: self.recieve_console_update(msg, i)
+        self.recieve_console_update(msg, coug_number)
 
         def deploy_in_thread(selected_file):
             try:
@@ -739,7 +731,7 @@ class MainWindow(QMainWindow):
             threading.Thread(target=deploy_in_thread, args=(start_config['selected_file'],), daemon=True).start()
         else:
             err_msg = "Mission Loading command was cancelled."
-            for i in self.selected_cougs: self.recieve_console_update(err_msg, i)
+            self.recieve_console_update(err_msg, coug_number)
             self.replace_confirm_reject_label(err_msg)
 
     def spec_start_missions_button(self, coug_number):
@@ -1090,6 +1082,8 @@ class MainWindow(QMainWindow):
 
         # Create a QLabel from the message_text for displaying the log
         message_label = QLabel(message_text)
+        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         message_label.setWordWrap(True) # Enable word wrapping for readability
         font = QFont()
         #second font is for emojis, that aren't available in arial
@@ -1100,7 +1094,6 @@ class MainWindow(QMainWindow):
         message_label.setContentsMargins(0, 0, 0, 0)
         message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         message_label.setObjectName(f"Console_messages{coug_number}")
-
 
         # Create a QWidget to hold the message label, and a layout for it
         scroll_content = QWidget()
@@ -1814,28 +1807,32 @@ class MainWindow(QMainWindow):
     def _update_console_gui(self, console_message, coug_number):
         """
         Appends a new console message to the specific Coug's console log label.
+        If coug_number is 0, send to all selected Cougs.
         """
-        try:
-            label = self.findChild(QLabel, f"Console_messages{coug_number}")
-            if label:
-                current_text = label.text()
-                if current_text:
-                    updated_text = current_text + "\n" + console_message
+        # Determine which Cougs to update
+        if coug_number == 0:
+            coug_numbers = self.selected_cougs
+        else:
+            coug_numbers = [coug_number]
+
+        for coug in coug_numbers:
+            try:
+                label = self.findChild(QLabel, f"Console_messages{coug}")
+                if label:
+                    current_text = label.text()
+                    updated_text = f"{current_text}\n{console_message}" if current_text else console_message
+                    label.setText(updated_text)
+                    label.setStyleSheet(f"color: {self.text_color};")
+                    # Scroll to the bottom of the scroll area
+                    scroll_area = getattr(self, f"coug{coug}_console_scroll_area", None)
+                    if scroll_area:
+                        QTimer.singleShot(50, lambda sa=scroll_area: sa.verticalScrollBar().setValue(sa.verticalScrollBar().maximum()))
                 else:
-                    updated_text = console_message
-                label.setText(updated_text)
-                label.setStyleSheet(f"color: {self.text_color};")
-                # Scroll to the bottom of the scroll area
-                scroll_area = getattr(self, f"coug{coug_number}_console_scroll_area", None)
-                if scroll_area:
-                    # Defer scrolling to after the event loop processes the label update
-                    QTimer.singleShot(50, lambda: scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum()))
-            else:
-                print(f"Console log label not found for Coug {coug_number}")
-                self.recieve_console_update(f"Console log label not found for Coug {coug_number}", coug_number)
-        except Exception as e:
-            print(f"Exception in _update_console_gui: {e}")
-            if coug_number in self.selected_cougs: self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug_number)
+                    print(f"Console log label not found for Coug {coug}")
+                    self.recieve_console_update(f"Console log label not found for Coug {coug}", coug)
+            except Exception as e:
+                print(f"Exception in _update_console_gui for Coug {coug}: {e}")
+                self.recieve_console_update(f"Exception in _update_console_gui: {e}", coug)
 
     def replace_general_page_icon_widget(self, coug_number, prefix):
         layout = self.general_page_coug_layouts.get(coug_number)
@@ -1907,7 +1904,7 @@ def OpenWindow(ros_node, borders=False):
     app.processEvents()
 
     # Show configuration dialog ON TOP of splash
-    options = [f"Coug {i}" for i in range(1, 5)]
+    options = [f"Coug {i}" for i in range(1, 5)] + ["select custom: "]
     dlg = ConfigurationWindow(options, parent=splash, background_color="#0F1C37", text_color="#FFFFFF")
     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
     dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
@@ -1946,7 +1943,7 @@ def OpenWindow(ros_node, borders=False):
     QTimer.singleShot(500, build_main_window)
 
     #return the app, the result, and the selected coug numbers
-    return app, result, [int(str(coug_data[-1])) for coug_data, included in selected_cougs.items() if included]
+    return app, result, selected_cougs
 
 class CustomSplash(QWidget):
     def __init__(self, pixmap, parent=None):
@@ -2211,7 +2208,6 @@ class StartMissionsDialog(QDialog):
         self.setLayout(layout)
     
     def validate_and_accept(self):
-        valid = False
         states = self.get_states()
         #if record rosbag was chosen, a prefix must be given, as well as the opposite
         if states["record_rosbag"] and not states["rosbag_prefix"]: 
@@ -2283,29 +2279,65 @@ class ConfigurationWindow(QDialog):
             }}
         """)
 
+        self.inputs = {}
+
         # Create a checkbox for each option
         for opt in options:
-            cb = QCheckBox(opt)
-            cb.setChecked(False)  # Default to unchecked
-            self.checkboxes[opt] = cb
-            layout.addWidget(cb)
+            if "select custom:" in opt.lower():
+                le = QLineEdit()
+                le.setPlaceholderText("Enter Custom Number...")
+                self.inputs[opt] = le
+                layout.addWidget(le)
+            else: 
+                cb = QCheckBox(opt)
+                cb.setChecked(False)  # Default to unchecked
+                self.checkboxes[opt] = cb
+                layout.addWidget(cb)
 
         # OK/Cancel buttons
         buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttonBox.accepted.connect(self.validate_and_accept)
         layout.addWidget(buttonBox)
         self.setLayout(layout)
-    
+        
     def validate_and_accept(self):
         states = self.get_states()
-        for included in states.values():
-            if included: 
+        valid_custom = True  # Assume valid unless proven otherwise
+        if not states: 
+            QMessageBox.warning(self, "Selection Required", "Please select at least one Coug before continuing.")
+        else: 
+            for value in states:
+                try:
+                    int(value)
+                except: 
+                    valid_custom = False
+
+            if not valid_custom:
+                QMessageBox.warning(self, "Invalid Custom", "Please enter a valid integer for custom Coug number.")
+            else:
                 self.accept()
-                return
-        QMessageBox.warning(self, "Selection Required", "Please select at least one Coug before continuing.")
 
     def get_states(self):
         """
-        Returns a dict of {option: bool} for each checkbox.
+        Returns a list of selected Coug numbers as ints, including custom if valid.
         """
-        return {opt: cb.isChecked() for opt, cb in self.checkboxes.items()}
+        selected_cougs = []
+        # Regular Cougs
+        for opt, cb in self.checkboxes.items():
+            if cb.isChecked():
+                # Extract the number from "Coug X"
+                try:
+                    num = int(opt.split()[-1])
+                    selected_cougs.append(num)
+                except Exception:
+                    pass  # Ignore if not a valid number
+        # Custom Coug
+        for opt, le in self.inputs.items():
+            if "select custom:" in opt.lower():
+                value = le.text().strip()
+                if value:
+                    try:
+                        selected_cougs.append(int(value))
+                    except ValueError:
+                        selected_cougs.append(value) # Invalid custom validation will catch
+        return selected_cougs

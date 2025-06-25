@@ -35,7 +35,13 @@ def load_config(sel_vehicles):
     with open(CONFIG_FILE, "r") as f:
         config = json.load(f)
         vehicles = config["vehicles"]
-    return [vehicles[str(num)] for num in sel_vehicles if str(num) in vehicles]
+    result = []
+    for num in sel_vehicles:
+        if str(num) in vehicles:
+            result.append(vehicles[str(num)])
+        else:
+            publish_console_log(f"❌ Vehicle {num} not found in config, consider adding (skipping)", num)
+    return result
 
 def scp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num):
     """Deletes existing file then copies a new one via SCP."""
