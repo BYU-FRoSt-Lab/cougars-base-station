@@ -2,7 +2,7 @@
 
 source install/setup.sh
 
-ros2 topic pub /coug2/safety_status frost_interfaces/msg/SystemStatus "{
+ros2 topic pub /coug7/safety_status frost_interfaces/msg/SystemStatus "{
   header: {stamp: {sec: 0, nanosec: 0}, frame_id: ''},
   depth_status: {data: 0},
   imu_published: {data: 2},
@@ -13,7 +13,7 @@ ros2 topic pub /coug2/safety_status frost_interfaces/msg/SystemStatus "{
   sender_id: {data: 1}
 }" --once 
 
-ros2 topic pub /coug2/smoothed_output nav_msgs/msg/Odometry "{
+ros2 topic pub /coug7/smoothed_output nav_msgs/msg/Odometry "{
   header: {
     stamp: { sec: 0, nanosec: 0 },
     frame_id: 'odom'
@@ -45,7 +45,7 @@ ros2 topic pub /coug2/smoothed_output nav_msgs/msg/Odometry "{
   }
 }" --once
 
-ros2 topic pub /coug2/depth_data geometry_msgs/msg/PoseWithCovarianceStamped "{
+ros2 topic pub /coug7/depth_data geometry_msgs/msg/PoseWithCovarianceStamped "{
   header: {
     stamp: { sec: 0, nanosec: 0 },
     frame_id: ''
@@ -66,7 +66,7 @@ ros2 topic pub /coug2/depth_data geometry_msgs/msg/PoseWithCovarianceStamped "{
   }
 }" --once
 
-ros2 topic pub /coug2/pressure/data sensor_msgs/msg/FluidPressure "{
+ros2 topic pub /coug7/pressure/data sensor_msgs/msg/FluidPressure "{
   header: {
     stamp: { sec: 0, nanosec: 0 },
     frame_id: 'pressure_sensor'
@@ -76,7 +76,7 @@ ros2 topic pub /coug2/pressure/data sensor_msgs/msg/FluidPressure "{
 }" --once
 
 # Example: Publishes battery at 75% (0.75)
-ros2 topic pub /coug2/battery/data sensor_msgs/msg/BatteryState "{
+ros2 topic pub /coug7/battery/data sensor_msgs/msg/BatteryState "{
   percentage: 0.75
 }" --once
 
@@ -92,7 +92,7 @@ ct=$((RANDOM % 2))
 
 ros2 topic pub -1 /connections base_station_interfaces/msg/Connections "{
   connection_type: 0,
-  vehicle_ids: [1, 2, 3, 4],
+  vehicle_ids: [1, 2, 3, 5],
   connections: [$c1, $c2, $c3, $c4],
   last_ping: [$p1, $p2, $p3, $p4]
 }"
