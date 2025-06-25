@@ -1545,7 +1545,8 @@ class MainWindow(QMainWindow):
             layout = self.general_page_vehicle_layouts.get(vehicle_number)
             widget = self.general_page_vehicle_widgets.get(vehicle_number)
             new_status_label = self.get_status_label(vehicle_number, self.feedback_dict["Status_messages"][vehicle_number])
-            self.replace_label(f"Status_messages{vehicle_number}", layout, widget, new_status_label, self.text_color)
+            existing_label = widget.findChild(QLabel, f"Status_messages{vehicle_number}")
+            if existing_label: existing_label.setText(new_status_label.text())
 
     def recieve_smoothed_output_message(self, vehicle_number, msg):
         self.smoothed_ouput_signal.emit(vehicle_number, msg)
@@ -1722,14 +1723,16 @@ class MainWindow(QMainWindow):
                     widget = self.general_page_vehicle_widgets.get(vehicle_number)
                     if layout and widget:
                         new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, vehicle_number)
-                        self.replace_label(f"{feedback_key}{vehicle_number}", layout, widget, new_label)
+                        # self.replace_label(f"{feedback_key}{vehicle_number}", layout, widget, new_label)
+                        self.replace_general_page_icon_widget(vehicle_number, feedback_key)
 
                     # Update specific page
                     layout = getattr(self, f"vehicle{vehicle_number}_column0_layout", None)
                     widget = getattr(self, f"vehicle{vehicle_number}_column0_widget", None)
                     if layout and widget:
                         new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, vehicle_number)
-                        self.replace_label(f"Spec_{feedback_key}{vehicle_number}", layout, widget, new_label2)
+                        # self.replace_label(f"Spec_{feedback_key}{vehicle_number}", layout, widget, new_label2)
+                        self.replace_specific_icon_widget(vehicle_number, feedback_key)
                         
                 except Exception as e:
                     print(f"Exception updating connection status for vehicle {vehicle_number}: {e}")
@@ -1830,8 +1833,6 @@ class MainWindow(QMainWindow):
         status = self.feedback_dict[prefix][vehicle_number]
         new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0, vehicle_number)
         self.replace_label(f"Spec_{prefix}{vehicle_number}", layout, widget, new_label)
-        # existing_label = widget.findChild(QLabel, f"Spec_{prefix}{vehicle_number}")
-        # if existing_label: existing_label.setText(new_text)
 
     def replace_specific_status_widget(self, vehicle_number, prefix):
         layout = getattr(self, f"vehicle{vehicle_number}_column01_layout")
