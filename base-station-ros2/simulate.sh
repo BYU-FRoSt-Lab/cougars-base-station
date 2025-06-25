@@ -91,9 +91,9 @@ p4=$((RANDOM % 31))
 ct=$((RANDOM % 2))
 
 ros2 topic pub -1 /connections base_station_interfaces/msg/Connections "{
-  connection_type: 0,
+  connection_type: 1,
   vehicle_ids: [1, 2, 3, 5],
-  connections: [$c1, $c2, $c3, $c4],
+  connections: [$c1, $c2, $c3, true],
   last_ping: [$p1, $p2, $p3, $p4]
 }"
 
