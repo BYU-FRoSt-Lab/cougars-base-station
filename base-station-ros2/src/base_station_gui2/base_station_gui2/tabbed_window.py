@@ -250,7 +250,6 @@ class MainWindow(QMainWindow):
         self.main_layout = QVBoxLayout()
         #Add the tabs to the main layout
         self.main_layout.addWidget(self.tabs)
-        # self.main_layout.addWidget(self.emergency_exit_gui_button)
 
         #create a container widget, and place the main layout inside of it
         self.container = QWidget()
@@ -2242,19 +2241,26 @@ class ConfigurationWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Configuration")
         self.checkboxes = {}
+        self.custom_inputs = []
+        self.custom_plus_buttons = []
         layout = QVBoxLayout()
+        self.background_color = background_color
+        self.text_color = text_color
+        self.MAX_COUGS = 4
 
         # Make the dialog not resizable
-        self.setFixedSize(300, 200)  
+        # self.setFixedSize(300, 200)  
+        self.setMinimumWidth(300)
+        self.resize(300, 200)
 
         self.setStyleSheet(f"""
             QDialog {{
-                background-color: {background_color};
-                color: {text_color};
+                background-color: {self.background_color};
+                color: {self.text_color};
             }}
             
             QLabel, QCheckBox {{
-                color: {text_color};
+                color: {self.text_color};
             }}
 
             QCheckBox::indicator {{
@@ -2263,81 +2269,108 @@ class ConfigurationWindow(QDialog):
             }}
 
             QCheckBox::indicator:checked {{
-                border: 1px solid {text_color};
+                border: 1px solid {self.text_color};
             }}
 
             QCheckBox::indicator:unchecked {{
-                background-color: {text_color};
-                border: 1px solid {text_color};
+                background-color: {self.text_color};
+                border: 1px solid {self.text_color};
             }}
 
             QLineEdit {{
-                background-color: {background_color};
-                color: {text_color};
-                border: 1px solid {text_color};
+                background-color: {self.background_color};
+                color: {self.text_color};
+                border: 1px solid {self.text_color};
                 padding: 2px;
             }}
         """)
 
-        self.inputs = {}
+        self.inputs = []
 
         # Create a checkbox for each option
         for opt in options:
-            if "select custom:" in opt.lower():
-                le = QLineEdit()
-                le.setPlaceholderText("Enter Custom Number...")
-                self.inputs[opt] = le
-                layout.addWidget(le)
-            else: 
+            if "select custom:" not in opt.lower():
                 cb = QCheckBox(opt)
-                cb.setChecked(False)  # Default to unchecked
+                cb.setChecked(False)
                 self.checkboxes[opt] = cb
                 layout.addWidget(cb)
+
+        # Container for custom Coug inputs
+        self.custom_container = QVBoxLayout()
+        layout.addLayout(self.custom_container)
+
+        # Add the first "+" button
+        self.add_custom_plus_button()
 
         # OK/Cancel buttons
         buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttonBox.accepted.connect(self.validate_and_accept)
         layout.addWidget(buttonBox)
         self.setLayout(layout)
+
+    def add_custom_plus_button(self):
+        # self.custom_input_style = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.text_color}; padding-top: {button_padding}px; padding-bottom: {button_padding}px; font-size: {self.button_font_size}px;"
+        custom_input_style = f"background-color: {self.background_color}; color: {self.text_color}; border: 2px solid {self.text_color};"
+        plus_btn = QPushButton("+ Add Custom Coug")
+        plus_btn.setStyleSheet(custom_input_style)
+        plus_btn.clicked.connect(lambda: self.add_custom_input(plus_btn))
+        self.custom_container.addWidget(plus_btn)
+        self.custom_plus_buttons.append(plus_btn)
+
+    def add_custom_input(self, plus_btn):
+        # Count currently selected Cougs (checkboxes + custom inputs)
+        current_count = sum(cb.isChecked() for cb in self.checkboxes.values())
+        current_count += len(self.custom_inputs)
+        if current_count >= self.MAX_COUGS:
+            QMessageBox.warning(self, "Limit Reached", f"You cannot add more than {self.MAX_COUGS} Cougs.")
+            return
+        # Remove the plus button that was clicked
+        self.custom_container.removeWidget(plus_btn)
+        plus_btn.hide()
+        # Add a new QLineEdit for custom input
+        le = QLineEdit()
+        le.setPlaceholderText("Enter Custom Number...")
+        self.custom_inputs.append(le)
+        self.custom_container.addWidget(le)
+        # Add a new plus button below this input
+        self.add_custom_plus_button()
+        # Adjust the dialog size to fit new content
+        self.adjustSize()
         
     def validate_and_accept(self):
         states = self.get_states()
-        valid_custom = True  # Assume valid unless proven otherwise
-        if not states: 
+        valid_custom = True
+        if not states:
             QMessageBox.warning(self, "Selection Required", "Please select at least one Coug before continuing.")
-        else: 
+        elif len(states) > self.MAX_COUGS:
+            QMessageBox.warning(self, "Max Coug Limit Reached", "Selection of more than 4 Cougs not allowed")
+        else:
             for value in states:
                 try:
                     int(value)
-                except: 
+                except:
                     valid_custom = False
-
-            if not valid_custom:
+            if len(states) != len(set(states)):
+                QMessageBox.warning(self, "Duplicate Cougs", "Please ensure all Coug numbers are unique.")
+            elif not valid_custom:
                 QMessageBox.warning(self, "Invalid Custom", "Please enter a valid integer for custom Coug number.")
             else:
                 self.accept()
 
     def get_states(self):
-        """
-        Returns a list of selected Coug numbers as ints, including custom if valid.
-        """
         selected_cougs = []
-        # Regular Cougs
         for opt, cb in self.checkboxes.items():
             if cb.isChecked():
-                # Extract the number from "Coug X"
                 try:
                     num = int(opt.split()[-1])
                     selected_cougs.append(num)
                 except Exception:
-                    pass  # Ignore if not a valid number
-        # Custom Coug
-        for opt, le in self.inputs.items():
-            if "select custom:" in opt.lower():
-                value = le.text().strip()
-                if value:
-                    try:
-                        selected_cougs.append(int(value))
-                    except ValueError:
-                        selected_cougs.append(value) # Invalid custom validation will catch
+                    pass
+        for le in self.custom_inputs:
+            value = le.text().strip()
+            if value:
+                try:
+                    selected_cougs.append(int(value))
+                except ValueError:
+                    selected_cougs.append(value)
         return selected_cougs
