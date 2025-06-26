@@ -1785,16 +1785,19 @@ class MainWindow(QMainWindow):
                     updated_text = f"{current_text}\n{console_message}" if current_text else console_message
                     label.setText(updated_text)
                     label.setStyleSheet(f"color: {self.text_color};")
-                    # Scroll to the bottom of the scroll area
+                    # Scroll to the bottom of the scroll area only if user was already at the bottom
                     scroll_area = getattr(self, f"vehicle{vehicle}_console_scroll_area", None)
                     if scroll_area:
-                        QTimer.singleShot(50, lambda sa=scroll_area: sa.verticalScrollBar().setValue(sa.verticalScrollBar().maximum()))
+                        vbar = scroll_area.verticalScrollBar()
+                        at_bottom = vbar.value() >= vbar.maximum() - 2  # Allow for rounding
+                        def maybe_scroll():
+                            if at_bottom:
+                                vbar.setValue(vbar.maximum())
+                        QTimer.singleShot(50, maybe_scroll)
                 else:
                     print(f"Console log label not found for Vehicle {vehicle}")
-                    # self.recieve_console_update(f"Console log label not found for Vehicle {vehicle}", vehicle)
             except Exception as e:
                 print(f"Exception in _update_console_gui for Vehicle {vehicle}: {e}")
-                # self.recieve_console_update(f"Exception in _update_console_gui: {e}", vehicle)
 
     def replace_general_page_icon_widget(self, vehicle_number, prefix):
         layout = self.general_page_vehicle_layouts.get(vehicle_number)
