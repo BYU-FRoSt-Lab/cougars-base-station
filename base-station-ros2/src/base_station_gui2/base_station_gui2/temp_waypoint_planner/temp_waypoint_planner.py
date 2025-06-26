@@ -1,5 +1,5 @@
 # Interactive Waypoint Mission Planner Created by Brighton Anderson May 2025
-
+ 
 import tkinter
 import tkinter.messagebox
 import tkinter.simpledialog
@@ -330,6 +330,7 @@ class App:
 
 
         mission_content = {
+            "mission_type": "waypoint",
             "mission_name": mission_name,
             "origin_lla": {
                 "latitude": self.origin_data['lat'],
