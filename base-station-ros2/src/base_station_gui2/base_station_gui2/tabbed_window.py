@@ -1815,10 +1815,10 @@ class MainWindow(QMainWindow):
                         QTimer.singleShot(50, lambda sa=scroll_area: sa.verticalScrollBar().setValue(sa.verticalScrollBar().maximum()))
                 else:
                     print(f"Console log label not found for Vehicle {vehicle}")
-                    self.recieve_console_update(f"Console log label not found for Vehicle {vehicle}", vehicle)
+                    # self.recieve_console_update(f"Console log label not found for Vehicle {vehicle}", vehicle)
             except Exception as e:
                 print(f"Exception in _update_console_gui for Vehicle {vehicle}: {e}")
-                self.recieve_console_update(f"Exception in _update_console_gui: {e}", vehicle)
+                # self.recieve_console_update(f"Exception in _update_console_gui: {e}", vehicle)
 
     def replace_general_page_icon_widget(self, vehicle_number, prefix):
         layout = self.general_page_vehicle_layouts.get(vehicle_number)
@@ -2232,6 +2232,7 @@ class ConfigurationWindow(QDialog):
         self.background_color = background_color
         self.text_color = text_color
         self.MAX_VEHICLES = 4
+        self.HIGHEST_VEHICLE_LABEL = 999
 
         # Make the dialog not resizable
         # self.setFixedSize(300, 200)  
@@ -2325,6 +2326,7 @@ class ConfigurationWindow(QDialog):
     def validate_and_accept(self):
         states = self.get_states()
         valid_custom = True
+        valid_vehicle_number = True
         if not states:
             QMessageBox.warning(self, "Selection Required", "Please select at least one Vehicle before continuing.")
         elif len(states) > self.MAX_VEHICLES:
@@ -2332,13 +2334,16 @@ class ConfigurationWindow(QDialog):
         else:
             for value in states:
                 try:
-                    int(value)
+                    num = int(value)
+                    if num > self.HIGHEST_VEHICLE_LABEL or num <= 0: valid_vehicle_number = False
                 except:
                     valid_custom = False
             if len(states) != len(set(states)):
                 QMessageBox.warning(self, "Duplicate Vehicles", "Please ensure all Vehicle numbers are unique.")
             elif not valid_custom:
                 QMessageBox.warning(self, "Invalid Custom", "Please enter a valid integer for custom Vehicle number.")
+            elif not valid_vehicle_number:
+                QMessageBox.warning(self, "Invalid Vehicle Number", "Please enter an integer from 1-999.")
             else:
                 self.accept()
 
