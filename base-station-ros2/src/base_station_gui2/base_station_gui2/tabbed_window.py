@@ -3,8 +3,9 @@ import random, time, os
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
-    QStyle, QLineEdit, QWidget, QDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
+    QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
+
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
 
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon, QActionGroup
@@ -555,20 +556,6 @@ class MainWindow(QMainWindow):
     def replace_confirm_reject_label(self, confirm_reject_text):
         for label in self.confirm_reject_labels.values():
             label.setText(confirm_reject_text)
-
-    #function to close the GUI window(s). Used by the keyboard interrupt signal or the exit button
-    def close_window(self):
-        #pop-up window
-        dlg = AbortMissionsDialog("Close Window?", "Are you sure you want to close the GUI window?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
-        #if confirm is selected
-        if dlg.exec():
-            self.replace_confirm_reject_label("Closing Window...")
-            print("Closing the Window now...")
-            self.close()  
-        else:
-            self.replace_confirm_reject_label("Canceling Close Window command...")
-            for i in self.selected_vehicles:
-                self.recieve_console_update("Canceling Close Window command...", i)
 
     "/*Override the resizeEvent method in the sub class*/"
     def resizeEvent(self, event):
@@ -2064,13 +2051,52 @@ class LoadMissionsDialog(QDialog):
         # OK/Cancel buttons
         buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttonBox.accepted.connect(self.validate_and_accept)
-        layout.addWidget(buttonBox)
+        button_row = QHBoxLayout()
+
+        if not vehicle:
+            applyAllButton = QPushButton("Apply to All")
+            button_row.addWidget(applyAllButton)
+            applyAllButton.clicked.connect(
+                lambda: self.apply_to_all(
+                    background_color=background_color,
+                    text_color=text_color,
+                    pop_up_window_style=pop_up_window_style
+                )
+            )
+
+        button_row.addWidget(buttonBox)
+        layout.addLayout(button_row)
         self.setLayout(layout)
+
+    def apply_to_all(self, background_color=None, text_color=None, pop_up_window_style=None):
+        # Get the current tab name
+        current_tab_index = self.pop_up_tabs.currentIndex()
+        current_tab_name = self.pop_up_tabs.tabText(current_tab_index)
+        # Check if a file is selected for the current tab
+        selected_file = self.selected_files.get(current_tab_name)
+        if not selected_file:
+            QMessageBox.warning(self, "No File Selected", "Please select a file for the current tab before applying to all.")
+            return
+
+        # Confirm with the user
+        dlg = AbortMissionsDialog(
+            "Apply to All?",
+            "Are you sure you want to apply this file to all vehicles? This will overwrite any other files you have already selected.",
+            self,
+            background_color=background_color,
+            text_color=text_color,
+            pop_up_window_style=pop_up_window_style
+        )
+        if dlg.exec():
+            # Apply the selected file to all tabs (even if not previously selected)
+            for tab_name in self.file_display_labels:
+                self.selected_files[tab_name] = selected_file
+                self.update_file_display(tab_name)
+        # else: do nothing (user cancelled)
+
 
     def browse_file(self, tab_name=None):
         """Open file dialog to select a single mission file for specific tab"""
-        from PyQt6.QtWidgets import QFileDialog
-        
         if tab_name:
             # Tabbed mode
             file_path, _ = QFileDialog.getOpenFileName(
@@ -2286,7 +2312,6 @@ class ConfigurationWindow(QDialog):
         self.setLayout(layout)
 
     def add_custom_plus_button(self):
-        # self.custom_input_style = f"background-color: {self.normal_button_color}; color: {self.text_color}; border: 2px solid {self.text_color}; padding-top: {button_padding}px; padding-bottom: {button_padding}px; font-size: {self.button_font_size}px;"
         custom_input_style = f"background-color: {self.background_color}; color: {self.text_color}; border: 2px solid {self.text_color};"
         plus_btn = QPushButton("+ Add Custom Vehicle")
         plus_btn.setStyleSheet(custom_input_style)
