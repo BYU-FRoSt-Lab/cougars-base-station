@@ -165,15 +165,15 @@ class MainWindow(QMainWindow):
 
         #this is used to connect the feedback_dict keys to what is actually printed, in _update_status_gui
         self.key_to_text_dict = {
-            "XPos": "x (meters): ",
-            "YPos": "y (meters): ",
-            "Depth": "Depth (meters): ",
+            "XPos": "x (m): ",
+            "YPos": "y (m): ",
+            "Depth": "Depth (m): ",
             "Heading": "Heading (deg): ",
             "Waypoint": "Current Waypoint: ",
-            "DVL_vel": "DVL Velocity (m/s): ",
-            "Battery": "Battery (volts): ",
+            "DVL_vel": "DVL Velocity <br>(m/s): ",
+            "Battery": "Battery (V): ",
             "Pressure": "Pressure (Pa): ",
-            "Angular_vel": "Angular Velocity (rad/s): "
+            "Angular_vel": "Angular Velocity <br>(rad/s): "
         }
 
         self.option_map = {
@@ -489,6 +489,22 @@ class MainWindow(QMainWindow):
                     new_pixmap = self.paintIconBackground(orig_pixmap, bg_color=icon_bkgrnd)
                     ic_label.setPixmap(new_pixmap)
 
+    def repaint_icon(self, ic_label):
+        # Use the original icon pixmap if available
+        orig_pixmap = getattr(ic_label, "_original_icon_pixmap", None)
+        if orig_pixmap is not None:
+            icon_type = getattr(ic_label, "_icon_type", None)
+            if icon_type == QStyle.StandardPixmap.SP_MessageBoxCritical:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon_type == QStyle.StandardPixmap.SP_DialogApplyButton:
+                icon_bkgrnd = self.light_icon_bkgrnd_color
+            elif icon_type == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+                icon_bkgrnd = self.dark_icon_bkgrnd_color
+            else:
+                print("Unknown icon type.")
+            new_pixmap = self.paintIconBackground(orig_pixmap, bg_color=icon_bkgrnd)
+            ic_label.setPixmap(new_pixmap)
+    
     def set_console_log_colors(self, text_color, background_color):
         """
         Sets the background and text color of all console log QLabel widgets.
@@ -553,39 +569,6 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label("Canceling Close Window command...")
             for i in self.selected_vehicles:
                 self.recieve_console_update("Canceling Close Window command...", i)
-
-    #in order to replace a label, you must know the widgets name, the parent layout, and the parent widget
-    def replace_label(self, widget_name, parent_layout, parent_widget, new_label, color=""):
-        """
-        Replaces a label inside of the GUI
-
-        Parameters:
-            widget_name: the name of the widget to be changed
-            parent_layout: the parent layout of the widget to be changed
-            parent_widget: the parent widget of the widget to be changed
-            new_label: the new text/icon the label will be changed to
-            color: optional color to change the label to
-        """
-        #find the widget in reference to its parent widget
-        temp_widget = parent_widget.findChild(QWidget, widget_name)
-        if temp_widget:
-            #the index of the widget in respect to its parent layout
-            index = parent_layout.indexOf(temp_widget)
-        else:
-            print(f"not found. widget_name: {widget_name} : parent_widget: {parent_widget} temp_widget: {temp_widget}")
-            for i in self.selected_vehicles: self.recieve_console_update("GUI error. See terminal.", i)
-            return
-
-        parent_layout.removeWidget(temp_widget)
-        #set parent to none so that it doesn't have any lingering consequences
-        temp_widget.setParent(None)
-
-        #The new label has the same name as the old one, so that it can be changed again
-        new_label.setObjectName(widget_name)
-        #set the optional color, if there wasn't a color passed, then it doesn't change anything
-        new_label.setStyleSheet(f"color: {self.text_color};")
-        #insert the new widget in the same index as the old one was, so the order of the text doesn't
-        parent_layout.insertWidget(index, new_label)
 
     "/*Override the resizeEvent method in the sub class*/"
     def resizeEvent(self, event):
@@ -976,35 +959,29 @@ class MainWindow(QMainWindow):
 
             #The connections section contains the wifi, radio, and modem connections for each Vehicle respectively
             if title == "Connections": 
-                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][vehicle_number]], self.tab_spacing, vehicle_number)
-                wifi_widget.setObjectName(f"Wifi{vehicle_number}")
+                wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(wifi_widget)
                 layout.addSpacing(20)
 
-                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][vehicle_number]], self.tab_spacing, vehicle_number)
-                radio_widget.setObjectName(f"Radio{vehicle_number}")
+                radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(radio_widget)
                 layout.addSpacing(20)
 
-                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][vehicle_number]], self.tab_spacing, vehicle_number)
-                modem_widget.setObjectName(f"Modem{vehicle_number}")
+                modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(modem_widget)
                 layout.addSpacing(40)
 
             #The connections section contains the DVL, GPS, and IMU sensors connections for each Vehicle respectively
             elif title == "Sensors":
-                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][vehicle_number]], self.tab_spacing, vehicle_number)
-                DVL_sensor_widget.setObjectName(f"DVL{vehicle_number}")
+                DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(DVL_sensor_widget)
                 layout.addSpacing(20)
 
-                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][vehicle_number]], self.tab_spacing, vehicle_number)
-                GPS_sensor_widget.setObjectName(f"GPS{vehicle_number}")
+                GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(GPS_sensor_widget)
                 layout.addSpacing(20)
                 
-                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][vehicle_number]], self.tab_spacing, vehicle_number)
-                IMU_sensor_widget.setObjectName(f"IMU{vehicle_number}")
+                IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][vehicle_number]], self.tab_spacing, vehicle_number, 0)
                 layout.addWidget(IMU_sensor_widget)
                 layout.addSpacing(40)
 
@@ -1132,8 +1109,34 @@ class MainWindow(QMainWindow):
         painter.end()
         return result
 
+    def make_icon_label(self, icon, text, vehicle_number, icon_pg_type): 
+        icon_label = QLabel()
+        icon_pixmap = self.style().standardIcon(icon).pixmap(16, 16)
+        icon_label._original_icon_pixmap = icon_pixmap  # Store original
+        icon_label._icon_type = icon # Store the icon type (e.g., QStyle.StandardPixmap.SP_MessageBoxCritical)
+        
+        if icon == QStyle.StandardPixmap.SP_MessageBoxCritical:
+            icon_bkgrnd = self.light_icon_bkgrnd_color
+        elif icon == QStyle.StandardPixmap.SP_DialogApplyButton:
+            icon_bkgrnd = self.light_icon_bkgrnd_color
+        elif icon == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
+            icon_bkgrnd = self.dark_icon_bkgrnd_color
+        else:
+            print("Unknown icon type.")
+            return
+        
+        bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
+        icon_label.setPixmap(bg_pixmap)
+        icon_label.setObjectName(f"icon_{text}{vehicle_number}{icon_pg_type}")
+        # print(f"icon created with name: icon_{text}{vehicle_number}{icon_pg_type}")
+
+        icon_label.setContentsMargins(0, 0, 0, 0)
+        icon_label.setFixedSize(24, 24)
+        return icon_label
+
+
     #used to create an icon next to text in a pre-determined fashion
-    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, vehicle_number=None):
+    def create_icon_and_text(self, text, icon=None, temp_tab_spacing=None, vehicle_number=None, icon_pg_type=None):
         """
         Creates a QWidget containing an icon (optional) and a text label, arranged horizontally.
 
@@ -1141,6 +1144,8 @@ class MainWindow(QMainWindow):
             text (str): The text to display next to the icon.
             icon (QStyle.StandardPixmap, optional): The standard Qt icon to display. If None, no icon is shown.
             temp_tab_spacing (int, optional): Left margin for the layout, used for tab alignment.
+            vehicle_number(int, optional): used to name the icon labels
+            icon_pg_type(int (0,1), optional):  used to name the icon labels. 0-> general 1->specific
 
         Returns:
             QWidget: A container widget with the icon and text label.
@@ -1156,27 +1161,7 @@ class MainWindow(QMainWindow):
 
         # If an icon is provided, create a QLabel for it and add to the layout
         if icon:
-            icon_label = QLabel()
-            icon_pixmap = self.style().standardIcon(icon).pixmap(16, 16)
-            icon_label._original_icon_pixmap = icon_pixmap  # Store original
-            icon_label._icon_type = icon # Store the icon type (e.g., QStyle.StandardPixmap.SP_MessageBoxCritical)
-            
-            if icon == QStyle.StandardPixmap.SP_MessageBoxCritical:
-                icon_bkgrnd = self.light_icon_bkgrnd_color
-            elif icon == QStyle.StandardPixmap.SP_DialogApplyButton:
-                icon_bkgrnd = self.light_icon_bkgrnd_color
-            elif icon == QStyle.StandardPixmap.SP_TitleBarContextHelpButton:
-                icon_bkgrnd = self.dark_icon_bkgrnd_color
-            else:
-                print("Unknown icon type.")
-                return
-            
-            bg_pixmap = self.paintIconBackground(icon_pixmap, bg_color=icon_bkgrnd)
-            icon_label.setPixmap(bg_pixmap)
-            icon_label.setObjectName(f"icon_{text}")
-
-            icon_label.setContentsMargins(0, 0, 0, 0)
-            icon_label.setFixedSize(24, 24)
+            icon_label = self.make_icon_label(icon, text, vehicle_number, icon_pg_type)
             temp_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Create the text label and add to the layout
@@ -1372,16 +1357,13 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add connection status icons (Wifi, Radio, Modem)
-        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][vehicle_number]], 0, vehicle_number)
-        wifi_widget.setObjectName(f"Spec_Wifi{vehicle_number}")
+        wifi_widget = self.create_icon_and_text("Wifi", self.icons_dict[self.feedback_dict["Wifi"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(wifi_widget)
 
-        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][vehicle_number]], 0, vehicle_number)
-        radio_widget.setObjectName(f"Spec_Radio{vehicle_number}")
+        radio_widget = self.create_icon_and_text("Radio", self.icons_dict[self.feedback_dict["Radio"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(radio_widget)
 
-        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][vehicle_number]], 0, vehicle_number)
-        modem_widget.setObjectName(f"Spec_Modem{vehicle_number}")
+        modem_widget = self.create_icon_and_text("Modem", self.icons_dict[self.feedback_dict["Modem"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(modem_widget)
         temp_layout.addSpacing(20)
 
@@ -1395,16 +1377,13 @@ class MainWindow(QMainWindow):
         temp_layout.addWidget(temp_label)
 
         # Add sensor status icons (DVL, GPS, IMU)
-        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][vehicle_number]], 0, vehicle_number)
-        DVL_sensor_widget.setObjectName(f"Spec_DVL{vehicle_number}")
+        DVL_sensor_widget = self.create_icon_and_text("DVL", self.icons_dict[self.feedback_dict["DVL"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(DVL_sensor_widget)
 
-        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][vehicle_number]], 0, vehicle_number)
-        GPS_sensor_widget.setObjectName(f"Spec_GPS{vehicle_number}")
+        GPS_sensor_widget = self.create_icon_and_text("GPS", self.icons_dict[self.feedback_dict["GPS"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(GPS_sensor_widget)
         
-        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][vehicle_number]], 0, vehicle_number)
-        IMU_sensor_widget.setObjectName(f"Spec_IMU{vehicle_number}")
+        IMU_sensor_widget = self.create_icon_and_text("IMU", self.icons_dict[self.feedback_dict["IMU"][vehicle_number]], 0, vehicle_number, 1)
         temp_layout.addWidget(IMU_sensor_widget)
 
         # Return the container widget holding all status icons
@@ -1441,26 +1420,25 @@ class MainWindow(QMainWindow):
 
         # Status widgets section
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_title_label(f"Vehicle {vehicle_number} status"), alignment=Qt.AlignmentFlag.AlignTop)
+        temp_layout.addWidget(self.create_title_label(f"Status"), alignment=Qt.AlignmentFlag.AlignTop)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("x (meters): x", f"XPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("x (m): x", f"XPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("y (meters): y", f"YPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("y (m): y", f"YPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("Depth (meters): d", f"Depth{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("Depth (m): d", f"Depth{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
         temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("DVL Velocity (m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("DVL Velocity <br>(m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("Angular Velocity (rad/s): a", f"Angular_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("Angular Velocity <br>(rad/s): a", f"Angular_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("Battery (volts): b", f"Battery{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("Battery (V): b", f"Battery{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(10)
-        temp_layout.addWidget(self.create_normal_label("Pressure (Pa): p", f"Pressure{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addStretch()
+        temp_layout.addWidget(self.create_normal_label("Pressure (Pa):<br>p", f"Pressure{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Return the container widget holding the mission and status widgets
         return temp_container
@@ -1478,6 +1456,7 @@ class MainWindow(QMainWindow):
             QLabel: The created label.
         """
         text_label = QLabel(text)
+        text_label.setTextFormat(Qt.TextFormat.RichText)
         setattr(self, name, text_label)
         text_label.setObjectName(name) 
         text_label.setFont(QFont("Arial", 13))
@@ -1722,16 +1701,12 @@ class MainWindow(QMainWindow):
                     layout = self.general_page_vehicle_layouts.get(vehicle_number)
                     widget = self.general_page_vehicle_widgets.get(vehicle_number)
                     if layout and widget:
-                        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, vehicle_number)
-                        # self.replace_label(f"{feedback_key}{vehicle_number}", layout, widget, new_label)
                         self.replace_general_page_icon_widget(vehicle_number, feedback_key)
 
                     # Update specific page
                     layout = getattr(self, f"vehicle{vehicle_number}_column0_layout", None)
                     widget = getattr(self, f"vehicle{vehicle_number}_column0_widget", None)
                     if layout and widget:
-                        new_label2 = self.create_icon_and_text(prefix, self.icons_dict[status], 0, vehicle_number)
-                        # self.replace_label(f"Spec_{feedback_key}{vehicle_number}", layout, widget, new_label2)
                         self.replace_specific_icon_widget(vehicle_number, feedback_key)
                         
                 except Exception as e:
@@ -1774,11 +1749,12 @@ class MainWindow(QMainWindow):
             
     def get_status_label(self, vehicle_number, status_message):
         if not status_message: message_text = "Good"
-        elif status_message == 1: message_text = "EMERGENCY: Recall Vehicle Immediately"
+        elif status_message == 1: message_text = "EMERGENCY: <br>Recall Vehicle"
         elif status_message == 2: message_text = "Surfaced/Disarmed"
         else: message_text = "No Data Received"
 
         temp_label = QLabel(f"{message_text}", font=QFont("Arial", 13), alignment=Qt.AlignmentFlag.AlignTop)
+        temp_label.setTextFormat(Qt.TextFormat.RichText)
         return temp_label
 
     def recieve_console_update(self, console_message, vehicle_number):
@@ -1824,23 +1800,35 @@ class MainWindow(QMainWindow):
         layout = self.general_page_vehicle_layouts.get(vehicle_number)
         widget = self.general_page_vehicle_widgets.get(vehicle_number)
         status = self.feedback_dict[prefix][vehicle_number]
-        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], self.tab_spacing, vehicle_number)
-        self.replace_label(f"{prefix}{vehicle_number}", layout, widget, new_label)
+        icon_type = self.icons_dict[status]
+        existing_label = widget.findChild(QLabel, f"icon_{prefix}{vehicle_number}0")
+        if existing_label: self.replace_icon_widget(existing_label, icon_type)
+        else: print(f"icon_{prefix}{vehicle_number}0 label does not exist")
     
     def replace_specific_icon_widget(self, vehicle_number, prefix):
         layout = getattr(self, f"vehicle{vehicle_number}_column0_layout")
         widget = getattr(self, f"vehicle{vehicle_number}_column0_widget")
         status = self.feedback_dict[prefix][vehicle_number]
-        new_label = self.create_icon_and_text(prefix, self.icons_dict[status], 0, vehicle_number)
-        self.replace_label(f"Spec_{prefix}{vehicle_number}", layout, widget, new_label)
+        icon_type = self.icons_dict[status]
+        existing_label = widget.findChild(QLabel, f"icon_{prefix}{vehicle_number}1")
+        if existing_label: self.replace_icon_widget(existing_label, icon_type)
+        else: print(f"icon_{prefix}{vehicle_number}1 label does not exist")
+
+    def replace_icon_widget(self, icon_label, icon_type):
+        if icon_label: 
+            icon_label._icon_type = icon_type
+            # Update the original icon pixmap to the new icon
+            icon_pixmap = self.style().standardIcon(icon_type).pixmap(16, 16)
+            icon_label._original_icon_pixmap = icon_pixmap
+            self.repaint_icon(icon_label)
 
     def replace_specific_status_widget(self, vehicle_number, prefix):
         layout = getattr(self, f"vehicle{vehicle_number}_column01_layout")
         widget = getattr(self, f"vehicle{vehicle_number}_column01_widget")
-        # new_label = self.create_normal_label(self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][vehicle_number]), f"{prefix}{vehicle_number}")
         new_text = self.key_to_text_dict[prefix] + str(self.feedback_dict[prefix][vehicle_number])
         existing_label = widget.findChild(QLabel, f"{prefix}{vehicle_number}")
         if existing_label: existing_label.setText(new_text)
+        else: print(f"label with name {prefix}{vehicle_number} does not exist")
 
 #used by ros to open a window. Needed in order to start PyQt on a different thread than ros
 def OpenWindow(ros_node, borders=False):
