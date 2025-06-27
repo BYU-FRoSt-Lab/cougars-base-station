@@ -227,16 +227,13 @@ public:
         // }
 
         base_station_interfaces::msg::Connections msg;
-        msg.header.stamp = now;
         msg.connection_type = 0; // 0 for acoustic modem
-
-        msg.vehicle_ids.clear();
         for (auto id : this->vehicles_in_mission_) {
             msg.vehicle_ids.push_back(static_cast<uint32_t>(id));
             msg.last_ping.push_back(0);
+            msg.connections.push_back(true);
         }
-
-        msg.connections = connections;
+        
         modem_connections_publisher_->publish(msg);
 
     }
