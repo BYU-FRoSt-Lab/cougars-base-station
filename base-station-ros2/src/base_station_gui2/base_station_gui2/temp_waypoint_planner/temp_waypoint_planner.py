@@ -54,6 +54,9 @@ class App:
         self.map_widget = tkintermapview.TkinterMapView(self.map_frame, width=700, height=700, corner_radius=0)
         self.map_widget.pack(fill=tkinter.BOTH, expand=True)
 
+        # Prevent the coordinates menu entry from doing anything on click
+        self.map_widget._right_click_menu_command_copy_coords = lambda coords: None
+
         # Set to Google Satellite tile server
         # IMPORTANT: Please be aware of the Terms of Service for any tile server you use, including Google's.
         # Direct tile access may be against their ToS if not used with their official APIs.
