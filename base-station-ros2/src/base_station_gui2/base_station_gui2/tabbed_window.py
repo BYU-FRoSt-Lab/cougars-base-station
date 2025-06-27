@@ -16,9 +16,11 @@ from transforms3d.euler import quat2euler
 import math
 from base_station_gui2.temp_mission_control import deploy
 from base_station_gui2.cougars_bringup.scripts import startup_call
+import tkinter
 from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
 import threading
 import subprocess
+import multiprocessing
 
 class MainWindow(QMainWindow):
     # Initializes GUI window with a ros node inside
@@ -715,23 +717,27 @@ class MainWindow(QMainWindow):
     def spec_load_waypoint_button(self, vehicle_number): 
         self.replace_confirm_reject_label(f"Loading waypoint planner for Vehicle {vehicle_number}...")
         self.recieve_console_update(f"Loading waypoint planner for Vehicle {vehicle_number}...", vehicle_number)
-        
+
         def run_waypoint_planner():
-            try:
-                import tkinter
-                root = tkinter.Tk()
-                app = WaypointPlannerApp(root)
-                root.mainloop()
+            import tkinter
+            from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+            root = tkinter.Tk()
+            app = WaypointPlannerApp(root)
+            root.mainloop()
+
+        # Use multiprocessing to avoid GUI conflicts
+        p = multiprocessing.Process(target=run_waypoint_planner)
+        p.start()
+
+        # Poll for process completion and update label
+        def check_planner_closed():
+            if not p.is_alive():
                 self.replace_confirm_reject_label("Waypoint planner closed successfully")
                 self.recieve_console_update("Waypoint planner closed successfully", vehicle_number)
-            except Exception as e:
-                err_msg = f"Waypoint planner failed: {e}"
-                print(err_msg)
-                self.replace_confirm_reject_label(err_msg)
-                self.recieve_console_update(err_msg, vehicle_number)
-        
-        # Run in a separate thread to avoid blocking the GUI
-        threading.Thread(target=run_waypoint_planner, daemon=True).start()
+            else:
+                QTimer.singleShot(500, check_planner_closed)  # check again in 0.5s
+
+        QTimer.singleShot(500, check_planner_closed)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
