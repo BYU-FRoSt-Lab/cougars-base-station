@@ -54,9 +54,6 @@ class App:
         self.map_widget = tkintermapview.TkinterMapView(self.map_frame, width=700, height=700, corner_radius=0)
         self.map_widget.pack(fill=tkinter.BOTH, expand=True)
 
-        # Prevent the coordinates menu entry from doing anything on click
-        self.map_widget._right_click_menu_command_copy_coords = lambda coords: None
-
         # Set to Google Satellite tile server
         # IMPORTANT: Please be aware of the Terms of Service for any tile server you use, including Google's.
         # Direct tile access may be against their ToS if not used with their official APIs.
@@ -366,21 +363,3 @@ class App:
             tkinter.messagebox.showinfo("Success", f"Mission saved to {os.path.basename(filepath)}")
         except Exception as e:
             tkinter.messagebox.showerror("File Save Error", f"Could not save mission YAML file: {e}")
-
-
-if __name__ == "__main__":
-    root = tkinter.Tk()
-    # Attempt to set a theme for a more modern look (optional)
-    try:
-        style = ttk.Style(root)
-        # Available themes: 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
-        # 'clam' or 'alt' are often good cross-platform choices. 'vista'/'xpnative'/'winnative' for Windows.
-        if os.name == 'nt': # Windows
-            style.theme_use('vista') 
-        else:
-            style.theme_use('clam') # A common one for Linux/Mac
-    except Exception:
-        print("ttk theme not available or failed to set. Using default.")
-        
-    app = App(root)
-    root.mainloop()

@@ -20,6 +20,10 @@ from PyQt6.QtCore import QTimer
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
 
+from nav_msgs.msg import Path #used to publish the path
+from sensor_msgs.msg import NavSatFix #used to publish the origin
+from geometry_msgs.msg import PoseStamped
+
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl
@@ -115,6 +119,9 @@ class GuiNode(Node):
             window.handle_console_log,
             10
         ) 
+
+        self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
+        self.path_pub = self.create_publisher(Path, '/map_viz_path', qos_reliable_profile)
 
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
