@@ -183,7 +183,7 @@ public:
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.coug_number = msg.src_id;
+        log_msg.vehicle_number = msg.src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
@@ -198,7 +198,7 @@ public:
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.coug_number = msg.src_id;
+        log_msg.vehicle_number = msg.src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
