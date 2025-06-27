@@ -1,5 +1,6 @@
 import sys 
 import random, time, os
+import json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
@@ -33,6 +34,7 @@ class MainWindow(QMainWindow):
     pressure_data_signal = pyqtSignal(int, object)
     battery_data_signal = pyqtSignal(int, object)
     surface_confirm_signal = pyqtSignal(object)
+    update_wifi_signal = pyqtSignal(dict)
 
     def __init__(self, ros_node, vehicle_list):
         """
@@ -272,6 +274,63 @@ class MainWindow(QMainWindow):
         self.depth_data_signal.connect(self.update_depth_data)
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
+        self.update_wifi_signal.connect(self.update_wifi_widgets)
+
+        self.get_IP_addresses()
+        print(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}") #declared in get_IP_addresses
+
+        self.ping_timer = QTimer(self)
+        self.ping_timer.timeout.connect(self.ping_vehicles_via_wifi)
+        self.ping_timer.start(3000) #try to ping the Cougs every 3 seconds 
+
+    def get_IP_addresses(self):
+        config_path = os.path.join(
+            os.path.dirname(__file__),
+            "temp_mission_control",
+            "deploy_config.json"
+        )
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        vehicles = config["vehicles"]
+        self.Vehicle_IP_addresses = []
+        self.ip_to_vehicle = {} 
+        for num in self.selected_vehicles:
+            if str(num) in vehicles:
+                ip = vehicles[str(num)]['remote_host']
+                self.Vehicle_IP_addresses.append(ip)
+                self.ip_to_vehicle[ip] = num 
+            else:
+                err_msg = f"❌ Vehicle {num} not found in config, consider adding to config.json"
+                self.recieve_console_update(err_msg, num)
+
+    def ping_vehicles_via_wifi(self):
+        def do_ping():
+            try:
+                IPs_reachable = {}
+                for ip in self.Vehicle_IP_addresses:
+                    result = subprocess.run(["ping", "-c", "1", "-W", "2", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    reachable = 1 if result.returncode == 0 else 0
+                    IPs_reachable[ip] = reachable
+                self.update_wifi_signal.emit(IPs_reachable)
+            except Exception as e:
+                print("Exception in do_ping:", e)
+        threading.Thread(target=do_ping, daemon=True).start()
+
+    def update_wifi_widgets(self, IPs_dict):
+        try:
+            for ip, reachable in IPs_dict.items():
+                vehicle_number = self.ip_to_vehicle.get(ip)
+                if vehicle_number is None:
+                    print(f"IP {ip} not found in ip_to_vehicle mapping.")
+                    continue
+                if self.feedback_dict["Wifi"][vehicle_number] != reachable:
+                    self.feedback_dict["Wifi"][vehicle_number] = reachable
+                    self.replace_general_page_icon_widget(vehicle_number, "Wifi")
+                    self.replace_specific_icon_widget(vehicle_number, "Wifi")
+                    self.modem_shut_off_service(bool(reachable), vehicle_number)
+
+        except Exception as e:
+            print("Exception in update_wifi_widgets:", e)
 
     def set_color_theme(self, color_theme, first_time=False):
         
@@ -774,17 +833,20 @@ class MainWindow(QMainWindow):
             self.recieve_console_update(f"Canceling Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
 
     #Connected to the "ModemControl" service in base_station_interfaces
-    def modem_shut_off_service(self, shutoff:bool):
+    def modem_shut_off_service(self, shutoff:bool, vehicle_id:int):
+        #shutoff: True-> shutoff modem, False-> Turn on Modem
         message = ModemControl.Request()
         message.modem_shut_off = shutoff
+        message.vehicle_id = vehicle_id
         if shutoff: self.replace_confirm_reject_label("Wifi Connected, Shutting Off Modem")
         else: self.replace_confirm_reject_label("Wifi Disconnected, Turning On Modem")
-        for i in self.selected_vehicles:
-            if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", i)
-            else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", i)
+        
+        if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", vehicle_id)
+        else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", vehicle_id)
+
         future = self.ros_node.cli3.call_async(message)
         # Add callback to handle response
-        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_number=0)) #0->for all vehicles
+        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_id=vehicle_id)) #0->for all vehicles
         return future
 
     #used by various buttons to handle services dynamically
@@ -1480,11 +1542,7 @@ class MainWindow(QMainWindow):
         self.safety_status_signal.emit(vehicle_number, safety_message)
     
     def _update_safety_status_information(self, vehicle_number, safety_message):
-        #Wifi widget, only if it changes
-        if self.feedback_dict["Wifi"][vehicle_number] != safety_message.sender_id.data:
-            self.feedback_dict["Wifi"][vehicle_number] = safety_message.sender_id.data
-            modem_off = True if self.feedback_dict["Wifi"][vehicle_number] else False
-            self.modem_shut_off_service(modem_off)
+        #NOTE: wifi is updated by pinging directly. (ping_vehicles_via_wifi)
 
         #logic is opposite, switch 0 and 1
         if safety_message.gps_status.data: gps_data = 0
@@ -1502,13 +1560,13 @@ class MainWindow(QMainWindow):
         #replace general page widgets
         self.replace_general_page_icon_widget(vehicle_number, "GPS")
         self.replace_general_page_icon_widget(vehicle_number, "DVL")
-        self.replace_general_page_icon_widget(vehicle_number, "Wifi")
+        # self.replace_general_page_icon_widget(vehicle_number, "Wifi")
         self.replace_general_page_icon_widget(vehicle_number, "IMU")
 
         #replace specific page widgets
         self.replace_specific_icon_widget(vehicle_number, "GPS")
         self.replace_specific_icon_widget(vehicle_number, "DVL")
-        self.replace_specific_icon_widget(vehicle_number, "Wifi")
+        # self.replace_specific_icon_widget(vehicle_number, "Wifi")
         self.replace_specific_icon_widget(vehicle_number, "IMU")
 
         #replace emergency status label
