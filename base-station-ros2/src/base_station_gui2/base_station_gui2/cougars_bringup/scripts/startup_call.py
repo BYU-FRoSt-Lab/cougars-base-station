@@ -12,13 +12,13 @@ class DeploymentPublisher(Node):
 
     def publish_log(self, passed_msg):
         self.publisher_.publish(passed_msg)
-        self.get_logger().info(f"Published: {passed_msg.message} to Coug#{passed_msg.coug_number}")
+        self.get_logger().info(f"Published: {passed_msg.message} to Coug#{passed_msg.vehicle_number}")
 
 def publish_console_log(msg_text, msg_num):
     global deployment_node
     msg = ConsoleLog()
     msg.message = msg_text
-    msg.coug_number = msg_num
+    msg.vehicle_number = msg_num
     deployment_node.publish_log(msg)
 
 def publish_system_control(node, sel_vehicles, start_config):

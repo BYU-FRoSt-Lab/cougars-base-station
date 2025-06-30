@@ -325,8 +325,9 @@ class MainWindow(QMainWindow):
                     continue
                 wifi_status = self.feedback_dict["Wifi"][vehicle_number]
                 if wifi_status != reachable:
+                    #TODO: why is the wifi status print statemments being weird
                     self.recieve_console_update(
-                        f"{'Ping successful for' if wifi_status == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
+                        f"{'Ping successful for' if reachable == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
                         vehicle_number
                     )
                     self.feedback_dict["Wifi"][vehicle_number] = reachable
@@ -851,7 +852,7 @@ class MainWindow(QMainWindow):
 
         future = self.ros_node.cli3.call_async(message)
         # Add callback to handle response
-        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_id=vehicle_id)) #0->for all vehicles
+        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_number=vehicle_id)) #0->for all vehicles
         return future
 
     #used by various buttons to handle services dynamically
