@@ -323,14 +323,19 @@ class MainWindow(QMainWindow):
                 if vehicle_number is None:
                     print(f"IP {ip} not found in ip_to_vehicle mapping.")
                     continue
-                if self.feedback_dict["Wifi"][vehicle_number] != reachable:
+                wifi_status = self.feedback_dict["Wifi"][vehicle_number]
+                if wifi_status != reachable:
+                    self.recieve_console_update(
+                        f"{'Ping successful for' if wifi_status == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
+                        vehicle_number
+                    )
                     self.feedback_dict["Wifi"][vehicle_number] = reachable
                     self.replace_general_page_icon_widget(vehicle_number, "Wifi")
                     self.replace_specific_icon_widget(vehicle_number, "Wifi")
                     self.modem_shut_off_service(bool(reachable), vehicle_number)
 
         except Exception as e:
-            print("Exception in update_wifi_widgets:", e)
+                print("Exception in update_wifi_widgets:", e)
 
     def set_color_theme(self, color_theme, first_time=False):
         
