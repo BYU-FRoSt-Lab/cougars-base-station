@@ -183,7 +183,7 @@ public:
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.coug_number = msg.src_id;
+        log_msg.vehicle_number = msg.src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
@@ -198,7 +198,7 @@ public:
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.coug_number = msg.src_id;
+        log_msg.vehicle_number = msg.src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
@@ -227,10 +227,7 @@ public:
         // }
 
         base_station_interfaces::msg::Connections msg;
-        msg.header.stamp = now;
         msg.connection_type = 0; // 0 for acoustic modem
-
-        msg.vehicle_ids.clear();
         for (auto id : this->vehicles_in_mission_) {
             msg.vehicle_ids.push_back(static_cast<uint32_t>(id));
             msg.last_ping.push_back(0);
