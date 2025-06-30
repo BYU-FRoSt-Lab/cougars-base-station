@@ -20,6 +20,10 @@ from PyQt6.QtCore import QTimer
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
 
+from nav_msgs.msg import Path #used to publish the path
+from sensor_msgs.msg import NavSatFix #used to publish the origin
+from geometry_msgs.msg import PoseStamped
+
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl
@@ -82,13 +86,21 @@ class GuiNode(Node):
             )
             setattr(self, f'battery_data_subscription{coug_number}', sub)
 
-            #dynamic subscriptions for the battery/data messages
+            #dynamic publishers for the battery/data messages
             pub = self.create_publisher(
                 SystemControl,
                 f'/coug{coug_number}/system/status',
                 qos_reliable_profile
             )
             setattr(self, f'coug{coug_number}_publisher_', pub)
+
+            #dynamic publishers for the map viz paths
+            pub = self.create_publisher(
+                Path,
+                f'/coug{coug_number}/map_viz_path',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_path_', pub)
 
         self.kill_subscription = self.create_subscription(
             Bool,
@@ -109,12 +121,16 @@ class GuiNode(Node):
             window.recieve_connections,  # Calls the GUI's recieve_connections method
             10)  
 
+        #subscription for the console log updates, specific to vehicles. 0 means send to all
         self.console_log_sub = self.create_subscription(
             ConsoleLog,
             'console_log',
             window.handle_console_log,
             10
         ) 
+
+        #publisher for the map viz origin 
+        self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
 
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')

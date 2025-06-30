@@ -233,7 +233,7 @@ public:
             msg.last_ping.push_back(0);
             msg.connections.push_back(true);
         }
-        
+
         modem_connections_publisher_->publish(msg);
 
     }
