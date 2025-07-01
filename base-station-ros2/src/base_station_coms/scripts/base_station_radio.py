@@ -103,25 +103,24 @@ class RFBridge(Node):
             self.tx_callback,
             10)
         
+    
+        self.timer = self.create_timer(self.ping_frequency, self.check_connections)
+                    # Thread-safe shutdown flag
+        self.running = True
+        self.ping_timestamp = {}
+        self.connections = {}
+        self.radio_addresses = {}
+        self.max_msgs_missed = 3  # Number of missed messages before considering a vehicle disconnected
+        for vehicle in self.vehicles_in_mission:
+            self.connections[vehicle] = False
+            self.ping_timestamp[vehicle] = 0
+
         try:
             self.device.open()
             self.get_logger().info(f"Opened XBee device on {self.xbee_port} at {self.xbee_baud} baud.")
                     # Register XBee data receive callback
             self.device.add_data_received_callback(self.data_receive_callback)
             self.get_logger().info("RF Bridge node started using digi-xbee library.")
-
-            self.timer = self.create_timer(self.ping_frequency, self.check_connections)
-
-
-            # Thread-safe shutdown flag
-            self.running = True
-            self.ping_timestamp = {}
-            self.connections = {}
-            self.radio_addresses = {}
-            self.max_msgs_missed = 3  # Number of missed messages before considering a vehicle disconnected
-            for vehicle in self.vehicles_in_mission:
-                self.connections[vehicle] = False
-                self.ping_timestamp[vehicle] = 0
         except Exception as e:
             self.get_logger().error(f"Failed to open XBee device: {e}")
 
@@ -189,11 +188,12 @@ class RFBridge(Node):
         msg.connection_type = 1
         self.get_logger().debug(f"Sending PING")
         ping = "PING"
+
         if len(self.radio_addresses) < len(self.vehicles_in_mission):
             try:
                 self.device.send_data_broadcast(ping)
             except Exception as e:
-                self.get_logger().error(f"Failed to send broadcast PING: {e}")
+                self.get_logger().debug(f"Failed to send broadcast PING: {e}")
         else:
             for vehicle in self.radio_addresses:
                 self.send_message(ping, self.radio_addresses[vehicle])
