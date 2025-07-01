@@ -860,12 +860,56 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, check_planner_closed)
 
     def copy_bags(self):
-        msg = "copy bags button test"
-        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
+        msg = "Starting bag sync for all vehicles..."
+        self.replace_confirm_reject_label(msg)
+        for i in self.selected_vehicles: 
+            self.recieve_console_update(msg, i)
+            threading.Thread(target=self.run_sync_bags, args=(i,), daemon=True).start()  
 
     def spec_copy_bags(self, vehicle_number):
-        msg = "spec copy bags button test"
-        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
+        msg = f"Starting bag sync for Vehicle {vehicle_number}..."
+        self.replace_confirm_reject_label(msg)
+        self.recieve_console_update(msg, vehicle_number)
+        # Run the sync operation in a separate thread to avoid blocking the GUI
+        threading.Thread(target=self.run_sync_bags, args=(vehicle_number,), daemon=True).start()  
+
+    def run_sync_bags(self, vehicle_number):
+        try:
+            # Path to the sync_bags.sh script
+            script_path = os.path.join(
+                os.path.expanduser("~"),  # Start from home directory
+                "base_station", 
+                "mission_control", 
+                "sync_bags.sh"
+            )
+
+            # Run the script with the vehicle number as argument
+            result = subprocess.run(
+                [script_path, str(vehicle_number)], 
+                capture_output=True, 
+                text=True,
+                cwd=os.path.dirname(script_path)  # Run from mission_control directory
+            )
+                            
+            if result.returncode == 0:
+                success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
+                self.replace_confirm_reject_label(success_msg)
+                self.recieve_console_update(success_msg, vehicle_number)
+                # Also show any output from the script
+                if result.stdout:
+                    self.recieve_console_update(f"Script output: {result.stdout.strip()}", vehicle_number)
+            else:
+                error_msg = f"Bag sync failed for Vehicle {vehicle_number}. Exit code: {result.returncode}"
+                self.replace_confirm_reject_label(error_msg)
+                self.recieve_console_update(error_msg, vehicle_number)
+                if result.stderr:
+                    self.recieve_console_update(f"Error: {result.stderr.strip()}", vehicle_number)
+
+
+        except Exception as e:
+            error_msg = f"Failed to run bag sync script: {str(e)}"
+            self.replace_confirm_reject_label(error_msg)
+            self.recieve_console_update(error_msg, vehicle_number)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
