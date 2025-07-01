@@ -859,6 +859,14 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(500, check_planner_closed)
 
+    def copy_bags(self):
+        msg = "copy bags button test"
+        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
+
+    def spec_copy_bags(self, vehicle_number):
+        msg = "spec copy bags button test"
+        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
+
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
         # Handler for 'Emergency Shutdown' button, with confirmation dialog.
@@ -1033,7 +1041,12 @@ class MainWindow(QMainWindow):
         #Plot Waypoints button
         self.plot_waypoints_button = QPushButton("Plot Waypoints")
         self.plot_waypoints_button.clicked.connect(self.load_waypoint_button)
-        self.plot_waypoints_button.setStyleSheet(self.normal_button_style_sheet)
+        self.plot_waypoints_button.setStyleSheet(self.normal_button_style_sheet)        
+        
+        #Copy Bags to Base Station
+        self.copy_bags_button = QPushButton("Copy Bags to Base Station")
+        self.copy_bags_button.clicked.connect(self.copy_bags)
+        self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
         self.recall_all_vehicles = QPushButton("Recall Vehicles (NS)")
@@ -1042,17 +1055,19 @@ class MainWindow(QMainWindow):
 
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(70)
+        self.general_page_C0_layout.addSpacing(45)
         self.general_page_C0_layout.addWidget(self.Load_missions_button, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(70)
+        self.general_page_C0_layout.addSpacing(45)
         self.general_page_C0_layout.addWidget(self.Start_missions_button)
-        self.general_page_C0_layout.addSpacing(70)
+        self.general_page_C0_layout.addSpacing(45)
         self.general_page_C0_layout.addWidget(self.plot_waypoints_button)
-        self.general_page_C0_layout.addSpacing(70)
+        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addWidget(self.copy_bags_button)
+        self.general_page_C0_layout.addSpacing(45)
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
-        self.general_page_C0_layout.addSpacing(70)
+        self.general_page_C0_layout.addSpacing(45)
         
         # Add remaining buttons (red recall vehicles at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -1342,8 +1357,9 @@ class MainWindow(QMainWindow):
         self.create_vehicle_button(vehicle_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(vehicle_number))
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(vehicle_number))
-        #plot waypoint mission (normal button)
-        # self.create_vehicle_button(vehicle_number, "plot_waypoint", "Plot Waypoints", lambda: self.load_waypoint_button(vehicle_number))
+        #start mission (normal button)
+        self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
+
 
         #emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
@@ -1357,8 +1373,8 @@ class MainWindow(QMainWindow):
         temp_layout1.addWidget(getattr(self, f"load_mission_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout1.addWidget(getattr(self, f"start_mission_vehicle{vehicle_number}_button"))
-        # temp_layout1.addSpacing(temp_spacing)
-        # temp_layout1.addWidget(getattr(self, f"plot_waypoint_vehicle{vehicle_number}_button"))
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addWidget(getattr(self, f"copy_bag_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
