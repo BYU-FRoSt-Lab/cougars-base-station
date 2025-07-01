@@ -21,7 +21,7 @@
     "3": {
       "name": "Coug3",
       "remote_user": "frostlab",
-      "remote_host": "192.168.1.103",
+      "remote_host": "192.168.2.103",
       "remote_path": "/home/frostlab/cougars/config/deploy_tmp/",
       "mission_file": "coug3_mission.json",
       "param_file": "coug3_params.yaml",
