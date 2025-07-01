@@ -9,6 +9,7 @@
 #include "frost_interfaces/msg/system_status.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
+#include "base_station_interfaces/srv/modem_control.hpp"
 
 #include "base_station_coms/coms_protocol.hpp"
 #include "base_station_coms/seatrac_enums.hpp"
@@ -80,7 +81,13 @@ public:
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
         );
 
-        // subscruber to the status topic published by the modem and radio nodes
+        // Handle the request to toggle modem and radio status requests based on wifi connection
+        wifi_connection_service_ = this->create_service<base_station_interfaces::srv::ModemControl>(
+            "modem_shut_off_service",
+            std::bind(&ComsNode::wifi_connection_callback, this, _1, _2)
+        );
+
+        // subscriber to the status topic published by the modem and radio nodes
         status_subscriber_ = this->create_subscription<base_station_interfaces::msg::Status>(
             "status", 10,
             std::bind(&ComsNode::publish_status_callback, this, _1)
@@ -124,6 +131,7 @@ public:
         for(int64_t i: vehicles_in_mission_){
             modem_connection[i] = true;
             radio_connection[i] = false;
+            wifi_connection[i] = false;
         }
 
 
@@ -162,6 +170,10 @@ public:
         if (vehicle_id_index>=vehicles_in_mission_.size())
             vehicle_id_index = 0;
 
+        if (wifi_connection[vehicles_in_mission_[vehicle_id_index]]) {
+            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Vehicle %i is connected via wifi, skipping status request.", vehicles_in_mission_[vehicle_id_index]);
+            return;
+        }
         auto request = std::make_shared<base_station_interfaces::srv::BeaconId::Request>();
         int beacon_id = vehicles_in_mission_[vehicle_id_index];
         request->beacon_id = beacon_id;
@@ -287,6 +299,18 @@ public:
         }
     }
 
+    void wifi_connection_callback(const std::shared_ptr<base_station_interfaces::srv::ModemControl::Request> request,
+                                    std::shared_ptr<base_station_interfaces::srv::ModemControl::Response> response) {
+        // Toggle modem and radio connections based on the request
+        this->wifi_connection[request->vehicle_id] = request->modem_shut_off;
+        if (this->wifi_connection[request->vehicle_id]) {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are ON", request->vehicle_id);
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are OFF", request->vehicle_id);
+        }
+        response->success = true;
+    }
+
     // Callback for the status subscriber, publishes the status of a specific vehicle in mission
     // If the vehicle is in the mission, it publishes the status to the appropriate topics
     void publish_status_callback(const std::shared_ptr<base_station_interfaces::msg::Status> msg) {
@@ -326,6 +350,7 @@ private:
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
+    rclcpp::Service<base_station_interfaces::srv::ModemControl>::SharedPtr wifi_connection_service_;
 
     rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
     std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
@@ -336,6 +361,7 @@ private:
 
     std::unordered_map<int,bool> radio_connection;
     std::unordered_map<int,bool> modem_connection;
+    std::unordered_map<int,bool> wifi_connection;
 
     std::vector<int64_t> vehicles_in_mission_;
 
