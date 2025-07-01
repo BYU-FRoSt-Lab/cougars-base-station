@@ -621,6 +621,47 @@ class MainWindow(QMainWindow):
                 # Scroll the vertical scrollbar to the maximum (bottom)
                 scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
+    def clear_console(self, vehicle_number):
+
+        if vehicle_number == 0: 
+            msg = f"Clear Console Called for All Vehicles"
+            vehicle_numbers = self.selected_vehicles
+            window_title = f"Clear All Consoles?"
+            confirm_message = f"Are you sure you want to clear all the consoles? This can't be undone."
+        else: 
+            msg = f"Clear Console Called for Vehicle{vehicle_number}"
+            vehicle_numbers = [vehicle_number]
+            window_title = f"Clear Vehicle{vehicle_number} Console?"
+            confirm_message = f"Are you sure you want to clear the console for vehicle{vehicle_number}? This can't be undone."
+
+        self.replace_confirm_reject_label(msg)
+
+        # Confirm with the user
+        dlg = ConfirmationDialog(
+            window_title,
+            confirm_message,
+            self,
+            background_color=self.background_color,
+            text_color=self.text_color,
+            pop_up_window_style=self.pop_up_window_style
+        )
+
+        if dlg.exec(): 
+            
+            for vehicle in vehicle_numbers:
+                try:
+                    label = self.findChild(QLabel, f"Console_messages{vehicle}")
+                    if label:
+                        label.setText("")
+                        label.setStyleSheet(f"color: {self.text_color};")
+                        # Scroll to the bottom of the scroll area only if user was already at the bottom
+                except Exception as e:
+                    print(f"Exception in clear_console for Vehicle {vehicle}: {e}")
+        
+        else: 
+            for vehicle in vehicle_numbers:
+                self.recieve_console_update("Clear Console Log Command Canceled", vehicle)
+            
     def replace_confirm_reject_label(self, confirm_reject_text):
         for label in self.confirm_reject_labels.values():
             label.setText(confirm_reject_text)
@@ -829,7 +870,7 @@ class MainWindow(QMainWindow):
             threading.Thread(target=deploy_in_thread, args=(start_config,), daemon=True).start()
         else:
             err_msg = f"Starting Vehicle{vehicle_number} Mission command was cancelled."
-            for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
+            self.recieve_console_update(err_msg, vehicle_number)
             self.replace_confirm_reject_label(err_msg)
 
     def load_waypoint_button(self): 
@@ -916,7 +957,7 @@ class MainWindow(QMainWindow):
         # Handler for 'Emergency Shutdown' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = vehicle_number
-        dlg = AbortMissionsDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        dlg = ConfirmationDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Shutdown...")
             self.recieve_console_update(f"Starting Emergency Shutdown for Vehicle {vehicle_number}", vehicle_number)
@@ -933,7 +974,7 @@ class MainWindow(QMainWindow):
         # Handler for 'Emergency Surface' button, with confirmation dialog.
         message = BeaconId.Request()
         message.beacon_id = vehicle_number
-        dlg = AbortMissionsDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        dlg = ConfirmationDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Surface...")
             self.recieve_console_update(f"Starting Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
@@ -992,7 +1033,7 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def recall_vehicles(self):
         # Handler for 'Recall Vehicles' button on the general tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Vehicles?", "Are you sure that you want recall the Vehicles? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        dlg = ConfirmationDialog("Recall Vehicles?", "Are you sure that you want recall the Vehicles? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Recalling the Vehicles...")
             for i in self.selected_vehicles: self.recieve_console_update("Recalling the Vehicles...", i)
@@ -1003,7 +1044,7 @@ class MainWindow(QMainWindow):
     #(NS) -> not yet connected to a signal
     def recall_spec_vehicle(self, vehicle_number):
         # Handler for 'Recall Vehicle' button on a specific Vehicle tab, with confirmation dialog.
-        dlg = AbortMissionsDialog("Recall Vehicle?", "Are you sure that you want to recall this Vehicle?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        dlg = ConfirmationDialog("Recall Vehicle?", "Are you sure that you want to recall this Vehicle?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label(f"Recalling Vehicle {vehicle_number}...")
             self.recieve_console_update(f"Recalling Vehicle {vehicle_number}...", vehicle_number)
@@ -1097,21 +1138,28 @@ class MainWindow(QMainWindow):
         self.recall_all_vehicles.clicked.connect(self.recall_vehicles)
         self.recall_all_vehicles.setStyleSheet(self.danger_button_style_sheet)
 
+        #Recall all the vehicles button
+        self.clear_all_consoles = QPushButton("Clear All Consoles")
+        self.clear_all_consoles.clicked.connect(lambda: self.clear_console(0))
+        self.clear_all_consoles.setStyleSheet(self.danger_button_style_sheet)
+
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
         self.general_page_C0_layout.addWidget(self.Load_missions_button, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
         self.general_page_C0_layout.addWidget(self.Start_missions_button)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
         self.general_page_C0_layout.addWidget(self.plot_waypoints_button)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
         self.general_page_C0_layout.addWidget(self.copy_bags_button)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addWidget(self.clear_all_consoles)
+        self.general_page_C0_layout.addSpacing(30)
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
-        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addSpacing(30)
         
         # Add remaining buttons (red recall vehicles at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -1411,8 +1459,10 @@ class MainWindow(QMainWindow):
         self.create_vehicle_button(vehicle_number, "recall", f"Recall Vehicle {vehicle_number} (NS)", lambda: self.recall_spec_vehicle(vehicle_number), danger=True)
         #emergency shutdown (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(vehicle_number), danger=True)
+        #clear console (danger button)
+        self.create_vehicle_button(vehicle_number, "clear_console", "Clear Console", lambda: self.clear_console(vehicle_number), danger=True)
 
-        temp_spacing = 50
+        temp_spacing = 20
         # Add buttons to the first and second sub-columns with spacing
         temp_layout1.addWidget(getattr(self, f"load_mission_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
@@ -1425,6 +1475,8 @@ class MainWindow(QMainWindow):
         temp_layout2.addWidget(getattr(self, f"recall_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_shutdown_vehicle{vehicle_number}_button"))
+        temp_layout2.addSpacing(temp_spacing)
+        temp_layout2.addWidget(getattr(self, f"clear_console_vehicle{vehicle_number}_button"))
 
         # Add the two button columns to the main horizontal layout
         temp_layout.addWidget(temp_sub_container1)
@@ -2117,7 +2169,7 @@ class CustomSplash(QWidget):
     def showMessage(self, text):
         self.message_label.setText(text)
 
-class AbortMissionsDialog(QDialog):
+class ConfirmationDialog(QDialog):
     """
     Custom dialog for confirming or aborting mission-related actions (e.g., shutdown, recall).
     Presents a message and Accept/Decline buttons.
@@ -2271,7 +2323,7 @@ class LoadMissionsDialog(QDialog):
             return
 
         # Confirm with the user
-        dlg = AbortMissionsDialog(
+        dlg = ConfirmationDialog(
             "Apply to All?",
             "Are you sure you want to apply this file to all vehicles? This will overwrite any other files you have already selected.",
             self,
