@@ -137,14 +137,27 @@ class GuiNode(Node):
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
-    def publish_text(self, text):
-        """
-        Publishes a String message to the 'topic' topic and logs it.
-        """
-        msg = String()
-        msg.data = text
-        self.publisher_.publish(msg)
-        self.get_logger().info(f'Publishing from GUI: "{text}"')
+    def publish_origin(self, origin_msg):
+    # origin_msg: tuple(float, float)
+        msg = NavSatFix()
+        msg.latitude = origin_msg[0]
+        msg.longitude = origin_msg[1]
+        msg.header.frame_id = 'local_xy_origin'
+        self.origin_pub.publish(msg)
+        self.get_logger().info(f'Publishing from GUI: "{msg}"')
+
+    def publish_path(self, path_msg, vehicle_number):
+    # path_msg: list[tuple(float, float)], vehicle_number: int
+        msg = Path()
+        for point_tuple in path_msg:
+            pose_temp = PoseStamped()
+            msg.header.frame_id = 'local_xy_origin'
+            pose_temp.pose.position.x = point_tuple[0]
+            pose_temp.pose.position.y = point_tuple[1]
+            msg.poses.append(pose_temp)
+
+        getattr(self, f'coug{vehicle_number}_path_').publish(msg)
+        self.get_logger().info(f'Publishing from GUI: "{msg}"')
 
 def ros_spin_thread(executor):
     """
