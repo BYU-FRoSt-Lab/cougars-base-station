@@ -1,5 +1,6 @@
 import sys 
 import random, time, os
+import yaml
 import json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
@@ -325,8 +326,9 @@ class MainWindow(QMainWindow):
                     continue
                 wifi_status = self.feedback_dict["Wifi"][vehicle_number]
                 if wifi_status != reachable:
+                    #TODO: why is the wifi status print statemments being weird
                     self.recieve_console_update(
-                        f"{'Ping successful for' if wifi_status == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
+                        f"{'Ping successful for' if reachable == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
                         vehicle_number
                     )
                     self.feedback_dict["Wifi"][vehicle_number] = reachable
@@ -678,6 +680,59 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread(selected_files):
             try:
+                origins = []
+                spec_paths_dict = {}
+
+                # for file in selected_files:
+                for idx, vehicle_number in enumerate(self.selected_vehicles):
+                    file = selected_files[idx]
+
+                    spec_paths_list = []
+
+                    # load the yaml file
+                    with open(file, 'r') as f:
+                        mission_data = yaml.safe_load(f)
+
+                    # get the origin long and lat
+                    # For your YAML, it's under 'origin_lla'
+                    origin_lla = mission_data.get('origin_lla')
+                    if not origin_lla:
+                        raise Exception(f"File {file} missing 'origin_lla' section.")
+
+                    origin_lat = origin_lla.get('latitude')
+                    origin_long = origin_lla.get('longitude')
+
+                    if origin_lat is None or origin_long is None:
+                        raise Exception(f"File {file} missing latitude or longitude in 'origin_lla'.")
+
+                    # add it to origins list
+                    origins.append((origin_lat, origin_long))
+
+                    waypoints = mission_data.get('waypoints', [])
+                    # check that each file has waypoints
+                    if not waypoints:
+                        raise Exception(f"File {file} doesn't have waypoints.")
+                        
+                    for wp in waypoints:
+                        x = wp['position_enu']['x']
+                        y = wp['position_enu']['y']
+                        spec_paths_list.append((x, y))
+
+                    spec_paths_dict[vehicle_number] = spec_paths_list
+
+                # see if they are all the same
+                first_origin = origins[0]
+                if not all(origin == first_origin for origin in origins):
+                    # raise an exception if it is not the same
+                    raise Exception("Not all mission files have the same origin (latitude, longitude).")
+
+                # publish origin message
+                self.ros_node.publish_origin((origin_lat, origin_long))
+
+                # publish waypoint paths for each vehicle
+                for num, path_msg in spec_paths_dict.items():
+                    self.ros_node.publish_path(path_msg, num)
+                
                 deploy.main(self.selected_vehicles, selected_files)
                 self.replace_confirm_reject_label("Loading Mission Command Complete")
 
@@ -685,8 +740,7 @@ class MainWindow(QMainWindow):
                 err_msg = f"Mission loading failed: {e}"
                 print(err_msg)
                 self.replace_confirm_reject_label(err_msg)
-                for i in self.selected_vehicles:
-                    self.recieve_console_update(err_msg, i)
+                for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
 
         dlg = LoadMissionsDialog(parent=self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_vehicles=self.selected_vehicles)
         if dlg.exec():
@@ -778,9 +832,10 @@ class MainWindow(QMainWindow):
             for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
             self.replace_confirm_reject_label(err_msg)
 
-    def spec_load_waypoint_button(self, vehicle_number): 
-        self.replace_confirm_reject_label(f"Loading waypoint planner for Vehicle {vehicle_number}...")
-        self.recieve_console_update(f"Loading waypoint planner for Vehicle {vehicle_number}...", vehicle_number)
+    def load_waypoint_button(self): 
+        msg = f"Loading waypoint planner on general page..."
+        self.replace_confirm_reject_label(msg)
+        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
         def run_waypoint_planner():
             import tkinter
@@ -796,12 +851,21 @@ class MainWindow(QMainWindow):
         # Poll for process completion and update label
         def check_planner_closed():
             if not p.is_alive():
-                self.replace_confirm_reject_label("Waypoint planner closed successfully")
-                self.recieve_console_update("Waypoint planner closed successfully", vehicle_number)
+                msg = "Waypoint planner closed successfully"
+                self.replace_confirm_reject_label(msg)
+                for i in self.selected_vehicles: self.recieve_console_update(msg, i)
             else:
                 QTimer.singleShot(500, check_planner_closed)  # check again in 0.5s
 
         QTimer.singleShot(500, check_planner_closed)
+
+    def copy_bags(self):
+        msg = "copy bags button test"
+        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
+
+    def spec_copy_bags(self, vehicle_number):
+        msg = "spec copy bags button test"
+        for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
@@ -851,7 +915,7 @@ class MainWindow(QMainWindow):
 
         future = self.ros_node.cli3.call_async(message)
         # Add callback to handle response
-        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_id=vehicle_id)) #0->for all vehicles
+        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_number=vehicle_id)) #0->for all vehicles
         return future
 
     #used by various buttons to handle services dynamically
@@ -974,6 +1038,16 @@ class MainWindow(QMainWindow):
         self.Start_missions_button.clicked.connect(self.start_missions_button)
         self.Start_missions_button.setStyleSheet(self.normal_button_style_sheet)
 
+        #Plot Waypoints button
+        self.plot_waypoints_button = QPushButton("Plot Waypoints")
+        self.plot_waypoints_button.clicked.connect(self.load_waypoint_button)
+        self.plot_waypoints_button.setStyleSheet(self.normal_button_style_sheet)        
+        
+        #Copy Bags to Base Station
+        self.copy_bags_button = QPushButton("Copy Bags to Base Station")
+        self.copy_bags_button.clicked.connect(self.copy_bags)
+        self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
+
         #Recall all the vehicles button
         self.recall_all_vehicles = QPushButton("Recall Vehicles (NS)")
         self.recall_all_vehicles.clicked.connect(self.recall_vehicles)
@@ -981,15 +1055,19 @@ class MainWindow(QMainWindow):
 
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addSpacing(45)
         self.general_page_C0_layout.addWidget(self.Load_missions_button, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addSpacing(45)
         self.general_page_C0_layout.addWidget(self.Start_missions_button)
-        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addWidget(self.plot_waypoints_button)
+        self.general_page_C0_layout.addSpacing(45)
+        self.general_page_C0_layout.addWidget(self.copy_bags_button)
+        self.general_page_C0_layout.addSpacing(45)
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
-        self.general_page_C0_layout.addSpacing(100)
+        self.general_page_C0_layout.addSpacing(45)
         
         # Add remaining buttons (red recall vehicles at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -1279,8 +1357,9 @@ class MainWindow(QMainWindow):
         self.create_vehicle_button(vehicle_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(vehicle_number))
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(vehicle_number))
-        #plot waypoint mission (normal button)
-        self.create_vehicle_button(vehicle_number, "plot_waypoint", "Plot Waypoints", lambda: self.spec_load_waypoint_button(vehicle_number))
+        #start mission (normal button)
+        self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
+
 
         #emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
@@ -1295,7 +1374,7 @@ class MainWindow(QMainWindow):
         temp_layout1.addSpacing(temp_spacing)
         temp_layout1.addWidget(getattr(self, f"start_mission_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
-        temp_layout1.addWidget(getattr(self, f"plot_waypoint_vehicle{vehicle_number}_button"))
+        temp_layout1.addWidget(getattr(self, f"copy_bag_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
