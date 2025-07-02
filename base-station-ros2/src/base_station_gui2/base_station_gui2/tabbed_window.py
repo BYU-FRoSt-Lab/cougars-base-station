@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
 
         self.ping_timer = QTimer(self)
         self.ping_timer.timeout.connect(self.ping_vehicles_via_wifi)
-        self.ping_timer.start(3000) #try to ping the Cougs every 3 seconds 
+        self.ping_timer.start(3000) #try to ping the vehicles every 3 seconds 
 
     def get_IP_addresses(self):
         config_path = os.path.join(
@@ -914,6 +914,11 @@ class MainWindow(QMainWindow):
         # Run the sync operation in a separate thread to avoid blocking the GUI
         threading.Thread(target=self.run_sync_bags, args=(vehicle_number,), daemon=True).start()  
 
+    def run_calibrate_script(self, vehicle_number):
+        if not vehicle_number: 
+            for i in self.selected_vehicles: self.recieve_console_update("Syncing all the vehicles...", i)
+        else: self.recieve_console_update(f"Syncing vehicle{vehicle_number}", vehicle_number)
+
     def run_sync_bags(self, vehicle_number):
         try:
             # Path to the sync_bags.sh script
@@ -1133,15 +1138,20 @@ class MainWindow(QMainWindow):
         self.copy_bags_button.clicked.connect(self.copy_bags)
         self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
 
+        #Syncronize All Vehicles 
+        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles")
+        self.sync_all_vehicles_button.clicked.connect(lambda: self.run_calibrate_script(0))
+        self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
+
+        #Recall all the vehicles button
+        # self.clear_all_consoles = QPushButton("Clear All Consoles")
+        # self.clear_all_consoles.clicked.connect(lambda: self.clear_console(0))
+        # self.clear_all_consoles.setStyleSheet(self.danger_button_style_sheet)
+
         #Recall all the vehicles button
         self.recall_all_vehicles = QPushButton("Recall Vehicles (NS)")
         self.recall_all_vehicles.clicked.connect(self.recall_vehicles)
         self.recall_all_vehicles.setStyleSheet(self.danger_button_style_sheet)
-
-        #Recall all the vehicles button
-        self.clear_all_consoles = QPushButton("Clear All Consoles")
-        self.clear_all_consoles.clicked.connect(lambda: self.clear_console(0))
-        self.clear_all_consoles.setStyleSheet(self.danger_button_style_sheet)
 
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
@@ -1154,8 +1164,10 @@ class MainWindow(QMainWindow):
         self.general_page_C0_layout.addSpacing(30)
         self.general_page_C0_layout.addWidget(self.copy_bags_button)
         self.general_page_C0_layout.addSpacing(30)
-        self.general_page_C0_layout.addWidget(self.clear_all_consoles)
+        self.general_page_C0_layout.addWidget(self.sync_all_vehicles_button)
         self.general_page_C0_layout.addSpacing(30)
+        # self.general_page_C0_layout.addWidget(self.clear_all_consoles)
+        # self.general_page_C0_layout.addSpacing(30)
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
@@ -1451,6 +1463,8 @@ class MainWindow(QMainWindow):
         self.create_vehicle_button(vehicle_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(vehicle_number))
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
+        #sync vehicle (normal button)
+        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle", lambda: self.run_calibrate_script(vehicle_number))
 
 
         #emergency surface (danger button)
@@ -1469,6 +1483,8 @@ class MainWindow(QMainWindow):
         temp_layout1.addWidget(getattr(self, f"start_mission_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout1.addWidget(getattr(self, f"copy_bag_vehicle{vehicle_number}_button"))
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addWidget(getattr(self, f"sync_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
