@@ -749,17 +749,17 @@ class MainWindow(QMainWindow):
                     # add it to origins list
                     origins.append((origin_lat, origin_long))
 
-                    waypoints = mission_data.get('waypoints', [])
+                    # waypoints = mission_data.get('waypoints', [])
                     # check that each file has waypoints
-                    if not waypoints:
-                        raise Exception(f"File {file} doesn't have waypoints.")
+                    # if not waypoints:
+                    #     raise Exception(f"File {file} doesn't have waypoints.")
                         
-                    for wp in waypoints:
-                        x = wp['position_enu']['x']
-                        y = wp['position_enu']['y']
-                        spec_paths_list.append((x, y))
+                    # for wp in waypoints:
+                    #     x = wp['position_enu']['x']
+                    #     y = wp['position_enu']['y']
+                    #     spec_paths_list.append((x, y))
 
-                    spec_paths_dict[vehicle_number] = spec_paths_list
+                    # spec_paths_dict[vehicle_number] = spec_paths_list
 
                 # see if they are all the same
                 first_origin = origins[0]
@@ -1139,7 +1139,7 @@ class MainWindow(QMainWindow):
         self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Syncronize All Vehicles 
-        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles")
+        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles (NS)")
         self.sync_all_vehicles_button.clicked.connect(lambda: self.run_calibrate_script(0))
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
@@ -1464,7 +1464,7 @@ class MainWindow(QMainWindow):
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
         #sync vehicle (normal button)
-        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle", lambda: self.run_calibrate_script(vehicle_number))
+        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle (NS)", lambda: self.run_calibrate_script(vehicle_number))
 
 
         #emergency surface (danger button)
