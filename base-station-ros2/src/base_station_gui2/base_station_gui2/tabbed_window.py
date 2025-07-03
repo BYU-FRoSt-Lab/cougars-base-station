@@ -735,44 +735,59 @@ class MainWindow(QMainWindow):
                         mission_data = yaml.safe_load(f)
 
                     # get the origin long and lat
-                    # For your YAML, it's under 'origin_lla'
+                    # For the waypoint YAML, it's under 'origin_lla'
                     origin_lla = mission_data.get('origin_lla')
                     if not origin_lla:
-                        raise Exception(f"File {file} missing 'origin_lla' section.")
+                        err_msg = f"Warning: ⚠️ File {file} missing 'origin_lla' section."
+                        self.recieve_console_update(err_msg, vehicle_number)
+                        self.replace_confirm_reject_label(err_msg)
+                    else:
+                        origin_lat = origin_lla.get('latitude')
+                        origin_long = origin_lla.get('longitude')
 
-                    origin_lat = origin_lla.get('latitude')
-                    origin_long = origin_lla.get('longitude')
+                        if origin_lat is None or origin_long is None:
+                            err_msg = f"Warning: ⚠️ File {file} missing latitude or longitude in 'origin_lla'."
+                            self.recieve_console_update(err_msg, vehicle_number)
+                            self.replace_confirm_reject_label(err_msg)
 
-                    if origin_lat is None or origin_long is None:
-                        raise Exception(f"File {file} missing latitude or longitude in 'origin_lla'.")
+                        else:
+                            # add it to origins list
+                            origins.append((origin_lat, origin_long))
 
-                    # add it to origins list
-                    origins.append((origin_lat, origin_long))
-
-                    # waypoints = mission_data.get('waypoints', [])
+                    waypoints = mission_data.get('waypoints', [])
                     # check that each file has waypoints
-                    # if not waypoints:
-                    #     raise Exception(f"File {file} doesn't have waypoints.")
-                        
-                    # for wp in waypoints:
-                    #     x = wp['position_enu']['x']
-                    #     y = wp['position_enu']['y']
-                    #     spec_paths_list.append((x, y))
+                    if not waypoints:
+                        err_msg = f"Warning: ⚠️ File {file} doesn't have waypoints."
+                        self.recieve_console_update(err_msg, vehicle_number)
+                        self.replace_confirm_reject_label(err_msg)
+                    else:
+                        for wp in waypoints:
+                            x = wp['position_enu']['x']
+                            y = wp['position_enu']['y']
+                            spec_paths_list.append((x, y))
 
-                    # spec_paths_dict[vehicle_number] = spec_paths_list
+                        spec_paths_dict[vehicle_number] = spec_paths_list
 
                 # see if they are all the same
-                first_origin = origins[0]
-                if not all(origin == first_origin for origin in origins):
-                    # raise an exception if it is not the same
-                    raise Exception("Not all mission files have the same origin (latitude, longitude).")
-
-                # publish origin message
-                self.ros_node.publish_origin((origin_lat, origin_long))
+                if origins: 
+                    first_origin = origins[0]
+                    if not all(origin == first_origin for origin in origins):
+                        # raise an exception if it is not the same
+                        err_msg = f"Warning: ⚠️ Not all mission files have the same origin (latitude, longitude). Not publishing map viz origin data."
+                        for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
+                        self.replace_confirm_reject_label(err_msg)
+                    else:
+                        # publish origin message
+                        self.ros_node.publish_origin((origin_lat, origin_long))
 
                 # publish waypoint paths for each vehicle
-                for num, path_msg in spec_paths_dict.items():
-                    self.ros_node.publish_path(path_msg, num)
+                if spec_paths_dict:
+                    for num, path_msg in spec_paths_dict.items():
+                        self.ros_node.publish_path(path_msg, num)
+                else:
+                    err_msg = f"Warning: ⚠️ No paths found in files. Not publishing map viz path data."
+                    for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
+                    self.replace_confirm_reject_label(err_msg)
                 
                 deploy.main(self.selected_vehicles, selected_files)
                 self.replace_confirm_reject_label("Loading Mission Command Complete")
@@ -2092,7 +2107,7 @@ def OpenWindow(ros_node, borders=False):
     pixmap.invertPixels()
     pixmap = QPixmap.fromImage(pixmap)
     if pixmap.isNull():
-        print(f"Warning: Could not load splash image '{img_path}'. Using solid color instead.")
+        print(f"Warning: ⚠️ Could not load splash image '{img_path}'. Using solid color instead.")
         pixmap = QPixmap(window_width, window_height)
         pixmap.fill(QColor(("#0F1C37")))
     else:
