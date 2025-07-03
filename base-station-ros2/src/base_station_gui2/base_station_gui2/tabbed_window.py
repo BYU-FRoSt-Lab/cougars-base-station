@@ -1,3 +1,4 @@
+# Created by Seth Ricks, July 2025
 import sys 
 import random, time, os
 import yaml
@@ -17,6 +18,7 @@ from functools import partial
 from transforms3d.euler import quat2euler
 import math
 from base_station_gui2.temp_mission_control import deploy
+from base_station_gui2.vehicles_calibrate import calibrate
 from base_station_gui2.cougars_bringup.scripts import startup_call
 import tkinter
 from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
@@ -930,10 +932,14 @@ class MainWindow(QMainWindow):
         threading.Thread(target=self.run_sync_bags, args=(vehicle_number,), daemon=True).start()  
 
     def run_calibrate_script(self, vehicle_number):
-        if not vehicle_number: 
-            for i in self.selected_vehicles: self.recieve_console_update("Syncing all the vehicles...", i)
-        else: self.recieve_console_update(f"Syncing vehicle{vehicle_number}", vehicle_number)
+        print("inside of run_calibrate_script")
+        threading.Thread(target=self.run_calibrate_script_threaded, args=(vehicle_number,), daemon=True).start()
 
+    def run_calibrate_script_threaded(self, vehicle_number):
+        print("inside of run_calibrate_script_threaded")
+        calibrate.main()
+
+    #used by copy bags
     def run_sync_bags(self, vehicle_number):
         try:
             # Path to the sync_bags.sh script
@@ -1154,7 +1160,7 @@ class MainWindow(QMainWindow):
         self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Syncronize All Vehicles 
-        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles (NS)")
+        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles (BUGGY)")
         self.sync_all_vehicles_button.clicked.connect(lambda: self.run_calibrate_script(0))
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
@@ -1479,7 +1485,7 @@ class MainWindow(QMainWindow):
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
         #sync vehicle (normal button)
-        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle (NS)", lambda: self.run_calibrate_script(vehicle_number))
+        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle (BUGGY)", lambda: self.run_calibrate_script(vehicle_number))
 
 
         #emergency surface (danger button)
