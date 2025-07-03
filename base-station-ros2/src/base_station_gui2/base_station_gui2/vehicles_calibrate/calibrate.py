@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import yaml
+import threading
 from base_station_interfaces.msg import ConsoleLog
 import rclpy
 from rclpy.node import Node
@@ -52,8 +53,64 @@ def run_service_call(service_name, srv_type, args):
         ros_node.publish_console_log(f"[ERROR] Service call to {service_name} timed out.", 0)
 
 def run_script(script_path, *args):
-    subprocess.run(['bash', script_path, *args])
-
+    # Use Popen for real-time output with timeout
+    process = subprocess.Popen(
+        ['bash', script_path, *args], 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        universal_newlines=True
+    )
+    
+    # ANSI color code pattern
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    
+    def read_output():
+        try:
+            # Read output line by line as it comes
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    # Skip curl progress lines
+                    if any(skip_text in line for skip_text in [
+                        '% Total', '% Received', '% Xferd', 'Dload', 'Upload', 
+                        '--:--:--', 'Current', 'Speed', 'Time'
+                    ]):
+                        continue  # Skip curl progress output
+                    
+                    print(line)
+                    clean_line = ansi_escape.sub('', line)
+                    ros_node.publish_console_log(clean_line, 0)
+        except:
+            pass  # Process was terminated
+    
+    # Start reading in a separate thread
+    output_thread = threading.Thread(target=read_output, daemon=True)
+    output_thread.start()
+    
+    try:
+        # Wait for process to complete with timeout
+        process.wait(timeout=10)  # 10 seconds timeout to try running the script
+        
+    except subprocess.TimeoutExpired:
+        print("Script timed out, killing process...")
+        process.kill()
+        process.wait()
+        error_msg = f"Script {script_path} timed out after 10 seconds"
+        print(error_msg)
+        ros_node.publish_console_log(error_msg, 0)
+        return
+    
+    # Wait for output thread to finish (with a short timeout)
+    output_thread.join(timeout=1)
+    
+    # Check return code
+    if process.returncode != 0:
+        error_msg = f"Script {script_path} failed with return code {process.returncode}"
+        print(error_msg)
+        ros_node.publish_console_log(error_msg, 0)
+             
 def get_ros_param():
     full_node = f"/{NAMESPACE}/{NODE_NAME}".replace("//", "/")
     try:
@@ -93,7 +150,7 @@ def update_yaml_param(file_path, param_name, value, node_name, namespace):
 # ----------------------------
 # MAIN SCRIPT LOGIC
 # ----------------------------
-def main(passed_ros_node):
+def main(passed_ros_node, vehicle_numbers):
     global ros_node 
     ros_node = passed_ros_node
 
@@ -120,6 +177,7 @@ def main(passed_ros_node):
     param_value = get_ros_param()
     if param_value:
         update_yaml_param(VEHICLE_PARAMS_PATH, ROS_PARAM_NAME, param_value, NODE_NAME, NAMESPACE)
+    ros_node.publish_console_log(f"Calibrate.py finished", 0)
 
 if __name__ == "__main__":
     main()

@@ -280,7 +280,7 @@ class MainWindow(QMainWindow):
         self.update_wifi_signal.connect(self.update_wifi_widgets)
 
         self.get_IP_addresses()
-        print(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}") #declared in get_IP_addresses
+        self.recieve_console_update(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}", 0) #declared in get_IP_addresses
 
         self.ping_timer = QTimer(self)
         self.ping_timer.timeout.connect(self.ping_vehicles_via_wifi)
@@ -937,7 +937,9 @@ class MainWindow(QMainWindow):
 
     def run_calibrate_script_threaded(self, vehicle_number):
         print("inside of run_calibrate_script_threaded")
-        calibrate.main(self.ros_node)
+        if not vehicle_number: vehicles = self.selected_vehicles
+        else: vehicles = [vehicle_number]
+        calibrate.main(self.ros_node, vehicles)
 
     #used by copy bags
     def run_sync_bags(self, vehicle_number):
