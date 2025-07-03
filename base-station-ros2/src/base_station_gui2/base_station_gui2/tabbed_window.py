@@ -791,7 +791,7 @@ class MainWindow(QMainWindow):
                     for i in self.selected_vehicles: self.recieve_console_update(err_msg, i)
                     self.replace_confirm_reject_label(err_msg)
                 
-                deploy.main(self.selected_vehicles, selected_files)
+                deploy.main(self.ros_node, self.selected_vehicles, selected_files)
                 self.replace_confirm_reject_label("Loading Mission Command Complete")
 
             except Exception as e:
@@ -845,7 +845,7 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread(selected_file):
             try:
-                deploy.main([vehicle_number], [selected_file])
+                deploy.main(self.ros_node, [vehicle_number], [selected_file])
                 self.replace_confirm_reject_label(f"Loading Vehicle{vehicle_number} Mission Command Complete")
 
             except Exception as e:
@@ -937,7 +937,7 @@ class MainWindow(QMainWindow):
 
     def run_calibrate_script_threaded(self, vehicle_number):
         print("inside of run_calibrate_script_threaded")
-        calibrate.main()
+        calibrate.main(self.ros_node)
 
     #used by copy bags
     def run_sync_bags(self, vehicle_number):

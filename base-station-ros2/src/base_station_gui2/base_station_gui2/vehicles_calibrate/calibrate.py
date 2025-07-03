@@ -8,30 +8,17 @@ import yaml
 from base_station_interfaces.msg import ConsoleLog
 import rclpy
 from rclpy.node import Node
-
-global deployment_node
-
-class DeploymentPublisher(Node):
-    def __init__(self):
-        super().__init__('deployment_publisher')
-        self.publisher_ = self.create_publisher(ConsoleLog, 'console_log', 10)
-
-    def publish_log(self, passed_msg):
-        self.publisher_.publish(passed_msg)
-        # self.get_logger().info(f"Published: {passed_msg.message} to Coug#{passed_msg.vehicle_number}")
-
-def publish_console_log(msg_text, msg_num):
-    global deployment_node
-    msg = ConsoleLog()
-    msg.message = msg_text
-    msg.vehicle_number = msg_num
-    deployment_node.publish_log(msg)
+global ros_node
 
 #TODO: where is this config path???
 CONFIG_PATH = os.path.expanduser("~/config/cougarsrc.sh")
+#Confirmed: This exists
 VEHICLE_PARAMS_PATH = os.path.expanduser("~/config/vehicle_params.yaml")
+#Confirmed: This exists
 PYTHON_SCRIPT = os.path.expanduser("~/ros2_ws/update_yaml.py")
+#Confirmed: This exists
 DVL_DIR = os.path.expanduser("~/ros2_ws/dvl_tools")
+#TODO: change this to coug2, coug3 etc?
 NAMESPACE = os.getenv("NAMESPACE", "")  # You can also hardcode this if needed
 NODE_NAME = "depth_convertor"
 ROS_PARAM_NAME = "fluid_pressure_atm"
@@ -55,17 +42,14 @@ def run_service_call(service_name, srv_type, args):
         output = result.stdout + result.stderr
         if "success=True" in output:
             match = re.search(r'message=\s*(.*)', output)
-            publish_console_log(f"[INFO] Service call to {service_name} succeeded. {match.group(1) if match else ''}", 0)
+            ros_node.publish_console_log(f"[INFO] Service call to {service_name} succeeded. {match.group(1) if match else ''}", 0)
         elif "success=False" in output:
             match = re.search(r'message=\s*(.*)', output)
-            publish_console_log(f"[WARNING] Service call to {service_name} failed with message: {match.group(1) if match else ''}", 0)
+            ros_node.publish_console_log(f"[WARNING] Service call to {service_name} failed with message: {match.group(1) if match else ''}", 0)
         else:
-            publish_console_log(f"[ERROR] Unexpected response from service {service_name}: {output}", 0)
+            ros_node.publish_console_log(f"[ERROR] Unexpected response from service {service_name}: {output}", 0)
     except subprocess.TimeoutExpired:
-        publish_console_log(f"[ERROR] Service call to {service_name} timed out.", 0)
-
-# def prompt_yes_no(prompt):
-#     return input(f"{prompt} (y/n): ").strip().lower() == 'y'
+        ros_node.publish_console_log(f"[ERROR] Service call to {service_name} timed out.", 0)
 
 def run_script(script_path, *args):
     subprocess.run(['bash', script_path, *args])
@@ -83,11 +67,11 @@ def get_ros_param():
         if match:
             return match.group()
         elif "Parameter not set" in output:
-            publish_console_log(f"[ERROR] Parameter '{ROS_PARAM_NAME}' is not set on node '{NODE_NAME}'.", 0)
+            ros_node.publish_console_log(f"[ERROR] Parameter '{ROS_PARAM_NAME}' is not set on node '{NODE_NAME}'.", 0)
         else:
-            publish_console_log(f"[ERROR] Failed to retrieve parameter: {output}", 0)
+            ros_node.publish_console_log(f"[ERROR] Failed to retrieve parameter: {output}", 0)
     except Exception as e:
-        publish_console_log(f"[ERROR] Exception while getting ROS param: {e}", 0)
+        ros_node.publish_console_log(f"[ERROR] Exception while getting ROS param: {e}", 0)
     return None
 
 def update_yaml_param(file_path, param_name, value, node_name, namespace):
@@ -104,30 +88,35 @@ def update_yaml_param(file_path, param_name, value, node_name, namespace):
     with open(file_path, 'w') as f:
         yaml.dump(data, f)
 
-    publish_console_log(f"[INFO] Updated {file_path} with {param_name} = {value} under {namespace}/{node_name}", 0)
+    ros_node.publish_console_log(f"[INFO] Updated {file_path} with {param_name} = {value} under {namespace}/{node_name}", 0)
 
 # ----------------------------
 # MAIN SCRIPT LOGIC
 # ----------------------------
-def main():
-    global deployment_node
-    deployment_node = DeploymentPublisher()
+def main(passed_ros_node):
+    global ros_node 
+    ros_node = passed_ros_node
 
+    ros_node.publish_console_log(f"Running source_env...", 0)
     source_env()
 
+    ros_node.publish_console_log(f"Running run_service_call...", 0)
     run_service_call(f"{NAMESPACE}/calibrate_depth", "std_srvs/srv/Trigger", "{}")
 
+    ros_node.publish_console_log(f"Changing to DVL directory...", 0)
     os.chdir(DVL_DIR)
 
+    ros_node.publish_console_log(f"Running calibrate_gyro.sh...", 0)
     run_script(os.path.join(DVL_DIR, "calibrate_gyro.sh"))
 
     speed = 1500
+    ros_node.publish_console_log(f"Running set_speed_sound...", 0)
     run_script(os.path.join(DVL_DIR, "set_speed_sound.sh"), str(speed))
 
-    print('a0')
+    ros_node.publish_console_log(f"Running set_ntp...", 0)
     run_script(os.path.join(DVL_DIR, "set_ntp.sh"))
-    print('a1')
 
+    ros_node.publish_console_log(f"Running get_ros_param...", 0)
     param_value = get_ros_param()
     if param_value:
         update_yaml_param(VEHICLE_PARAMS_PATH, ROS_PARAM_NAME, param_value, NODE_NAME, NAMESPACE)

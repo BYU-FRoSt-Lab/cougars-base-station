@@ -132,10 +132,18 @@ class GuiNode(Node):
         #publisher for the map viz origin 
         self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
 
+        self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
+
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
+
+    def publish_console_log(self, msg_text, msg_num):
+        msg = ConsoleLog()
+        msg.message = msg_text
+        msg.vehicle_number = msg_num
+        self.console_publisher.publish(msg)
 
     def publish_origin(self, origin_msg):
     # origin_msg: tuple(float, float)
