@@ -11,8 +11,6 @@ import rclpy
 from rclpy.node import Node
 global ros_node
 
-#TODO: where is this config path???
-CONFIG_PATH = os.path.expanduser("~/config/cougarsrc.sh")
 #Confirmed: This exists
 VEHICLE_PARAMS_PATH = os.path.expanduser("~/config/vehicle_params.yaml")
 #Confirmed: This exists
@@ -21,14 +19,6 @@ PYTHON_SCRIPT = os.path.expanduser("~/ros2_ws/update_yaml.py")
 DVL_DIR = os.path.expanduser("~/ros2_ws/dvl_tools")
 NODE_NAME = "depth_convertor"
 ROS_PARAM_NAME = "fluid_pressure_atm"
-
-def source_env():
-    command = f"source {CONFIG_PATH} && env"
-    proc = subprocess.Popen(['/bin/bash', '-c', command], stdout=subprocess.PIPE)
-    for line in proc.stdout:
-        (key, _, value) = line.decode().partition("=")
-        os.environ[key.strip()] = value.strip()
-    proc.communicate()
 
 def run_service_call(service_name, srv_type, args, vehicle):
     try:
@@ -155,10 +145,6 @@ def main(passed_ros_node, vehicle_numbers):
     for vehicle in vehicle_numbers:
         namespace = f"coug{vehicle}"
 
-        ros_node.publish_console_log(f"Running source_env...", vehicle)
-        # python inherits any environment variables
-        source_env()
-
         ros_node.publish_console_log(f"Running run_service_call...", vehicle)
         #run calibrate depth service
         run_service_call(f"{namespace}/calibrate_depth", "std_srvs/srv/Trigger", "{}", vehicle=vehicle)
@@ -170,12 +156,6 @@ def main(passed_ros_node, vehicle_numbers):
         ros_node.publish_console_log(f"Running calibrate_gyro.sh...", vehicle)
         #run calibrate gyro script
         run_script(os.path.join(DVL_DIR, "calibrate_gyro.sh"), vehicle=vehicle)
-
-        #TODO: does this need to be more dynamic?
-        speed = 1500
-        ros_node.publish_console_log(f"Running set_speed_sound...", vehicle)
-        #run speed of sound script
-        run_script(os.path.join(DVL_DIR, "set_speed_sound.sh"), str(speed), vehicle=vehicle)
 
         ros_node.publish_console_log(f"Running set_ntp...", vehicle)
         # run ntp script

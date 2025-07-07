@@ -981,6 +981,9 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
 
+    def calibrate_fins_button(self):
+        for i in self.selected_vehicles: self.recieve_console_update("Loading Fin Calibration Window...", i)
+
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
         # Handler for 'Emergency Shutdown' button, with confirmation dialog.
@@ -1059,7 +1062,7 @@ class MainWindow(QMainWindow):
             if vehicle_number in self.selected_vehicles: self.recieve_console_update(f"{action} service call failed: {e}", vehicle_number)
             else: print(f"{action} service call failed: {e}")
 
-    #(NS) -> not yet connected to a signal
+    #(No Signal) -> not yet connected to a signal
     def recall_vehicles(self):
         # Handler for 'Recall Vehicles' button on the general tab, with confirmation dialog.
         dlg = ConfirmationDialog("Recall Vehicles?", "Are you sure that you want recall the Vehicles? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
@@ -1070,7 +1073,7 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label("Canceling Recall All Vehicles Command...")
             for i in self.selected_vehicles: self.recieve_console_update("Canceling Recall All Vehicles Command...", i)
     
-    #(NS) -> not yet connected to a signal
+    #(No Signal) -> not yet connected to a signal
     def recall_spec_vehicle(self, vehicle_number):
         # Handler for 'Recall Vehicle' button on a specific Vehicle tab, with confirmation dialog.
         dlg = ConfirmationDialog("Recall Vehicle?", "Are you sure that you want to recall this Vehicle?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
@@ -1162,40 +1165,40 @@ class MainWindow(QMainWindow):
         self.copy_bags_button.clicked.connect(self.copy_bags)
         self.copy_bags_button.setStyleSheet(self.normal_button_style_sheet)
 
-        #Syncronize All Vehicles 
-        self.sync_all_vehicles_button = QPushButton("Syncronize All Vehicles (BUGGY)")
+        #Calibrate All Vehicles 
+        self.sync_all_vehicles_button = QPushButton("Calibrate All Vehicles (BUGGY)")
         self.sync_all_vehicles_button.clicked.connect(lambda: self.run_calibrate_script(0))
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
-        # self.clear_all_consoles = QPushButton("Clear All Consoles")
-        # self.clear_all_consoles.clicked.connect(lambda: self.clear_console(0))
-        # self.clear_all_consoles.setStyleSheet(self.danger_button_style_sheet)
+        self.calibrate_fins_button = QPushButton("Calibrate Fins (No Signal)")
+        self.calibrate_fins_button.clicked.connect(lambda: None)
+        self.calibrate_fins_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
-        self.recall_all_vehicles = QPushButton("Recall Vehicles (NS)")
+        self.recall_all_vehicles = QPushButton("Recall Vehicles (No Signal)")
         self.recall_all_vehicles.clicked.connect(self.recall_vehicles)
         self.recall_all_vehicles.setStyleSheet(self.danger_button_style_sheet)
 
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         self.general_page_C0_layout.addWidget(self.Load_missions_button, alignment=Qt.AlignmentFlag.AlignTop)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         self.general_page_C0_layout.addWidget(self.Start_missions_button)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         self.general_page_C0_layout.addWidget(self.plot_waypoints_button)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         self.general_page_C0_layout.addWidget(self.copy_bags_button)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         self.general_page_C0_layout.addWidget(self.sync_all_vehicles_button)
-        self.general_page_C0_layout.addSpacing(30)
-        # self.general_page_C0_layout.addWidget(self.clear_all_consoles)
-        # self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
+        self.general_page_C0_layout.addWidget(self.calibrate_fins_button)
+        self.general_page_C0_layout.addSpacing(20)
 
         # Add spacer to push the rest of the buttons down
         self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
-        self.general_page_C0_layout.addSpacing(30)
+        self.general_page_C0_layout.addSpacing(20)
         
         # Add remaining buttons (red recall vehicles at the bottom)
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -1488,13 +1491,13 @@ class MainWindow(QMainWindow):
         #start mission (normal button)
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
         #sync vehicle (normal button)
-        self.create_vehicle_button(vehicle_number, "sync", "Syncronize Vehicle (BUGGY)", lambda: self.run_calibrate_script(vehicle_number))
+        self.create_vehicle_button(vehicle_number, "sync", "Calibrate Vehicle (BUGGY)", lambda: self.run_calibrate_script(vehicle_number))
 
 
         #emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
         #abort mission (danger button)
-        self.create_vehicle_button(vehicle_number, "recall", f"Recall Vehicle {vehicle_number} (NS)", lambda: self.recall_spec_vehicle(vehicle_number), danger=True)
+        self.create_vehicle_button(vehicle_number, "recall", f"Recall Vehicle (No Signal)", lambda: self.recall_spec_vehicle(vehicle_number), danger=True)
         #emergency shutdown (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(vehicle_number), danger=True)
         #clear console (danger button)
