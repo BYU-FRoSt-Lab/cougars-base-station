@@ -328,7 +328,6 @@ class MainWindow(QMainWindow):
                     continue
                 wifi_status = self.feedback_dict["Wifi"][vehicle_number]
                 if wifi_status != reachable:
-                    #TODO: why is the wifi status print statemments being weird
                     self.recieve_console_update(
                         f"{'Ping successful for' if reachable == 1 else 'Unable to Ping'} vehicle{vehicle_number}",
                         vehicle_number
@@ -932,11 +931,9 @@ class MainWindow(QMainWindow):
         threading.Thread(target=self.run_sync_bags, args=(vehicle_number,), daemon=True).start()  
 
     def run_calibrate_script(self, vehicle_number):
-        print("inside of run_calibrate_script")
         threading.Thread(target=self.run_calibrate_script_threaded, args=(vehicle_number,), daemon=True).start()
 
     def run_calibrate_script_threaded(self, vehicle_number):
-        print("inside of run_calibrate_script_threaded")
         if not vehicle_number: vehicles = self.selected_vehicles
         else: vehicles = [vehicle_number]
         calibrate.main(self.ros_node, vehicles)
