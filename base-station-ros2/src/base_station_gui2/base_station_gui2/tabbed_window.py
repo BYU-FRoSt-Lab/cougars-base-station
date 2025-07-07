@@ -526,7 +526,11 @@ class MainWindow(QMainWindow):
             self.set_console_log_colors(self.text_color, self.background_color)
             for button in self.findChildren(QPushButton):
                 # Danger buttons
-                if "recall" in button.text().lower() or "emergency" in button.text().lower():
+                if (
+                    "recall" in button.text().lower()
+                    or "emergency" in button.text().lower()
+                    or "clear console" in button.text().lower()   # <-- Add this line
+                ):
                     button.setStyleSheet(self.danger_button_style_sheet)
                 # Normal buttons
                 else:
