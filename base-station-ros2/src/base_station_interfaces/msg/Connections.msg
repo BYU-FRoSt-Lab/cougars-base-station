@@ -2,10 +2,10 @@
 uint8 connection_type
 
 # id of vehicle connections
-uint32[] vehicle_ids
+int64[] vehicle_ids
 
 # connection status
 bool[] connections
 
 # time since last ping response
-uint32[] last_ping
+int64[] last_ping

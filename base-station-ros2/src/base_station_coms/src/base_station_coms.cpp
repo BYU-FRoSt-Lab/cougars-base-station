@@ -43,6 +43,9 @@ public:
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
+        this->declare_parameter<bool>("request_status", true);
+        bool request_status = this->get_parameter("request_status").as_bool();
+
 
         // client for the base_station_radio node. Requests that the radio sends an emergency kill command to a specific coug
         radio_e_kill_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
@@ -103,41 +106,45 @@ public:
             std::bind(&ComsNode::listen_to_connections, this, _1)
         );
 
-        // Status publishers for each vehicle in the mission modelling the topics on each vehicle
-        for (int vehicle_id : vehicles_in_mission_) {
-            std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
-            safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
-                ros_namespace + "/safety_status", 10);
-            smoothed_odom_publishers_[vehicle_id] = this->create_publisher<nav_msgs::msg::Odometry>(
-                ros_namespace + "/smoothed_output", 10);
-            battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
-                ros_namespace + "/battery/data", 10);
-            depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-                ros_namespace + "/depth_data", 10);
-            pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
-                ros_namespace + "/pressure/data", 10);
-        }
-
-        std::ostringstream ss;
-        ss << "Vehicle ids in mission: ";
-        for(int64_t i: vehicles_in_mission_) ss << i << ", ";
-        RCLCPP_INFO(this->get_logger(), "base station started");
-        RCLCPP_INFO(this->get_logger(), ss.str().c_str());
-
-        modem_connection[0] = true;
-        radio_connection[0] = true; 
-        
-        // Initialize lists of connections statuses for each vehicle in mission
-        for(int64_t i: vehicles_in_mission_){
-            modem_connection[i] = true;
-            radio_connection[i] = false;
-            wifi_connection[i] = false;
-        }
+        if (request_status) {
+           // timer that periodically requests status from vehicles in mission
+           timer_ = this->create_wall_timer(
+                       std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
 
+           // Status publishers for each vehicle in the mission modelling the topics on each vehicle
+           for (int vehicle_id : vehicles_in_mission_) {
+               std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
+               safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
+                   ros_namespace + "/safety_status", 10);
+               smoothed_odom_publishers_[vehicle_id] = this->create_publisher<nav_msgs::msg::Odometry>(
+                   ros_namespace + "/smoothed_output", 10);
+               battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
+                   ros_namespace + "/battery/data", 10);
+               depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+                   ros_namespace + "/depth_data", 10);
+               pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
+                   ros_namespace + "/pressure/data", 10);
+           }
+       }
 
 
-    }
+       modem_connection[0] = true;
+       radio_connection[0] = true;
+      
+       // Initialize lists of connections statuses for each vehicle in mission
+       for(int64_t i: vehicles_in_mission_){
+           modem_connection[i] = false;
+           radio_connection[i] = false;
+           wifi_connection[i] = false;
+       }
+       std::ostringstream ss;
+       ss << "Vehicle ids in mission: ";
+       for(int64_t i: vehicles_in_mission_) ss << i << ", ";
+       RCLCPP_INFO(this->get_logger(), "base station started");
+       RCLCPP_INFO(this->get_logger(), ss.str().c_str());
+   }
+
 
     // Callback for the connections topic, updates the connections for each vehicle in mission
     // The connections are stored in two maps, one for radio and one for modem connections
@@ -201,7 +208,10 @@ public:
                     }
                 });
 
-        } else if (modem_connection[beacon_id]) {
+        } else {
+            if (!modem_connection[beacon_id]){
+                RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request may not work because there is no connection.");
+            }
 
             if (!modem_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
                 RCLCPP_WARN(rclcpp::get_logger("rclcpp"),
@@ -222,10 +232,7 @@ public:
                     }
                 });
 
-        } else {
-            // error message, no connection to coug
-            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot request status from Coug %i because there is no connection", beacon_id);
-        }
+        } 
     }
 
     // Callback for the emergency kill service, sends an emergency kill command to a specific vehicle in mission
@@ -304,9 +311,9 @@ public:
         // Toggle modem and radio connections based on the request
         this->wifi_connection[request->vehicle_id] = request->modem_shut_off;
         if (this->wifi_connection[request->vehicle_id]) {
-            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are ON", request->vehicle_id);
-        } else {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are OFF", request->vehicle_id);
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are ON", request->vehicle_id);
         }
         response->success = true;
     }
