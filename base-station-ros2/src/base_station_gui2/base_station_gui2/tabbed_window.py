@@ -1,6 +1,6 @@
 # Created by Seth Ricks, July 2025
 import sys 
-import random, time, os
+import random, time, os, re
 import yaml
 import json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
@@ -979,14 +979,86 @@ class MainWindow(QMainWindow):
             error_msg = f"Failed to run bag sync script: {str(e)}"
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
+    
+    def load_coug_kinematics_params(self, vehicle_num):
+        # Use the absolute path to your params directory
+        params_path = f"/home/frostlab/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+        # Check if file path exists
+        if not os.path.exists(params_path):
+            return None
+        with open(params_path, 'r') as f:
+            data = yaml.safe_load(f)
+        vehicle_key = f"coug{vehicle_num}"
+        try:
+            kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+            return kinematics
+        except KeyError:
+            return None
+
+    def create_new_param_file(self, vehicle_num): 
+        """
+        Creates a new parameter YAML file for the given vehicle number by copying the template
+        from config/vehicle_params.yaml and replacing 'coug0' with 'coug{vehicle_num}'.
+        The new file is saved to temp_mission_control/params/coug{vehicle_num}_params.yaml.
+        """
+
+        template_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/vehicle_params.yaml")
+        params_dir = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
+
+        os.makedirs(params_dir, exist_ok=True)
+        new_param_path = os.path.join(params_dir, f"coug{vehicle_num}_params.yaml")
+
+        # Read template and replace 'coug0' with 'coug{vehicle_num}'
+        with open(template_path, "r") as f:
+            content = f.read()
+        # Replace coug0: with cougX:
+        content = content.replace("coug0:", f"coug{vehicle_num}:")
+        content = content.replace("vehicle_ID: 1", f"vehicle_ID: {vehicle_num}")
+
+        with open(new_param_path, "w") as f:
+            f.write(content)
+
+        msg = f"Created new param file for Vehicle {vehicle_num} at {new_param_path}"
+        self.recieve_console_update(msg, vehicle_num)
+
+    def save_param_file(self, vehicle_num, fin_list): 
+        # fin_list = [top, right, left]
+        params_path = os.path.expanduser(
+            f"~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+        )
+
+        with open(params_path, "r") as f:
+            content = f.read()
+
+        # Replace the offsets using regex to match any value
+        content = re.sub(r'(top_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[0])), content)
+        content = re.sub(r'(right_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[1])), content)
+        content = re.sub(r'(left_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[2])), content)
+
+        with open(params_path, "w") as f:
+            f.write(content)
 
     def calibrate_fins(self):
+
+        # first need to read from params in cougars-base-station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params
+        vehicle_params = {}
+        for i in self.selected_vehicles:
+            params = self.load_coug_kinematics_params(i)
+            if params: vehicle_params[i] = params
+            else: 
+                #create a new file if it doesn't exist already, from config/vehicle_params.yaml
+                self.create_new_param_file(i)
+                params = self.load_coug_kinematics_params(i)
+                if params: vehicle_params[i] = params
+
         def publish_fins(vehicle_num, fins):
             # Publish to ROS node
             fins_out = [float(f) for f in fins]
             self.ros_node.publish_fins(fins_out, vehicle_num)
+
         for i in self.selected_vehicles:
             self.recieve_console_update("Loading Fin Calibration Window...", i)
+            
         dlg = CalibrateFinsDialog(
             parent=self,
             background_color=self.background_color,
@@ -994,14 +1066,26 @@ class MainWindow(QMainWindow):
             pop_up_window_style=self.pop_up_window_style,
             selected_vehicles=self.selected_vehicles,
             passed_ros_node=self.ros_node,
-            on_slider_change=publish_fins
+            on_slider_change=publish_fins,
+            vehicle_init_params=vehicle_params
         )
+
         if dlg.exec():
-            for i in self.selected_vehicles:
-                self.recieve_console_update("Fin Calibration Saved to Params (no logic yet)", i)
+            # save changes to param file on local machine
+            # example states: {'1': [-91, 80, -69], '2': [0, 0, 0]}
+            fin_states = dlg.get_states()
+            for key, states in fin_states.items():
+                self.save_param_file(key, states)
+                # Set params on the vehicle using ros2 param set
+                #TODO: figure out how to set the param on the vehicle so I don't have to go change the param file
+                node_name = f"/coug{key}/coug_kinematics"
+                subprocess.run(["ros2", "param", "set", node_name, "top_fin_offset", f"{float(states[0])}"])
+                subprocess.run(["ros2", "param", "set", node_name, "right_fin_offset", f"{float(states[1])}"])
+                subprocess.run(["ros2", "param", "set", node_name, "left_fin_offset", f"{float(states[2])}"])
+            
+                self.recieve_console_update("Fin Calibration Saved to Params", int(key))
         else:
-            for i in self.selected_vehicles:
-                self.recieve_console_update("Canceling Fin Calibration", i)
+            for i in self.selected_vehicles: self.recieve_console_update("Canceling Fin Calibration", i)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
@@ -2691,10 +2775,20 @@ class CalibrateFinsDialog(QDialog):
     """
     Custom dialog for fin calibration.
     """
-    def __init__(self, parent=None, background_color="white", text_color="black", pop_up_window_style=None, selected_vehicles=None, passed_ros_node=None, on_slider_change=None):
+    #template vehicle_init_params
+    # {1: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0, }, 
+    # 2: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0, }, 
+    # 3: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0 }}
+
+    def __init__(self, parent=None, background_color="white", text_color="black", pop_up_window_style=None, selected_vehicles=None, passed_ros_node=None, on_slider_change=None, vehicle_init_params=None):
         super().__init__(parent)
         self.setWindowTitle("Fin Calibration:")
         self.fin_sliders = {}
+        self.fin_dict = {
+            1: "top_fin_offset",
+            2: "right_fin_offset",
+            3: "left_fin_offset"
+        }
         self.on_slider_change = on_slider_change  # <-- store callback
         layout = QVBoxLayout()
         self.setFixedSize(300, 200)
@@ -2718,11 +2812,14 @@ class CalibrateFinsDialog(QDialog):
                 fin_slider = QSlider(Qt.Orientation.Horizontal)
                 fin_slider.setMinimum(-180)
                 fin_slider.setMaximum(180)
-                fin_slider.setValue(0)
+                
+                if not vehicle_init_params: fin_slider.setValue(0)
+                else: fin_slider.setValue(int(vehicle_init_params[vehicle_num][self.fin_dict[i]]))
+
                 fin_slider.setTickInterval(1)
-                # moves one with the arrows
+                # moves one tick with the arrows
                 fin_slider.setSingleStep(1)
-                # moves one with the page up/down buttons
+                # moves one tick with the page up/down buttons
                 fin_slider.setPageStep(5)
                 fin_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
                 fin_slider.setStyleSheet(f"color: {text_color};")
