@@ -5,7 +5,7 @@ import yaml
 import json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar, QSlider,
     QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
 
@@ -806,7 +806,6 @@ class MainWindow(QMainWindow):
         dlg = LoadMissionsDialog(parent=self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_vehicles=self.selected_vehicles)
         if dlg.exec():
             start_config = dlg.get_states()
-            print(f"{start_config}")
             selected_files = list(start_config['selected_files'].values())
             threading.Thread(target=deploy_in_thread, args=(selected_files,), daemon=True).start()
         else:
@@ -981,8 +980,28 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
 
-    def calibrate_fins_button(self):
-        for i in self.selected_vehicles: self.recieve_console_update("Loading Fin Calibration Window...", i)
+    def calibrate_fins(self):
+        def publish_fins(vehicle_num, fins):
+            # Publish to ROS node
+            fins_out = [float(f) for f in fins]
+            self.ros_node.publish_fins(fins_out, vehicle_num)
+        for i in self.selected_vehicles:
+            self.recieve_console_update("Loading Fin Calibration Window...", i)
+        dlg = CalibrateFinsDialog(
+            parent=self,
+            background_color=self.background_color,
+            text_color=self.text_color,
+            pop_up_window_style=self.pop_up_window_style,
+            selected_vehicles=self.selected_vehicles,
+            passed_ros_node=self.ros_node,
+            on_slider_change=publish_fins
+        )
+        if dlg.exec():
+            for i in self.selected_vehicles:
+                self.recieve_console_update("Fin Calibration Saved to Params (no logic yet)", i)
+        else:
+            for i in self.selected_vehicles:
+                self.recieve_console_update("Canceling Fin Calibration", i)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
@@ -1171,8 +1190,8 @@ class MainWindow(QMainWindow):
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
-        self.calibrate_fins_button = QPushButton("Calibrate Fins (No Signal)")
-        self.calibrate_fins_button.clicked.connect(lambda: None)
+        self.calibrate_fins_button = QPushButton("Calibrate Fins")
+        self.calibrate_fins_button.clicked.connect(self.calibrate_fins)
         self.calibrate_fins_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
@@ -2667,3 +2686,89 @@ class ConfigurationWindow(QDialog):
                 except ValueError:
                     selected_vehicles.append(value)
         return selected_vehicles
+
+class CalibrateFinsDialog(QDialog):
+    """
+    Custom dialog for fin calibration.
+    """
+    def __init__(self, parent=None, background_color="white", text_color="black", pop_up_window_style=None, selected_vehicles=None, passed_ros_node=None, on_slider_change=None):
+        super().__init__(parent)
+        self.setWindowTitle("Fin Calibration:")
+        self.fin_sliders = {}
+        self.on_slider_change = on_slider_change  # <-- store callback
+        layout = QVBoxLayout()
+        self.setFixedSize(300, 200)
+        self.setStyleSheet(pop_up_window_style)
+        self.pop_up_tabs = QTabWidget()
+        self.pop_up_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.pop_up_tabs.setMovable(False)
+        tab_names = [f"Vehicle {i}" for i in selected_vehicles]
+
+        for idx, name in enumerate(tab_names):
+            vehicle_num = selected_vehicles[idx]
+            content_widget = QWidget()
+            content_widget.setStyleSheet(f"background-color: {background_color};")
+            content_layout = QVBoxLayout(content_widget)
+            self.fin_sliders[name] = []
+            for i in range(1, 4):
+                row = QHBoxLayout()
+                fin_label = QLabel(f"Fin {i}: ")
+                fin_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+                row.addWidget(fin_label)
+                fin_slider = QSlider(Qt.Orientation.Horizontal)
+                fin_slider.setMinimum(-180)
+                fin_slider.setMaximum(180)
+                fin_slider.setValue(0)
+                fin_slider.setTickInterval(1)
+                # moves one with the arrows
+                fin_slider.setSingleStep(1)
+                # moves one with the page up/down buttons
+                fin_slider.setPageStep(5)
+                fin_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                fin_slider.setStyleSheet(f"color: {text_color};")
+                row.addWidget(fin_slider)
+                value_label = QLabel(str(fin_slider.value()))
+                value_label.setStyleSheet(f"color: {text_color};")
+                fin_slider.valueChanged.connect(lambda val, lbl=value_label: lbl.setText(str(val)))
+
+                if self.on_slider_change:
+                    fin_slider.valueChanged.connect(
+                        lambda _, vnum=vehicle_num, tab=name: self._handle_slider_change(vnum, tab)
+                    )
+                row.addWidget(value_label)
+                content_layout.addLayout(row)
+                self.fin_sliders[name].append(fin_slider)
+            self.pop_up_tabs.addTab(content_widget, name)
+
+        note_label = QLabel("(Arrows -> 1, Pg Up/Down -> 5)")
+        note_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+        layout.addWidget(note_label)
+        layout.addWidget(self.pop_up_tabs)
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        ok_button = buttonBox.button(QDialogButtonBox.StandardButton.Ok)
+        ok_button.setText("Save Changes To Params")
+        buttonBox.accepted.connect(self.validate_and_accept)
+        button_row = QHBoxLayout()
+        button_row.addWidget(buttonBox)
+        layout.addLayout(button_row)
+        self.setLayout(layout)
+
+    def _handle_slider_change(self, vehicle_num, tab_name):
+        # Called whenever a slider changes for a vehicle
+        if self.on_slider_change:
+            # Get current values for this vehicle
+            values = [slider.value() for slider in self.fin_sliders[tab_name]]
+            self.on_slider_change(vehicle_num, values)
+
+    def validate_and_accept(self): 
+        self.accept()
+
+    def get_states(self):
+        """
+        Returns a dict mapping each vehicle/tab name to a list of its fin slider values.
+        Example: {'Vehicle 1': [val1, val2, val3], ...}
+        """
+        states = {}
+        for tab_name, sliders in self.fin_sliders.items():
+            states[tab_name[-1]] = [slider.value() for slider in sliders]
+        return states
