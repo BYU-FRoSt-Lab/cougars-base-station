@@ -627,17 +627,9 @@ class MainWindow(QMainWindow):
                 scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
     def clear_console(self, vehicle_number):
-
-        if vehicle_number == 0: 
-            msg = f"Clear Console Called for All Vehicles"
-            vehicle_numbers = self.selected_vehicles
-            window_title = f"Clear All Consoles?"
-            confirm_message = f"Are you sure you want to clear all the consoles? This can't be undone."
-        else: 
-            msg = f"Clear Console Called for Vehicle{vehicle_number}"
-            vehicle_numbers = [vehicle_number]
-            window_title = f"Clear Vehicle{vehicle_number} Console?"
-            confirm_message = f"Are you sure you want to clear the console for vehicle{vehicle_number}? This can't be undone."
+        msg = f"Clear Console Called for Vehicle{vehicle_number}"
+        window_title = f"Clear Vehicle{vehicle_number} Console?"
+        confirm_message = f"Are you sure you want to clear the console for vehicle{vehicle_number}? This can't be undone."
 
         self.replace_confirm_reject_label(msg)
 
@@ -652,20 +644,17 @@ class MainWindow(QMainWindow):
         )
 
         if dlg.exec(): 
-            
-            for vehicle in vehicle_numbers:
-                try:
-                    label = self.findChild(QLabel, f"Console_messages{vehicle}")
-                    if label:
-                        label.setText("")
-                        label.setStyleSheet(f"color: {self.text_color};")
-                        # Scroll to the bottom of the scroll area only if user was already at the bottom
-                except Exception as e:
-                    print(f"Exception in clear_console for Vehicle {vehicle}: {e}")
+            try:
+                label = self.findChild(QLabel, f"Console_messages{vehicle_number}")
+                if label:
+                    label.setText("")
+                    label.setStyleSheet(f"color: {self.text_color};")
+                    # Scroll to the bottom of the scroll area only if user was already at the bottom
+            except Exception as e:
+                print(f"Exception in clear_console for vehicle{vehicle_number}: {e}")
         
         else: 
-            for vehicle in vehicle_numbers:
-                self.recieve_console_update("Clear Console Log Command Canceled", vehicle)
+            self.recieve_console_update("Clear Console Log Command Canceled", vehicle_number)
             
     def replace_confirm_reject_label(self, confirm_reject_text):
         for label in self.confirm_reject_labels.values():
@@ -1122,7 +1111,7 @@ class MainWindow(QMainWindow):
                 self, "Params File Warning", warning_msg
             ))
 
-        def publish_fins(vehicle_num, fins):
+        def publish_fins(vehicle_num, fins, type):
             # Publish to ROS node
             fins_out = [float(f) for f in fins]
             self.ros_node.publish_fins(fins_out, vehicle_num)
@@ -2812,7 +2801,7 @@ class ConfigurationWindow(QDialog):
             for value in states:
                 try:
                     num = int(value)
-                    if num > self.HIGHEST_VEHICLE_LABEL or num <= 0: valid_vehicle_number = False
+                    if num > self.HIGHEST_VEHICLE_LABEL or num < 0: valid_vehicle_number = False
                 except:
                     valid_custom = False
             if len(states) != len(set(states)):
@@ -2820,7 +2809,7 @@ class ConfigurationWindow(QDialog):
             elif not valid_custom:
                 QMessageBox.warning(self, "Invalid Custom", "Please enter a valid integer for custom Vehicle number.")
             elif not valid_vehicle_number:
-                QMessageBox.warning(self, "Invalid Vehicle Number", "Please enter an integer from 1-999.")
+                QMessageBox.warning(self, "Invalid Vehicle Number", "Please enter an integer from 0-999.")
             else:
                 self.accept()
 

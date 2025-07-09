@@ -61,7 +61,7 @@ def main(passed_ros_node, sel_vehicles, passed_file_paths=[]): #selected vehicle
         mission_path = passed_file_paths[i]
         param_path = os.path.join(PARAM_DIR, vehicle["param_file"])
         fleet_path = os.path.join(PARAM_DIR, vehicle["fleet_param_file"])
-        vehicle_num = int(vehicle["remote_host"][-1])
+        vehicle_num = int(vehicle["name"][-1])
         ros_node.publish_console_log(f"Mission path for coug{vehicle_num} was set as: {mission_path}", vehicle_num)
 
         for label, file_path, remote_filename in [
