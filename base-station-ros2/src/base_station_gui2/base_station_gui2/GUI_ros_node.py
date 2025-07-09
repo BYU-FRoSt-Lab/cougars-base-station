@@ -26,7 +26,7 @@ from geometry_msgs.msg import PoseStamped
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status, ConsoleLog
-from frost_interfaces.msg import SystemStatus, SystemControl
+from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
 
 class GuiNode(Node):
     """
@@ -102,6 +102,14 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_path_', pub)
 
+            #dynamic publishers for vehicle fins
+            pub = self.create_publisher(
+                UCommand,
+                f'/coug{coug_number}/kinematics/command',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_fins_', pub)
+
         self.kill_subscription = self.create_subscription(
             Bool,
             'confirm_e_kill',
@@ -166,6 +174,11 @@ class GuiNode(Node):
 
         getattr(self, f'coug{vehicle_number}_path_').publish(msg)
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
+
+    def publish_fins(self, fin_degree, vehicle_number):
+        msg = UCommand()
+        msg.fin = [fin_degree[0], fin_degree[1], fin_degree[2], float(0)]
+        getattr(self, f"coug{vehicle_number}_fins_").publish(msg)
 
 def ros_spin_thread(executor):
     """

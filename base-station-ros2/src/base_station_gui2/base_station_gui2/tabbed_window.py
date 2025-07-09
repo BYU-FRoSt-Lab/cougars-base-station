@@ -1,11 +1,11 @@
 # Created by Seth Ricks, July 2025
 import sys 
-import random, time, os
+import random, time, os, re
 import yaml
 import json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar, QSlider,
     QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
 
@@ -806,7 +806,6 @@ class MainWindow(QMainWindow):
         dlg = LoadMissionsDialog(parent=self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_vehicles=self.selected_vehicles)
         if dlg.exec():
             start_config = dlg.get_states()
-            print(f"{start_config}")
             selected_files = list(start_config['selected_files'].values())
             threading.Thread(target=deploy_in_thread, args=(selected_files,), daemon=True).start()
         else:
@@ -981,8 +980,183 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
 
-    def calibrate_fins_button(self):
-        for i in self.selected_vehicles: self.recieve_console_update("Loading Fin Calibration Window...", i)
+    def load_vehicle_kinematics_params(self, vehicle_num):
+        vehicle_kinematics = None
+        base_kinematics = None
+        #try to get the params path from the vehicle
+        config_path = os.path.join(
+            os.path.dirname(__file__),
+            "temp_mission_control",
+            "deploy_config.json"
+        )
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        vehicles = config["vehicles"]
+        vehicle_info = vehicles.get(str(vehicle_num))
+        if vehicle_info:
+            remote_user = vehicle_info["remote_user"]
+            remote_host = vehicle_info["remote_host"]
+            remote_param_path = os.path.join(
+                vehicle_info["remote_path"], vehicle_info["param_file"]
+            )
+
+        # Use ssh to cat the file and read its contents
+        try:
+            result = subprocess.run(
+                ["ssh", f"{remote_user}@{remote_host}", f"cat {remote_param_path}"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout:
+                data = yaml.safe_load(result.stdout)
+                vehicle_key = f"coug{vehicle_num}"
+                try:
+                    vehicle_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+                except KeyError:
+                    self.replace_confirm_reject_label(f"Could not find kinematics in remote file for coug{vehicle_num}")
+            else:
+                self.replace_confirm_reject_label(f"Failed to read remote params: {result.stderr.strip()}")
+        except Exception as e:
+            self.replace_confirm_reject_label(f"SSH error: {e}")
+
+        # If can't get params from vehicle, fallback to local
+        params_path = f"/home/frostlab/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+        # Check if file path exists
+        if os.path.exists(params_path):
+            with open(params_path, 'r') as f:
+                data = yaml.safe_load(f)
+            vehicle_key = f"coug{vehicle_num}"
+            try: base_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+            except KeyError: base_kinematics = None
+
+        return vehicle_kinematics, base_kinematics
+
+    def create_new_param_file(self, vehicle_num): 
+        """
+        Creates a new parameter YAML file for the given vehicle number by copying the template
+        from config/vehicle_params.yaml and replacing 'coug0' with 'coug{vehicle_num}'.
+        The new file is saved to temp_mission_control/params/coug{vehicle_num}_params.yaml.
+        """
+
+        template_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/vehicle_params.yaml")
+        params_dir = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
+
+        os.makedirs(params_dir, exist_ok=True)
+        new_param_path = os.path.join(params_dir, f"coug{vehicle_num}_params.yaml")
+
+        # Read template and replace 'coug0' with 'coug{vehicle_num}'
+        with open(template_path, "r") as f:
+            content = f.read()
+        # Replace coug0: with cougX:
+        content = content.replace("coug0:", f"coug{vehicle_num}:")
+        content = content.replace("vehicle_ID: 1", f"vehicle_ID: {vehicle_num}")
+
+        with open(new_param_path, "w") as f:
+            f.write(content)
+
+        msg = f"Created new param file for Vehicle {vehicle_num} at {new_param_path}"
+        self.recieve_console_update(msg, vehicle_num)
+
+    def save_param_file(self, vehicle_num, fin_list): 
+        # fin_list = [top, right, left]
+        params_path = os.path.expanduser(
+            f"~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+        )
+
+        with open(params_path, "r") as f:
+            content = f.read()
+
+        # Replace the offsets using regex to match any value
+        content = re.sub(r'(top_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[0])), content)
+        content = re.sub(r'(right_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[1])), content)
+        content = re.sub(r'(left_fin_offset:\s*)(-?\d+\.?\d*)', r'\g<1>{}'.format(float(fin_list[2])), content)
+
+        with open(params_path, "w") as f:
+            f.write(content)
+
+    def calibrate_fins(self):
+
+        # first need to read from params in cougars-base-station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params
+        vehicle_params_dict = {}
+        params_found_dict = {}
+        base_params_problems = []
+        vehicle_params_problems = []
+        for i in self.selected_vehicles:
+            vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
+            params_found_dict[i] = (vehicle_params, base_params)
+            if vehicle_params is not None: 
+                vehicle_params_dict[i] = vehicle_params
+                if base_params is None: self.create_new_param_file(i)
+            elif base_params is not None: vehicle_params_dict[i] = base_params
+            else: 
+                #create a new file if it doesn't exist already, from config/vehicle_params.yaml
+                self.create_new_param_file(i)
+                vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
+                if base_params: vehicle_params_dict[i] = base_params
+
+        # example params found dict: {2: ({'trim_ratio': 0.0, 'top_fin_offset': -99.0, 'right_fin_offset': -97.0, 'left_fin_offset': -180.0, 
+        # 'demo_mode': False, 'fin_0_direction': 1, 'fin_1_direction': -1, 'fin_2_direction': -1}, 
+        # {'trim_ratio': 0.0, 'top_fin_offset': -99.0, 'right_fin_offset': -97.0, 'left_fin_offset': -180.0, 
+        # 'demo_mode': False, 'fin_0_direction': 1, 'fin_1_direction': -1, 'fin_2_direction': -1}), 
+        # 3: (None, None)}
+        for vehicle_id, params in params_found_dict.items():
+            if params[0] is None:
+                vehicle_params_problems.append(vehicle_id)
+            if params[1] is None:
+                base_params_problems.append(vehicle_id)
+
+        # Show warning in main thread if needed
+        if base_params_problems or vehicle_params_problems:
+            warning_lines = []
+            if vehicle_params_problems:
+                warning_lines.append(
+                    f"The following vehicle params files weren't found or had errors: {vehicle_params_problems}"
+                )
+            if base_params_problems:
+                warning_lines.append(
+                    f"The following base station params files weren't found or had errors (if not found they were created): {base_params_problems}"
+                )
+            warning_msg = "\n".join(warning_lines)
+            QTimer.singleShot(0, lambda: QMessageBox.warning(
+                self, "Params File Warning", warning_msg
+            ))
+
+        def publish_fins(vehicle_num, fins):
+            # Publish to ROS node
+            fins_out = [float(f) for f in fins]
+            self.ros_node.publish_fins(fins_out, vehicle_num)
+
+        for i in self.selected_vehicles:
+            self.recieve_console_update("Loading Fin Calibration Window...", i)
+            
+        dlg = CalibrateFinsDialog(
+            parent=self,
+            background_color=self.background_color,
+            text_color=self.text_color,
+            pop_up_window_style=self.pop_up_window_style,
+            selected_vehicles=self.selected_vehicles,
+            passed_ros_node=self.ros_node,
+            on_slider_change=publish_fins,
+            vehicle_init_params=vehicle_params_dict
+        )
+
+        if dlg.exec():
+            # save changes to param file on local machine
+            # example states: {'1': [-91, 80, -69], '2': [0, 0, 0]}
+            fin_states = dlg.get_states()
+            for key, states in fin_states.items():
+                self.save_param_file(key, states)
+                # Set params on the vehicle using ros2 param set
+                #TODO: figure out how to set the param on the vehicle so relaunching isn't necessary
+                node_name = f"/coug{key}/coug_kinematics"
+                subprocess.run(["ros2", "param", "set", node_name, "top_fin_offset", f"{float(states[0])}"])
+                subprocess.run(["ros2", "param", "set", node_name, "right_fin_offset", f"{float(states[1])}"])
+                subprocess.run(["ros2", "param", "set", node_name, "left_fin_offset", f"{float(states[2])}"])
+            
+                self.recieve_console_update("Fin Calibration Saved to Params", int(key))
+        else:
+            for i in self.selected_vehicles: self.recieve_console_update("Canceling Fin Calibration", i)
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
@@ -1171,8 +1345,8 @@ class MainWindow(QMainWindow):
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
-        self.calibrate_fins_button = QPushButton("Calibrate Fins (No Signal)")
-        self.calibrate_fins_button.clicked.connect(lambda: None)
+        self.calibrate_fins_button = QPushButton("Calibrate Fins")
+        self.calibrate_fins_button.clicked.connect(self.calibrate_fins)
         self.calibrate_fins_button.setStyleSheet(self.normal_button_style_sheet)
 
         #Recall all the vehicles button
@@ -2667,3 +2841,120 @@ class ConfigurationWindow(QDialog):
                 except ValueError:
                     selected_vehicles.append(value)
         return selected_vehicles
+
+class CalibrateFinsDialog(QDialog):
+    """
+    Custom dialog for fin calibration.
+    """
+    #template vehicle_init_params
+    # {1: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0, }, 
+    # 2: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0, }, 
+    # 3: {'top_fin_offset': -10.0, 'right_fin_offset': 0.0, 'left_fin_offset': -0.0 }}
+
+    def __init__(self, parent=None, background_color="white", text_color="black", pop_up_window_style=None, selected_vehicles=None, passed_ros_node=None, on_slider_change=None, vehicle_init_params=None):
+        super().__init__(parent)
+        self.setWindowTitle("Fin Calibration:")
+        self.fin_sliders = {}
+        self.fin_dict = {
+            1: "top_fin_offset",
+            2: "right_fin_offset",
+            3: "left_fin_offset"
+        }
+        self.fin_dict_to_label = {
+            "top_fin_offset": "Top Fin",
+            "right_fin_offset": "Right Fin",
+            "left_fin_offset": "Left Fin"
+        }
+        self.on_slider_change = on_slider_change  # <-- store callback
+        layout = QVBoxLayout()
+        self.setFixedSize(300, 300)
+        self.setStyleSheet(pop_up_window_style)
+        self.pop_up_tabs = QTabWidget()
+        self.pop_up_tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.pop_up_tabs.setMovable(False)
+        tab_names = [f"Vehicle {i}" for i in selected_vehicles]
+
+        for idx, name in enumerate(tab_names):
+            vehicle_num = selected_vehicles[idx]
+            content_widget = QWidget()
+            content_widget.setStyleSheet(f"background-color: {background_color};")
+            content_layout = QVBoxLayout(content_widget)
+            self.fin_sliders[name] = []
+            for i in range(1, 4):
+                row = QHBoxLayout()
+                fin_label = QLabel(f"{self.fin_dict_to_label[self.fin_dict[i]]}: ")
+                fin_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+                row.addWidget(fin_label)
+                fin_slider = QSlider(Qt.Orientation.Horizontal)
+                fin_slider.setMinimum(-180)
+                fin_slider.setMaximum(180)
+                
+                if not vehicle_init_params: fin_slider.setValue(0)
+                else: fin_slider.setValue(int(vehicle_init_params[vehicle_num][self.fin_dict[i]]))
+
+                fin_slider.setTickInterval(1)
+                # moves one tick with the arrows
+                fin_slider.setSingleStep(1)
+                # moves one tick with the page up/down buttons
+                fin_slider.setPageStep(5)
+                fin_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+                fin_slider.setStyleSheet(f"color: {text_color};")
+                row.addWidget(fin_slider)
+                value_label = QLabel(str(fin_slider.value()))
+                value_label.setStyleSheet(f"color: {text_color};")
+                fin_slider.valueChanged.connect(lambda val, lbl=value_label: lbl.setText(str(val)))
+
+                if self.on_slider_change:
+                    fin_slider.valueChanged.connect(
+                        lambda _, vnum=vehicle_num, tab=name: self._handle_slider_change(vnum, tab)
+                    )
+                row.addWidget(value_label)
+                content_layout.addLayout(row)
+                self.fin_sliders[name].append(fin_slider)
+            cb = QCheckBox(f"coug{name[-1]}/kinematics/command")
+            cb.setChecked(True)
+            cb2 = QCheckBox(f"coug{name[-1]}/controls/command")
+            cb2.setChecked(False)
+
+            self.make_exclusive(cb, cb2)
+
+            content_layout.addWidget(cb)
+            content_layout.addWidget(cb2)
+            self.pop_up_tabs.addTab(content_widget, name)
+
+        note_label = QLabel("(Arrows -> 1, Pg Up/Down -> 5)")
+        note_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+        layout.addWidget(note_label)
+        layout.addWidget(self.pop_up_tabs)
+        buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        ok_button = buttonBox.button(QDialogButtonBox.StandardButton.Ok)
+        ok_button.setText("Save Changes To Params")
+        buttonBox.accepted.connect(self.validate_and_accept)
+        button_row = QHBoxLayout()
+        button_row.addWidget(buttonBox)
+        layout.addLayout(button_row)
+        self.setLayout(layout)
+
+    def make_exclusive(self, box1, box2):
+        box1.stateChanged.connect(lambda state: box2.setChecked(False) if state else None)
+        box2.stateChanged.connect(lambda state: box1.setChecked(False) if state else None)
+
+    def _handle_slider_change(self, vehicle_num, tab_name):
+        # Called whenever a slider changes for a vehicle
+        if self.on_slider_change:
+            # Get current values for this vehicle
+            values = [slider.value() for slider in self.fin_sliders[tab_name]]
+            self.on_slider_change(vehicle_num, values)
+
+    def validate_and_accept(self): 
+        self.accept()
+
+    def get_states(self):
+        """
+        Returns a dict mapping each vehicle/tab name to a list of its fin slider values.
+        Example: {'Vehicle 1': [val1, val2, val3], ...}
+        """
+        states = {}
+        for tab_name, sliders in self.fin_sliders.items():
+            states[tab_name[-1]] = [slider.value() for slider in sliders]
+        return states
