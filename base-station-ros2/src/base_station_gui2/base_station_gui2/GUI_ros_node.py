@@ -19,6 +19,8 @@ from PyQt6.QtCore import QTimer
 
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+from rcl_interfaces.srv import SetParameters
 
 from nav_msgs.msg import Path #used to publish the path
 from sensor_msgs.msg import NavSatFix #used to publish the origin
@@ -118,6 +120,13 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_fins_controls', pub)
 
+            #dynamic clients for coug kinematics parameters
+            client = self.create_client(
+                SetParameters,
+                f'/coug{coug_number}/coug_kinematics'
+            )
+            setattr(self, f'coug{coug_number}_kinematics_client', client)
+
         self.kill_subscription = self.create_subscription(
             Bool,
             'confirm_e_kill',
@@ -192,6 +201,28 @@ class GuiNode(Node):
         msg.fin = [fin_degree[0], fin_degree[1], fin_degree[2], float(0)]
         if publish_type: getattr(self, f"coug{vehicle_number}_fins_kinematics").publish(msg)
         else: getattr(self, f"coug{vehicle_number}_fins_controls").publish(msg)
+
+    def set_single_parameter(self, param_name, param_value, coug_number, callback=None):
+        param = Parameter()
+        param.name = param_name
+        # Set the appropriate type for the parameter value
+        if isinstance(param_value, str):
+            param.value.type = ParameterType.PARAMETER_STRING
+            param.value.string_value = param_value
+        elif isinstance(param_value, int):
+            param.value.type = ParameterType.PARAMETER_INTEGER
+            param.value.integer_value = param_value
+        elif isinstance(param_value, float):
+            param.value.type = ParameterType.PARAMETER_DOUBLE
+            param.value.double_value = param_value
+
+        req = SetParameters.Request()
+        req.parameters = [param]
+        client = getattr(self, f"coug{coug_number}_kinematics_client")
+        future = client.call_async(req)
+        if callback:
+            future.add_done_callback(lambda fut: callback(fut.result()))
+        return future
 
 def ros_spin_thread(executor):
     """

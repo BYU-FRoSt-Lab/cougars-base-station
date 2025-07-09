@@ -1115,10 +1115,11 @@ class MainWindow(QMainWindow):
                 fin_states = dlg.get_states()
                 for key, states in fin_states.items():
                     self.save_param_file(key, states)
-                    node_name = f"/coug{key}/coug_kinematics"
-                    # subprocess.run(["ros2", "param", "set", node_name, "top_fin_offset", f"{float(states[0])}"])
-                    # subprocess.run(["ros2", "param", "set", node_name, "right_fin_offset", f"{float(states[1])}"])
-                    # subprocess.run(["ros2", "param", "set", node_name, "left_fin_offset", f"{float(states[2])}"])
+                    self.ros_node.set_single_parameter("top_fin_offset", float(states[0]), key)
+                    self.ros_node.set_single_parameter("right_fin_offset", float(states[1]), key)
+                    self.ros_node.set_single_parameter("left_fin_offset", float(states[2]), key)
+
+                    self.recieve_console_update("Vehicle Kinematics param set", int(key))
                     self.recieve_console_update("Fin Calibration Saved to Params", int(key))
             else:
                 for i in self.selected_vehicles: self.recieve_console_update("Canceling Fin Calibration", i)
