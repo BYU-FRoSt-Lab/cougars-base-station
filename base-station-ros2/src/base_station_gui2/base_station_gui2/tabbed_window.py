@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
 
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
 
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon, QActionGroup
 
@@ -1065,87 +1065,72 @@ class MainWindow(QMainWindow):
             f.write(content)
 
     def calibrate_fins(self):
-
-        # first need to read from params in cougars-base-station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params
-        vehicle_params_dict = {}
-        params_found_dict = {}
-        base_params_problems = []
-        vehicle_params_problems = []
-        for i in self.selected_vehicles:
-            vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
-            params_found_dict[i] = (vehicle_params, base_params)
-            if vehicle_params is not None: 
-                vehicle_params_dict[i] = vehicle_params
-                if base_params is None: self.create_new_param_file(i)
-            elif base_params is not None: vehicle_params_dict[i] = base_params
-            else: 
-                #create a new file if it doesn't exist already, from config/vehicle_params.yaml
-                self.create_new_param_file(i)
-                vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
-                if base_params: vehicle_params_dict[i] = base_params
-
-        # example params found dict: {2: ({'trim_ratio': 0.0, 'top_fin_offset': -99.0, 'right_fin_offset': -97.0, 'left_fin_offset': -180.0, 
-        # 'demo_mode': False, 'fin_0_direction': 1, 'fin_1_direction': -1, 'fin_2_direction': -1}, 
-        # {'trim_ratio': 0.0, 'top_fin_offset': -99.0, 'right_fin_offset': -97.0, 'left_fin_offset': -180.0, 
-        # 'demo_mode': False, 'fin_0_direction': 1, 'fin_1_direction': -1, 'fin_2_direction': -1}), 
-        # 3: (None, None)}
-        for vehicle_id, params in params_found_dict.items():
-            if params[0] is None:
-                vehicle_params_problems.append(vehicle_id)
-            if params[1] is None:
-                base_params_problems.append(vehicle_id)
-
-        # Show warning in main thread if needed
-        if base_params_problems or vehicle_params_problems:
-            warning_lines = []
-            if vehicle_params_problems:
-                warning_lines.append(
-                    f"The following vehicle params files weren't found or had errors: {vehicle_params_problems}"
-                )
-            if base_params_problems:
-                warning_lines.append(
-                    f"The following base station params files weren't found or had errors (if not found they were created): {base_params_problems}"
-                )
-            warning_msg = "\n".join(warning_lines)
-            QTimer.singleShot(0, lambda: QMessageBox.warning(
-                self, "Params File Warning", warning_msg
-            ))
-
-        def publish_fins(vehicle_num, fins, type):
-            # Publish to ROS node
-            fins_out = [float(f) for f in fins]
-            self.ros_node.publish_fins(fins_out, vehicle_num)
-
-        for i in self.selected_vehicles:
-            self.recieve_console_update("Loading Fin Calibration Window...", i)
-            
-        dlg = CalibrateFinsDialog(
+        # Show loading dialog
+        loading_dialog = LoadingDialog(
+            message="Loading fin \ncalibration data...",
             parent=self,
             background_color=self.background_color,
-            text_color=self.text_color,
-            pop_up_window_style=self.pop_up_window_style,
-            selected_vehicles=self.selected_vehicles,
-            passed_ros_node=self.ros_node,
-            on_slider_change=publish_fins,
-            vehicle_init_params=vehicle_params_dict
+            text_color=self.text_color
         )
+        loading_dialog.show()
+        QApplication.processEvents()  # Ensure it appears immediately
 
-        if dlg.exec():
-            # save changes to param file on local machine
-            # example states: {'1': [-91, 80, -69], '2': [0, 0, 0]}
-            fin_states = dlg.get_states()
-            for key, states in fin_states.items():
-                self.save_param_file(key, states)
-                # Set params on the vehicle using ros2 param set
-                #TODO: figure out how to set the param on the vehicle so relaunching isn't necessary
-                node_name = f"/coug{key}/coug_kinematics"
-                subprocess.run(["ros2", "param", "set", node_name, "top_fin_offset", f"{float(states[0])}"])
-                subprocess.run(["ros2", "param", "set", node_name, "right_fin_offset", f"{float(states[1])}"])
-                subprocess.run(["ros2", "param", "set", node_name, "left_fin_offset", f"{float(states[2])}"])
-            
-                self.recieve_console_update("Fin Calibration Saved to Params", int(key))
-        else:
-            for i in self.selected_vehicles: self.recieve_console_update("Canceling Fin Calibration", i)
+        def after_worker(vehicle_params_dict, params_found_dict, base_params_problems, vehicle_params_problems):
+            loading_dialog.close()
+            # ...existing after_worker code...
+            if base_params_problems or vehicle_params_problems:
+                warning_lines = []
+                if vehicle_params_problems:
+                    warning_lines.append(
+                        f"The following vehicle params files weren't found or had errors: {vehicle_params_problems}"
+                    )
+                if base_params_problems:
+                    warning_lines.append(
+                        f"The following base station params files weren't found or had errors (if not found they were created): {base_params_problems}"
+                    )
+                warning_msg = "\n".join(warning_lines)
+                QTimer.singleShot(0, lambda: QMessageBox.warning(
+                    self, "Params File Warning", warning_msg
+                ))
+
+            def publish_fins(vehicle_num, fins, pub_type):
+                fins_out = [float(f) for f in fins]
+                self.ros_node.publish_fins(fins_out, vehicle_num, pub_type)
+
+            for i in self.selected_vehicles:
+                self.recieve_console_update("Loading Fin Calibration Window...", i)
+
+            dlg = CalibrateFinsDialog(
+                parent=self,
+                background_color=self.background_color,
+                text_color=self.text_color,
+                pop_up_window_style=self.pop_up_window_style,
+                selected_vehicles=self.selected_vehicles,
+                passed_ros_node=self.ros_node,
+                on_slider_change=publish_fins,
+                vehicle_init_params=vehicle_params_dict
+            )
+
+            if dlg.exec():
+                fin_states = dlg.get_states()
+                for key, states in fin_states.items():
+                    self.save_param_file(key, states)
+                    node_name = f"/coug{key}/coug_kinematics"
+                    # subprocess.run(["ros2", "param", "set", node_name, "top_fin_offset", f"{float(states[0])}"])
+                    # subprocess.run(["ros2", "param", "set", node_name, "right_fin_offset", f"{float(states[1])}"])
+                    # subprocess.run(["ros2", "param", "set", node_name, "left_fin_offset", f"{float(states[2])}"])
+                    self.recieve_console_update("Fin Calibration Saved to Params", int(key))
+            else:
+                for i in self.selected_vehicles: self.recieve_console_update("Canceling Fin Calibration", i)
+
+        # Start worker thread
+        self.cal_fins_worker = CalibrateFinsWorker(
+            self.selected_vehicles,
+            self.load_vehicle_kinematics_params,
+            self.create_new_param_file
+        )
+        self.cal_fins_worker.finished.connect(after_worker)
+        self.cal_fins_worker.start()
 
     #Connected to the "kill" signal
     def emergency_shutdown_button(self, vehicle_number):
@@ -2843,6 +2828,7 @@ class CalibrateFinsDialog(QDialog):
     def __init__(self, parent=None, background_color="white", text_color="black", pop_up_window_style=None, selected_vehicles=None, passed_ros_node=None, on_slider_change=None, vehicle_init_params=None):
         super().__init__(parent)
         self.setWindowTitle("Fin Calibration:")
+        self.pub_types = {}
         self.fin_sliders = {}
         self.fin_dict = {
             1: "top_fin_offset",
@@ -2895,17 +2881,24 @@ class CalibrateFinsDialog(QDialog):
 
                 if self.on_slider_change:
                     fin_slider.valueChanged.connect(
-                        lambda _, vnum=vehicle_num, tab=name: self._handle_slider_change(vnum, tab)
+                        lambda _, vnum=vehicle_num, tab=name: self._handle_slider_change(vnum, tab, self.pub_types[vehicle_num])
                     )
                 row.addWidget(value_label)
                 content_layout.addLayout(row)
                 self.fin_sliders[name].append(fin_slider)
-            cb = QCheckBox(f"coug{name[-1]}/kinematics/command")
+
+            self.pub_types[vehicle_num] = 1
+            # pub_type = 1
+            cb = QCheckBox(f"coug{vehicle_num}/kinematics/command")
             cb.setChecked(True)
-            cb2 = QCheckBox(f"coug{name[-1]}/controls/command")
+            # pub_type = 0
+            cb2 = QCheckBox(f"coug{vehicle_num}/controls/command")
             cb2.setChecked(False)
 
             self.make_exclusive(cb, cb2)
+
+            cb.stateChanged.connect(lambda state, vnum=vehicle_num: self.set_pub_type(vnum, 1) if state else None)
+            cb2.stateChanged.connect(lambda state, vnum=vehicle_num: self.set_pub_type(vnum, 0) if state else None)
 
             content_layout.addWidget(cb)
             content_layout.addWidget(cb2)
@@ -2928,12 +2921,15 @@ class CalibrateFinsDialog(QDialog):
         box1.stateChanged.connect(lambda state: box2.setChecked(False) if state else None)
         box2.stateChanged.connect(lambda state: box1.setChecked(False) if state else None)
 
-    def _handle_slider_change(self, vehicle_num, tab_name):
+    def set_pub_type(self, vehicle_num, value):
+        self.pub_types[vehicle_num] = value
+
+    def _handle_slider_change(self, vehicle_num, tab_name, pub_type):
         # Called whenever a slider changes for a vehicle
         if self.on_slider_change:
             # Get current values for this vehicle
             values = [slider.value() for slider in self.fin_sliders[tab_name]]
-            self.on_slider_change(vehicle_num, values)
+            self.on_slider_change(vehicle_num, values, pub_type)
 
     def validate_and_accept(self): 
         self.accept()
@@ -2947,3 +2943,49 @@ class CalibrateFinsDialog(QDialog):
         for tab_name, sliders in self.fin_sliders.items():
             states[tab_name[-1]] = [slider.value() for slider in sliders]
         return states
+
+class CalibrateFinsWorker(QThread):
+    finished = pyqtSignal(dict, dict, list, list)
+    def __init__(self, selected_vehicles, load_vehicle_kinematics_params, create_new_param_file):
+        super().__init__()
+        self.selected_vehicles = selected_vehicles
+        self.load_vehicle_kinematics_params = load_vehicle_kinematics_params
+        self.create_new_param_file = create_new_param_file
+
+    def run(self):
+        vehicle_params_dict = {}
+        params_found_dict = {}
+        base_params_problems = []
+        vehicle_params_problems = []
+        for i in self.selected_vehicles:
+            vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
+            params_found_dict[i] = (vehicle_params, base_params)
+            if vehicle_params is not None: 
+                vehicle_params_dict[i] = vehicle_params
+                if base_params is None: self.create_new_param_file(i)
+            elif base_params is not None: vehicle_params_dict[i] = base_params
+            else: 
+                self.create_new_param_file(i)
+                vehicle_params, base_params = self.load_vehicle_kinematics_params(i)
+                if base_params: vehicle_params_dict[i] = base_params
+
+        for vehicle_id, params in params_found_dict.items():
+            if params[0] is None:
+                vehicle_params_problems.append(vehicle_id)
+            if params[1] is None:
+                base_params_problems.append(vehicle_id)
+        self.finished.emit(vehicle_params_dict, params_found_dict, base_params_problems, vehicle_params_problems)
+
+class LoadingDialog(QDialog):
+    def __init__(self, message="Loading, please wait...", parent=None, background_color="#222", text_color="#fff"):
+        super().__init__(parent)
+        self.setWindowTitle("Please Wait")
+        self.setModal(True)
+        self.setFixedSize(250, 100)
+        self.setStyleSheet(f"background-color: {background_color}; color: {text_color};")
+        layout = QVBoxLayout()
+        label = QLabel(message)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet(f"color: {text_color}; font-size: 12pt;")
+        layout.addWidget(label)
+        self.setLayout(layout)

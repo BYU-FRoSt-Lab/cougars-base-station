@@ -102,13 +102,21 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_path_', pub)
 
-            #dynamic publishers for vehicle fins
+            #dynamic publishers for vehicle fins on kinematics command
             pub = self.create_publisher(
                 UCommand,
                 f'/coug{coug_number}/kinematics/command',
                 qos_reliable_profile
             )
-            setattr(self, f'coug{coug_number}_fins_', pub)
+            setattr(self, f'coug{coug_number}_fins_kinematics', pub)
+
+            #dynamic publishers for vehicle fins on controls command
+            pub = self.create_publisher(
+                UCommand,
+                f'/coug{coug_number}/controls/command',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_fins_controls', pub)
 
         self.kill_subscription = self.create_subscription(
             Bool,
@@ -175,10 +183,15 @@ class GuiNode(Node):
         getattr(self, f'coug{vehicle_number}_path_').publish(msg)
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
 
-    def publish_fins(self, fin_degree, vehicle_number):
+    def publish_fins(self, fin_degree, vehicle_number, publish_type):
+        # typublish_typepe: 
+        # 1->cougX/kinematics/command
+        # 0->cougX/controls/command
+
         msg = UCommand()
         msg.fin = [fin_degree[0], fin_degree[1], fin_degree[2], float(0)]
-        getattr(self, f"coug{vehicle_number}_fins_").publish(msg)
+        if publish_type: getattr(self, f"coug{vehicle_number}_fins_kinematics").publish(msg)
+        else: getattr(self, f"coug{vehicle_number}_fins_controls").publish(msg)
 
 def ros_spin_thread(executor):
     """
