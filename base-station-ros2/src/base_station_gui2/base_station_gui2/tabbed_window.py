@@ -1111,12 +1111,7 @@ class MainWindow(QMainWindow):
             warning_lines = []
             if vehicle_params_problems:
                 warning_lines.append(
-                    f"The following vehicle params files weren't found or had errors: {vehicle_params_problem        if base_params_problems or vehicle_params_problems:
-            QTimer.singleShot(0, lambda: QMessageBox.warning(
-                self, "Params File Warning",
-                f"The following vehicle params files weren't found or had errors: {vehicle_params_problems}\n"
-                f"The following base station params files weren't found or had errors (if not found they were created): {base_params_problems}"
-            ))s}"
+                    f"The following vehicle params files weren't found or had errors: {vehicle_params_problems}"
                 )
             if base_params_problems:
                 warning_lines.append(
@@ -2872,7 +2867,7 @@ class CalibrateFinsDialog(QDialog):
         }
         self.on_slider_change = on_slider_change  # <-- store callback
         layout = QVBoxLayout()
-        self.setFixedSize(300, 200)
+        self.setFixedSize(300, 300)
         self.setStyleSheet(pop_up_window_style)
         self.pop_up_tabs = QTabWidget()
         self.pop_up_tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -2916,6 +2911,15 @@ class CalibrateFinsDialog(QDialog):
                 row.addWidget(value_label)
                 content_layout.addLayout(row)
                 self.fin_sliders[name].append(fin_slider)
+            cb = QCheckBox(f"coug{name[-1]}/kinematics/command")
+            cb.setChecked(True)
+            cb2 = QCheckBox(f"coug{name[-1]}/controls/command")
+            cb2.setChecked(False)
+
+            self.make_exclusive(cb, cb2)
+
+            content_layout.addWidget(cb)
+            content_layout.addWidget(cb2)
             self.pop_up_tabs.addTab(content_widget, name)
 
         note_label = QLabel("(Arrows -> 1, Pg Up/Down -> 5)")
@@ -2930,6 +2934,10 @@ class CalibrateFinsDialog(QDialog):
         button_row.addWidget(buttonBox)
         layout.addLayout(button_row)
         self.setLayout(layout)
+
+    def make_exclusive(self, box1, box2):
+        box1.stateChanged.connect(lambda state: box2.setChecked(False) if state else None)
+        box2.stateChanged.connect(lambda state: box1.setChecked(False) if state else None)
 
     def _handle_slider_change(self, vehicle_num, tab_name):
         # Called whenever a slider changes for a vehicle
