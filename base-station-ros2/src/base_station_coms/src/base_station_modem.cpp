@@ -104,11 +104,12 @@ public:
                 emergency_kill_confirmed(msg);
             } break;
             case CONFIRM_EMERGENCY_SURFACE: {
-                emergency_kill_confirmed(msg);
+                emergency_surface_confirmed(msg);
             } break;
         }
     }
 
+    
 
     // Sends emergency kill signal to coug specified in request
     void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,

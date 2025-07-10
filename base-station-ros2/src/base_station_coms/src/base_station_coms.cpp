@@ -133,7 +133,7 @@ public:
        for(int64_t i: vehicles_in_mission_){
            modem_connection[i] = false;
            radio_connection[i] = false;
-           wifi_connection[i] = false;
+           wifi_connection[i] = true;
        }
        std::ostringstream ss;
        ss << "Vehicle ids in mission: ";
