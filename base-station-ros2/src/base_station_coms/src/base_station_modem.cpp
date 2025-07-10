@@ -78,12 +78,13 @@ public:
         RCLCPP_INFO(this->get_logger(), "base station coms node started");
 
         this->timer_ = this->create_wall_timer(
-            std::chrono::seconds(3), std::bind(&ModemComs::check_modem_connections, this)
+            std::chrono::seconds(1), std::bind(&ModemComs::check_modem_connections, this)
         );
 
         for (int vehicle : vehicles_in_mission_) {
             this->modem_connection[vehicle] = false;
             this->messages_missed_[vehicle] = 3;
+            this->last_message_time_[vehicle] = this->now();
         }
 
     }
@@ -152,6 +153,8 @@ public:
         
         const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
         auto status_msg = base_station_interfaces::msg::Status();
+
+        // Fill in the status message from the data received
         status_msg.vehicle_id = msg.src_id;
         status_msg.safety_status.depth_status.data = (status->safety_mask & 0x01) != 0;
         status_msg.safety_status.gps_status.data = (status->safety_mask & 0x02) != 0;
@@ -167,6 +170,7 @@ public:
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;
         status_msg.pressure.fluid_pressure = status->pressure;
+
         this->status_publisher_->publish(status_msg);
 
     RCLCPP_INFO(this->get_logger(), "position (x, y, z): (%.2f, %.2f, %.2f)", 
@@ -232,7 +236,7 @@ public:
                 msg.connections.push_back(true);
                 this->modem_connection[id] = true;
             }
-            msg.last_ping.push_back(static_cast<uint64_t>(last_message_time_[id].seconds()));
+            msg.last_ping.push_back(static_cast<uint64_t>(this->now().seconds() - last_message_time_[id].seconds()));
         }
         msg.vehicle_ids = this->vehicles_in_mission_;
         

@@ -35,7 +35,7 @@
     
     debug_mode: False
 
-    ping_frequency: 3
+    ping_frequency: 1
 
     xbee_port: /dev/ttyUSB0
     xbee_baud: 9600

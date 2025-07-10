@@ -43,6 +43,7 @@ public:
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
+        // When true the node will periodically request status from vehicles in mission
         this->declare_parameter<bool>("request_status", true);
         bool request_status = this->get_parameter("request_status").as_bool();
 
@@ -96,10 +97,6 @@ public:
             std::bind(&ComsNode::publish_status_callback, this, _1)
         );
 
-        // timer that periodically requests status from vehicles in mission
-        timer_ = this->create_wall_timer(
-                    std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
-
         // subscriber to the connections topic of the modem and radio nodes, keeps track of which vehicles are connected via radio or modem
         connections_subscriber_ = this->create_subscription<base_station_interfaces::msg::Connections>(
             "connections", 10,
@@ -128,7 +125,7 @@ public:
            }
        }
 
-
+       // Send to all is always true
        modem_connection[0] = true;
        radio_connection[0] = true;
       
@@ -167,34 +164,40 @@ public:
     // If not it attempts to request the status through the modem node
     void request_status_callback(){
 
-
+        // If there are no vehicles in mission, skip the status request
         if (vehicles_in_mission_.empty()) {
             RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "No vehicles in mission — skipping status request.");
             return;
-        }  
-        // Cycle through vehicles in mission to request status one by one
-        vehicle_id_index += 1;
-        if (vehicle_id_index>=vehicles_in_mission_.size())
-            vehicle_id_index = 0;
+        } 
 
+        // Does not make status request if the vehicle is connected via wifi
         if (wifi_connection[vehicles_in_mission_[vehicle_id_index]]) {
-            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Vehicle %i is connected via wifi, skipping status request.", vehicles_in_mission_[vehicle_id_index]);
+            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Vehicle %li is connected via wifi, skipping status request.", vehicles_in_mission_[vehicle_id_index]);
             return;
         }
+
+        // Cycle through vehicles in mission to request status one by one
+        vehicle_id_index += 1;
+        if (vehicle_id_index>=vehicles_in_mission_.size()){
+            vehicle_id_index = 0;
+        }
+
+        // Create the status request
         auto request = std::make_shared<base_station_interfaces::srv::BeaconId::Request>();
         int beacon_id = vehicles_in_mission_[vehicle_id_index];
         request->beacon_id = beacon_id;
 
         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Coug %i connections: radio - %d, modem - %d", beacon_id, radio_connection[beacon_id], modem_connection[beacon_id]);
-        
-        if (radio_connection[beacon_id]){
+
+        // Attempts to request through radio first, if the vehicle is connected via radio
+        // If the vehicle is not connected via radio, it attempts to request through modem
+        if (radio_connection[beacon_id]) {
 
             if (!radio_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
                 RCLCPP_WARN(rclcpp::get_logger("rclcpp"),
                     "Radio status request service not available for Coug %i. Skipping request.", beacon_id);
                 return;
             }
-
             auto result_future = radio_status_request_client_->async_send_request(request,
                 [this, beacon_id](rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedFuture future) {
                     try {
@@ -207,12 +210,11 @@ public:
                         RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Exception while requesting status from Coug %i: %s", beacon_id, e.what());
                     }
                 });
-
         } else {
+
             if (!modem_connection[beacon_id]){
                 RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Status request may not work because there is no connection.");
             }
-
             if (!modem_status_request_client_->wait_for_service(std::chrono::seconds(1))) {
                 RCLCPP_WARN(rclcpp::get_logger("rclcpp"),
                     "Modem status request service not available for Coug %i. Skipping request.", beacon_id);
@@ -297,7 +299,7 @@ public:
 
             } else {
                 // error message, no connection to coug
-                RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send surface command to Coug %i because there is no connection", beacon_id);
+                RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send surface command to Coug %i because there is no modem connection", beacon_id);
                 response->success = false;
             }
         } else{
@@ -306,9 +308,9 @@ public:
         }
     }
 
+    // Callback for the wifi connection service, toggles the modem and radio connections based on the request
     void wifi_connection_callback(const std::shared_ptr<base_station_interfaces::srv::ModemControl::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::ModemControl::Response> response) {
-        // Toggle modem and radio connections based on the request
         this->wifi_connection[request->vehicle_id] = request->modem_shut_off;
         if (this->wifi_connection[request->vehicle_id]) {
             RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %i's Modem and radio connections are OFF", request->vehicle_id);
