@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
             if key:
                 self._typed_buffer += key
                 self._typed_buffer = self._typed_buffer[-20:]
-                trigger = base64.b64decode("c2V0aCByb2Nrcw==").decode()
+                trigger = base64.b64decode("ZHVja2lldG93bg==").decode()
                 if trigger in self._typed_buffer.lower():
                     self._typed_buffer = ""
                     self.dep_folder_scan()
