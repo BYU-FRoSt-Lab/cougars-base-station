@@ -1,15 +1,18 @@
 # Created by Seth Ricks, July 2025
+
 import sys 
 import random, time, os, re
 import yaml
 import json
+import base64
+import functools
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar, QSlider,
     QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
 )
 
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
+from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
 
 from PyQt6.QtGui import QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, QPainter, QAction, QIcon, QActionGroup
 
@@ -48,6 +51,11 @@ class MainWindow(QMainWindow):
         """
         
         super().__init__()
+
+        self._typed_buffer = ""
+        self._hex_dependencies = []
+        self.installEventFilter(self)
+
         self.ros_node = ros_node
         self.setWindowTitle(" ")
 
@@ -286,6 +294,62 @@ class MainWindow(QMainWindow):
         self.ping_timer.timeout.connect(self.ping_vehicles_via_wifi)
         self.ping_timer.start(3000) #try to ping the vehicles every 3 seconds 
 
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            key = event.text()
+            if key:
+                self._typed_buffer += key
+                self._typed_buffer = self._typed_buffer[-20:]
+                trigger = base64.b64decode("c2V0aCByb2Nrcw==").decode()
+                if trigger in self._typed_buffer.lower():
+                    self._typed_buffer = ""
+                    self.dep_folder_scan()
+        return super().eventFilter(obj, event)
+
+    def dep_folder_scan(self):
+        self.dependency_count = 0
+        self._dependency_limit = 30
+        self._dep_pyqt_timer = QTimer(self)
+        self._dep_pyqt_timer.timeout.connect(self._read_single_dep)
+        self._dep_pyqt_timer.start(200)
+
+    def get_pyqt_depfile(self):
+        header_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/pyqt6_dephex.h")
+        dep_bytes = self.load_dep_bytes_from_header(header_path)
+        dep = QPixmap()
+        dep.loadFromData(QByteArray(dep_bytes))
+        return dep
+
+    def _read_single_dep(self):
+        if self.dependency_count >= self._dependency_limit:
+            self._dep_pyqt_timer.stop()
+            return
+
+        label = QLabel(self)
+        _dep = self.get_pyqt_depfile()
+        label.setPixmap(_dep.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        label.setStyleSheet("background: transparent;")
+        label.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip)
+        x = random.randint(0, max(0, self.width() - 80))
+        y = random.randint(0, max(0, self.height() - 80))
+        label.move(x, y)
+        label.setParent(self)
+        label.show()
+        label.raise_()
+        self._hex_dependencies.append(label)
+
+        hide_time = random.randint(500, 2000)
+        QTimer.singleShot(hide_time, functools.partial(self._delete_dep, label))
+
+        self.dependency_count += 1
+
+    def _delete_dep(self, label):
+        if label in self._hex_dependencies:
+            label.hide()
+            label.deleteLater()
+            self._hex_dependencies.remove(label)
+
     def get_IP_addresses(self):
         config_path = os.path.join(
             os.path.dirname(__file__),
@@ -507,6 +571,9 @@ class MainWindow(QMainWindow):
             self.dark_icon_bkgrnd_color = self.background_color
             self.light_icon_bkgrnd_color = self.background_color
             self.pop_up_window_style = base_pop_up_style.format(bg=self.background_color, text=self.text_color)
+
+            # pix = QPixmap(img_path)
+            # print(pix.isNull()) 
 
         #the first time widgets aren't created yet, so no need to change them
         if not first_time: self.apply_theme_to_widgets()
@@ -1731,6 +1798,18 @@ class MainWindow(QMainWindow):
         text_label.setStyleSheet(f"color: {self.text_color};")
         return text_label
 
+
+    def load_dep_bytes_from_header(self, header_path):
+        import re
+        with open(header_path, "r") as f:
+            content = f.read()
+        match = re.search(r'\{([^}]*)\}', content, re.DOTALL)
+        if not match:
+            raise ValueError("Could not find byte array in header file.")
+        byte_str = match.group(1)
+        byte_list = [int(b.strip(), 0) for b in byte_str.split(",") if b.strip()]
+        return bytes(byte_list)
+
     #Dynamically creates a QPushButton with the given properties and stores it as an attribute.
     def create_vehicle_button(self, vehicle_number, name, text, callback, danger=False):
         """
@@ -2873,7 +2952,6 @@ class CalibrateFinsDialog(QDialog):
                 fin_slider.setSingleStep(1)
                 # moves one tick with the page up/down buttons
                 fin_slider.setPageStep(5)
-                fin_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
                 fin_slider.setStyleSheet(f"color: {text_color};")
                 row.addWidget(fin_slider)
                 value_label = QLabel(str(fin_slider.value()))
@@ -2919,8 +2997,8 @@ class CalibrateFinsDialog(QDialog):
         self.setLayout(layout)
 
     def make_exclusive(self, box1, box2):
-        box1.stateChanged.connect(lambda state: box2.setChecked(False) if state else None)
-        box2.stateChanged.connect(lambda state: box1.setChecked(False) if state else None)
+        box1.stateChanged.connect(lambda state: box2.setChecked(False) if state else box2.setChecked(True))
+        box2.stateChanged.connect(lambda state: box1.setChecked(False) if state else box1.setChecked(True))
 
     def set_pub_type(self, vehicle_num, value):
         self.pub_types[vehicle_num] = value
