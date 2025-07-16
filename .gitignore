@@ -4,3 +4,4 @@
 **/__pycache__
 **/.vscode
 /postprocessing/converted_bags
+**/mapproxy/mapcache
