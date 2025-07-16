@@ -7,14 +7,14 @@
 /**:
   ros__parameters:
 
-    vehicle_ID: 2
+    vehicle_ID: 1
 
     water_salinity_ppt: 0.0 # 0 for fresh water, 35 for salt water
     magnetic_declination: 10.7 # E is positive, W is negative, 10.70° E for Utah Lake
     # https://www.ngdc.noaa.gov/geomag/calculators/magcalc.shtml?
     demo_mode: false
 
-coug2: # Change this to match the vehicle name
+coug0: # Change this to match the vehicle name
 
 
   coug_controls:
@@ -54,9 +54,9 @@ coug2: # Change this to match the vehicle name
   coug_kinematics:
     ros__parameters:
       trim_ratio: 0.0 # multiplied by the velocity
-      top_fin_offset: 60.0 # offset in degrees for the top fin 
-      right_fin_offset: -10.0 # offset in degrees port fin 
-      left_fin_offset: -15.0 # offset in degrees starboard fin 
+      top_fin_offset: 0.0 # offset in degrees for the top fin 
+      right_fin_offset: 0.0 # offset in degrees port fin 
+      left_fin_offset: 0.0 # offset in degrees starboard fin 
       demo_mode: false # if true, disables the thruster
       fin_0_direction: 1 # 1 for forward, -1 for reverse
       fin_1_direction: -1 # 1 for forward, -1 for reverse
@@ -64,7 +64,7 @@ coug2: # Change this to match the vehicle name
 
   depth_convertor:
     ros__parameters:
-      fluid_pressure_atm: 77346.0 # 87250.0 from testing, TODO: add units
+      fluid_pressure_atm: 84246.0 # 87250.0 from testing, TODO: add units
 
   gpsd_client:
     ros__parameters:

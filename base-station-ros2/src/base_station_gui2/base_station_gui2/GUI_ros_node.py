@@ -19,6 +19,8 @@ from PyQt6.QtCore import QTimer
 
 import base_station_gui2.tabbed_window
 from rclpy.executors import SingleThreadedExecutor
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+from rcl_interfaces.srv import SetParameters
 
 from nav_msgs.msg import Path #used to publish the path
 from sensor_msgs.msg import NavSatFix #used to publish the origin
@@ -26,7 +28,7 @@ from geometry_msgs.msg import PoseStamped
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, Status, ConsoleLog
-from frost_interfaces.msg import SystemStatus, SystemControl
+from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
 
 class GuiNode(Node):
     """
@@ -102,6 +104,29 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_path_', pub)
 
+            #dynamic publishers for vehicle fins on kinematics command
+            pub = self.create_publisher(
+                UCommand,
+                f'/coug{coug_number}/kinematics/command',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_fins_kinematics', pub)
+
+            #dynamic publishers for vehicle fins on controls command
+            pub = self.create_publisher(
+                UCommand,
+                f'/coug{coug_number}/controls/command',
+                qos_reliable_profile
+            )
+            setattr(self, f'coug{coug_number}_fins_controls', pub)
+
+            #dynamic clients for coug kinematics parameters
+            client = self.create_client(
+                SetParameters,
+                f'/coug{coug_number}/coug_kinematics'
+            )
+            setattr(self, f'coug{coug_number}_kinematics_client', client)
+
         self.kill_subscription = self.create_subscription(
             Bool,
             'confirm_e_kill',
@@ -132,10 +157,18 @@ class GuiNode(Node):
         #publisher for the map viz origin 
         self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
 
+        self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
+
         # Service clients for emergency kill and surface services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
+
+    def publish_console_log(self, msg_text, msg_num):
+        msg = ConsoleLog()
+        msg.message = msg_text
+        msg.vehicle_number = msg_num
+        self.console_publisher.publish(msg)
 
     def publish_origin(self, origin_msg):
     # origin_msg: tuple(float, float)
@@ -158,6 +191,38 @@ class GuiNode(Node):
 
         getattr(self, f'coug{vehicle_number}_path_').publish(msg)
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
+
+    def publish_fins(self, fin_degree, vehicle_number, publish_type):
+        # typublish_typepe: 
+        # 1->cougX/kinematics/command
+        # 0->cougX/controls/command
+
+        msg = UCommand()
+        msg.fin = [fin_degree[0], fin_degree[1], fin_degree[2], float(0)]
+        if publish_type: getattr(self, f"coug{vehicle_number}_fins_kinematics").publish(msg)
+        else: getattr(self, f"coug{vehicle_number}_fins_controls").publish(msg)
+
+    def set_single_parameter(self, param_name, param_value, coug_number, callback=None):
+        param = Parameter()
+        param.name = param_name
+        # Set the appropriate type for the parameter value
+        if isinstance(param_value, str):
+            param.value.type = ParameterType.PARAMETER_STRING
+            param.value.string_value = param_value
+        elif isinstance(param_value, int):
+            param.value.type = ParameterType.PARAMETER_INTEGER
+            param.value.integer_value = param_value
+        elif isinstance(param_value, float):
+            param.value.type = ParameterType.PARAMETER_DOUBLE
+            param.value.double_value = param_value
+
+        req = SetParameters.Request()
+        req.parameters = [param]
+        client = getattr(self, f"coug{coug_number}_kinematics_client")
+        future = client.call_async(req)
+        if callback:
+            future.add_done_callback(lambda fut: callback(fut.result()))
+        return future
 
 def ros_spin_thread(executor):
     """

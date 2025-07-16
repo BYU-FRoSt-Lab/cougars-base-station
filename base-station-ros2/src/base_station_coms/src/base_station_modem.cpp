@@ -81,6 +81,11 @@ public:
             std::chrono::seconds(3), std::bind(&ModemComs::check_modem_connections, this)
         );
 
+        for (int vehicle : vehicles_in_mission_) {
+            this->modem_connection[vehicle] = false;
+            this->messages_missed_[vehicle] = 3;
+        }
+
     }
 
     // listens to ModemRec message and processes msg according to the msg id
@@ -130,6 +135,7 @@ public:
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
     {
         RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
+        this->messages_missed_[request->beacon_id]++;
 
         RequestStatus request_status_msg;
         send_acoustic_message(request->beacon_id, sizeof(request_status_msg), (uint8_t*)&request_status_msg, MSG_OWAY);
@@ -139,6 +145,10 @@ public:
 
     // publishes the status recieved through the modem
     void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
+
+        this->messages_missed_[msg.src_id] = 0;
+        this->last_message_time_[msg.src_id] = this->now();
+
         
         const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
         auto status_msg = base_station_interfaces::msg::Status();
@@ -202,41 +212,35 @@ public:
         this->print_to_gui_pub->publish(log_msg);
     }
 
-    // checks the connections of the vehicles in the mission and publishes the connections
+   // checks the connections of the vehicles in the mission and publishes the connections
     void check_modem_connections() {
         rclcpp::Time now = this->now();
         std::vector<bool> connections;
         std::vector<uint32_t> last_ping;
 
 
-        // for (auto vehicle_id : this->vehicles_in_mission_) {
-        //     auto it = last_message_time_.find(vehicle_id);
-        //     if (it != last_message_time_.end()) {
-        //         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Messages found for coug %li", vehicle_id);
-
-        //         double dt = (now - it->second).seconds();
-        //         connections.push_back(dt < 10);
-        //         last_ping.push_back(static_cast<uint32_t>(dt));
-
-        //     } else {
-        //         RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "No messages found for coug %li", vehicle_id);
-        //         double dt = (now - it->second).seconds();
-        //         connections.push_back(true);
-        //         last_ping.push_back(static_cast<uint32_t>(dt));
-        //     }
-        // }
-
         base_station_interfaces::msg::Connections msg;
         msg.connection_type = 0; // 0 for acoustic modem
         for (auto id : this->vehicles_in_mission_) {
-            msg.vehicle_ids.push_back(static_cast<uint32_t>(id));
-            msg.last_ping.push_back(0);
-            msg.connections.push_back(true);
+            if (this->messages_missed_[id] > 2) {
+                if (this->modem_connection[id]) {
+                    RCLCPP_WARN(this->get_logger(), "Coug %i has missed 3 or more messages, marking as disconnected", id);
+                    this->modem_connection[id] = false;
+                }
+                msg.connections.push_back(false);
+            } else {
+                msg.connections.push_back(true);
+                this->modem_connection[id] = true;
+            }
+            msg.last_ping.push_back(static_cast<uint64_t>(last_message_time_[id].seconds()));
         }
-
+        msg.vehicle_ids = this->vehicles_in_mission_;
+        
         modem_connections_publisher_->publish(msg);
 
-    }
+
+   }
+
    
     //used by the service callback functions to publish messages to the cougs
     void send_acoustic_message(int target_id, int message_len, uint8_t* message, AMSGTYPE_E msg_type) {
@@ -289,6 +293,8 @@ private:
     int base_station_beacon_id_;
 
     std::unordered_map<int,bool> modem_connection;
+
+    std::unordered_map<int, int> messages_missed_; // keeps track of how many messages have been missed for each coug
 
 
 
