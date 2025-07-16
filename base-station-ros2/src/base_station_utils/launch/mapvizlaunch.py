@@ -13,7 +13,7 @@ MAXSUB=99
 VISUALIZER_PATH="/home/frostlab/base_station/base-station-ros2/src/base_station_utils/base_station_utils/temp_mission_visualizer"
 CONFIG_PATH="/home/frostlab/config/mapvizconfig.mvc"
 def generate_launch_description():
-    activesubs=[0]*MAXSUB
+    activesubs=[False]*MAXSUB
 
     rclpy.init()
     dummynode = Node('launch_topic_inspector')
@@ -23,10 +23,11 @@ def generate_launch_description():
     topicnames=[name for name, _ in alltopics]
     for i in range(MAXSUB):
         if f"/coug{i}/map_viz_path" in topicnames:
-            activesubs[i]=1
+            activesubs[i]=True
+            print(f"Coug {i} path showing")
     config = {
         'capture_directory': "~",
-        'fixed_frame': 'local_xy',
+        'fixed_frame': 'map',
         'target_frame': '<none>',
         'fix_orientation': False,
         'rotate_90': False,
@@ -49,7 +50,7 @@ def generate_launch_description():
                 'enabled': True,
                 'config': {
                     'visible': True,
-                    'collapsed': False,
+                    'collapsed': True,
                     'custom_sources': [
                         {
                             'base_url': "http://localhost:8080/wmts/gm_layer/gm_grid/{level}/{x}/{y}.png",
@@ -65,7 +66,7 @@ def generate_launch_description():
             ]
             }
     for coug in range(MAXSUB):
-        if activesubs[i]:
+        if activesubs[coug]:
             #add path config
             pconfig={
                     'name': f"path{coug}",
@@ -73,7 +74,7 @@ def generate_launch_description():
                     'enabled': True,
                     'config': {
                             'visible': True,
-                            'collapsed': False,
+                            'collapsed': True,
                             'topic':f'/coug{coug}/map_viz_path',
                             'color': "#00ff00",
                             'qos_depth': 10,
@@ -89,7 +90,7 @@ def generate_launch_description():
                 'enabled': True,
                 'config': {
                         'visible': True,
-                        'collapsed': False,
+                        'collapsed': True,
                         'topic':f'/coug{coug}/smoothed_output',
                         'color': "#00ff00",
                         'qos_depth': 10,
@@ -117,7 +118,8 @@ def generate_launch_description():
             package='mapviz',
             executable='mapviz',
             output='screen',
-            arguments=[LaunchConfiguration('config')] #path of mapviz config yaml
+            parameters= [VISUALIZER_PATH+"/mapvizconfig.yaml"]
+            # arguments=[LaunchConfiguration('config')] #path of mapviz config yaml
         ),
         # launch_ros.actions.Node( #origin broadcaster
         #     package='base_station_utils',
