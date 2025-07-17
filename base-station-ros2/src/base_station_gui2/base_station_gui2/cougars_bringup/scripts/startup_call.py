@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-from frost_interfaces.msg import SystemControl  # Change to your actual package name
+from frost_interfaces.msg import SystemControl
 from base_station_interfaces.msg import ConsoleLog
 from std_msgs.msg import Header, Bool
 from rclpy.node import Node
+#The passed ros node from tabbed_window.py, created in GUI_ros_node.py
 global ros_node
 
 def publish_system_control(node, sel_vehicles, start_config):

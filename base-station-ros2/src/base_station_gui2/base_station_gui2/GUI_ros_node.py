@@ -1,3 +1,8 @@
+import base_station_gui2.tabbed_window
+
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
+
 import sys
 import threading
 import signal
@@ -5,29 +10,20 @@ import signal
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-
+from rclpy.executors import SingleThreadedExecutor
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
 import time
-from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
-from sensor_msgs.msg import FluidPressure, BatteryState
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer
-
-import base_station_gui2.tabbed_window
-from rclpy.executors import SingleThreadedExecutor
-from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
-from rcl_interfaces.srv import SetParameters
-
-from nav_msgs.msg import Path #used to publish the path
-from sensor_msgs.msg import NavSatFix #used to publish the origin
-from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path #used to publish the map viz path
+from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState #NavSatFix used to publish the origin
+from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
 
 from base_station_interfaces.srv import BeaconId, ModemControl
-from base_station_interfaces.msg import Connections, Status, ConsoleLog
+from base_station_interfaces.msg import Connections, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
 
 class GuiNode(Node):
@@ -42,8 +38,9 @@ class GuiNode(Node):
         qos_reliable_profile.reliability = ReliabilityPolicy.RELIABLE
         qos_reliable_profile.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
+        # Dynamically create subscriptions and publishers for each selected vehicle (coug)
         for coug_number in selected_cougs:
-            #dynamic subscriptions for the safety status messages
+            # Subscribe to safety status messages for each vehicle
             sub = self.create_subscription(
                 SystemStatus,
                 f'coug{coug_number}/safety_status',
@@ -52,7 +49,7 @@ class GuiNode(Node):
             )
             setattr(self, f'safety_status_subscription{coug_number}', sub)
 
-            #dynamic subscriptions for the smoothed_output messages
+            # Subscribe to smoothed output messages for each vehicle
             sub = self.create_subscription(
                 Odometry,
                 f'coug{coug_number}/smoothed_output',
@@ -61,7 +58,7 @@ class GuiNode(Node):
             )
             setattr(self, f'smoothed_ouput_subscription{coug_number}', sub)
 
-            #dynamic subscriptions for the depth_data messages
+            # Subscribe to depth data messages for each vehicle
             sub = self.create_subscription(
                 PoseWithCovarianceStamped,
                 f'coug{coug_number}/depth_data',
@@ -70,7 +67,7 @@ class GuiNode(Node):
             )
             setattr(self, f'depth_data_subscription{coug_number}', sub)            
             
-            #dynamic subscriptions for the pressure data topic
+            # Subscribe to pressure data topic for each vehicle
             sub = self.create_subscription(
                 FluidPressure,
                 f'coug{coug_number}/pressure/data',
@@ -79,7 +76,7 @@ class GuiNode(Node):
             )
             setattr(self, f'pressure_data_subscription{coug_number}', sub)
 
-            #dynamic subscriptions for the battery/data messages
+            # Subscribe to battery data messages for each vehicle
             sub = self.create_subscription(
                 BatteryState,
                 f'coug{coug_number}/battery/data',
@@ -88,7 +85,7 @@ class GuiNode(Node):
             )
             setattr(self, f'battery_data_subscription{coug_number}', sub)
 
-            #dynamic publishers for the battery/data messages
+            # Publisher for system status messages for each vehicle
             pub = self.create_publisher(
                 SystemControl,
                 f'/coug{coug_number}/system/status',
@@ -96,7 +93,7 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_publisher_', pub)
 
-            #dynamic publishers for the map viz paths
+            # Publisher for map visualization paths for each vehicle
             pub = self.create_publisher(
                 Path,
                 f'/coug{coug_number}/map_viz_path',
@@ -104,7 +101,7 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_path_', pub)
 
-            #dynamic publishers for vehicle fins on kinematics command
+            # Publisher for vehicle fins kinematics command for each vehicle
             pub = self.create_publisher(
                 UCommand,
                 f'/coug{coug_number}/kinematics/command',
@@ -112,7 +109,7 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_fins_kinematics', pub)
 
-            #dynamic publishers for vehicle fins on controls command
+            # Publisher for vehicle fins controls command for each vehicle
             pub = self.create_publisher(
                 UCommand,
                 f'/coug{coug_number}/controls/command',
@@ -120,19 +117,21 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_fins_controls', pub)
 
-            #dynamic clients for coug kinematics parameters
+            # Client for setting kinematics parameters for each vehicle
             client = self.create_client(
                 SetParameters,
                 f'/coug{coug_number}/coug_kinematics'
             )
             setattr(self, f'coug{coug_number}_kinematics_client', client)
 
+        # Subscription for emergency kill confirmation messages
         self.kill_subscription = self.create_subscription(
             Bool,
             'confirm_e_kill',
             window.recieve_kill_confirmation_message,  # Calls the GUI's recieve_kill_confirmation_message method
             10)        
             
+        # Subscription for emergency surface confirmation messages
         self.surface_subscription = self.create_subscription(
             Bool,
             'confirm_e_surface',
@@ -146,7 +145,7 @@ class GuiNode(Node):
             window.recieve_connections,  # Calls the GUI's recieve_connections method
             10)  
 
-        #subscription for the console log updates, specific to vehicles. 0 means send to all
+        # Subscription for console log updates, specific to vehicles. 0 means send to all
         self.console_log_sub = self.create_subscription(
             ConsoleLog,
             'console_log',
@@ -154,24 +153,31 @@ class GuiNode(Node):
             10
         ) 
 
-        #publisher for the map viz origin 
+        # Publisher for the map visualization origin 
         self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
 
+        # Publisher for console log messages
         self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
 
-        # Service clients for emergency kill and surface services
+        # Service clients for emergency kill, surface, and modem shut off services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
         self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
     def publish_console_log(self, msg_text, msg_num):
+        """
+        Publishes a console log message to the 'console_log' topic.
+        """
         msg = ConsoleLog()
         msg.message = msg_text
         msg.vehicle_number = msg_num
         self.console_publisher.publish(msg)
 
     def publish_origin(self, origin_msg):
-    # origin_msg: tuple(float, float)
+        """
+        Publishes the map visualization origin to the '/map_viz_origin' topic.
+        origin_msg: tuple(float, float)
+        """
         msg = NavSatFix()
         msg.latitude = origin_msg[0]
         msg.longitude = origin_msg[1]
@@ -180,7 +186,10 @@ class GuiNode(Node):
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
 
     def publish_path(self, path_msg, vehicle_number):
-    # path_msg: list[tuple(float, float)], vehicle_number: int
+        """
+        Publishes a path message to the appropriate vehicle's map visualization path topic.
+        path_msg: list[tuple(float, float)], vehicle_number: int
+        """
         msg = Path()
         for point_tuple in path_msg:
             pose_temp = PoseStamped()
@@ -193,16 +202,23 @@ class GuiNode(Node):
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
 
     def publish_fins(self, fin_degree, vehicle_number, publish_type):
-        # typublish_typepe: 
-        # 1->cougX/kinematics/command
-        # 0->cougX/controls/command
-
+        """
+        Publishes fin commands to either kinematics or controls topic for the specified vehicle.
+        fin_degree: list of fin angles, vehicle_number: int, publish_type: int (1 for kinematics, 0 for controls)
+        """
         msg = UCommand()
         msg.fin = [fin_degree[0], fin_degree[1], fin_degree[2], float(0)]
         if publish_type: getattr(self, f"coug{vehicle_number}_fins_kinematics").publish(msg)
         else: getattr(self, f"coug{vehicle_number}_fins_controls").publish(msg)
 
     def set_single_parameter(self, param_name, param_value, coug_number, callback=None):
+        """
+        Sets a single ROS 2 parameter for the specified vehicle using the SetParameters service.
+        param_name: str, param_value: str/int/float, coug_number: int, callback: function (optional)
+        """
+        # Used by tabbed window in an attempt to ros2 param set the fin angles.
+        # TODO: Doesn't seem to be working currently. 
+
         param = Parameter()
         param.name = param_name
         # Set the appropriate type for the parameter value
@@ -227,6 +243,7 @@ class GuiNode(Node):
 def ros_spin_thread(executor):
     """
     Spins the ROS 2 executor in a background thread.
+    This allows ROS callbacks to be processed while the Qt event loop runs.
     """
     executor.spin()
 
@@ -241,15 +258,18 @@ def main():
     app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
 
     def after_window_ready():
+        """
+        Callback to initialize the ROS node and executor after the Qt window is ready.
+        """
         window = result.get('window')
         if window is None:
-            # Try again shortly
+            # Try again shortly if the window is not ready
             QTimer.singleShot(50, after_window_ready)
             return
 
         # Create the ROS 2 node and assign it to the GUI window
         gui_node = GuiNode(window, selected_cougs)
-        window.ros_node = gui_node  # if you need to access the node from the GUI
+        window.ros_node = gui_node  # used to access the node from the GUI
 
         # Create a single-threaded executor and add the node
         executor = SingleThreadedExecutor()
@@ -276,12 +296,13 @@ def main():
         # Start the Qt event loop
         exit_code = app.exec()
     finally:
+        # Ensure ROS 2 is properly shut down when the application exits
         rclpy.shutdown()
         sys.exit(exit_code)
 
 def SeeAllIcons():
     """
-    Utility function to display all available QStyle.StandardPixmap icons in a grid.
+    Optional utility function to display all available QStyle.StandardPixmap icons in a grid.
     Useful for GUI development and icon selection.
     """
     import sys
@@ -308,4 +329,5 @@ def SeeAllIcons():
     app.exec()
 
 if __name__ == '__main__':
+    # Entry point for running the GUI application
     main()
