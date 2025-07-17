@@ -193,5 +193,8 @@
 ---
 
 
-## GUI Layout and Visuals
+## GUI Layouts
 - TODO
+
+## Theme
+-TODO
