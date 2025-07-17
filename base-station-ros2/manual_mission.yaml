@@ -9,12 +9,18 @@ origin_lla:
 states:
   - name: dive_phase
     time_seconds: 20.0
-    depth: 0.0
-    heading: 10.0
-    speed: 20.0
+    depth: 1.0
+    heading: -160.0
+    speed: 35.0
 
   - name: turn_phase
-    time_seconds: 40.0
+    time_seconds: 20.0
+    depth: 2.0
+    heading: -160.0
+    speed: 35.0
+  
+  - name: surface
+    time_seconds: 20.0
     depth: 0.0
-    heading: 90.0
-    speed: 30.0
+    heading: -160.0
+    speed: 35.0
