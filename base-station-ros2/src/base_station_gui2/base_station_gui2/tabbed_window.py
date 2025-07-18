@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
     QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog, 
-    QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
+    QDialogButtonBox, QMessageBox, QColorDialog
 )
 from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
     QPainter, QAction, QIcon, QActionGroup
@@ -114,7 +114,6 @@ class MainWindow(QMainWindow):
         dark_mode.setChecked(True)
 
         # Create status bar and theme menu
-        self.setStatusBar(QStatusBar(self))
         menu = self.menuBar()
         file_menu = menu.addMenu("Theme")
         file_submenu = file_menu.addMenu("Set Theme")
@@ -1539,7 +1538,7 @@ class MainWindow(QMainWindow):
 
         # Set the widgets for each Vehicle column
         for vehicle_number in self.selected_vehicles:
-            self.set_general_page_column_widgets(self.general_page_vehicle_layouts[vehicle_number], vehicle_number)
+            self.set_general_page_C1_widgets(self.general_page_vehicle_layouts[vehicle_number], vehicle_number)
 
     def set_general_page_C0_widgets(self):
         """
@@ -1612,7 +1611,7 @@ class MainWindow(QMainWindow):
         self.general_page_C0_layout.addItem(spacer)
             
     #template to set the rest of widgets on the rest of the columns on the general page
-    def set_general_page_column_widgets(self, layout, vehicle_number):
+    def set_general_page_C1_widgets(self, layout, vehicle_number):
         """
         Sets up the widgets for each Vehicle column on the General tab.
         Adds section labels, connection and sensor icons, and emergency status for each vehicle.
@@ -1890,37 +1889,37 @@ class MainWindow(QMainWindow):
         temp_layout1 = QVBoxLayout(temp_sub_container1)
         temp_layout1.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        #temp container for the second column of buttons
+        # Temp container for the second column of buttons
         temp_sub_container2 = QWidget()
         temp_layout2 = QVBoxLayout(temp_sub_container2)
         temp_layout2.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        #temp container for the button columns put together horizontally
+        # Temp container for the button columns put together horizontally
         temp_container = QWidget()
         temp_layout = QHBoxLayout(temp_container)
 
-        #temp container for the entire column, the buttons and the last connected labels
+        # Temp container for the entire column, the buttons and the last connected labels
         temp_V_container = QWidget()
         temp_V_layout = QVBoxLayout(temp_V_container)
         setattr(self, f"vehicle{vehicle_number}_buttons_column_widget", temp_V_container)
         setattr(self, f"vehicle{vehicle_number}_buttons_column_layout", temp_V_layout)
 
-        #load mission (normal button)
+        # Load mission (normal button)
         self.create_vehicle_button(vehicle_number, "load_mission", "Load Mission", lambda: self.spec_load_missions_button(vehicle_number))
-        #start mission (normal button)
+        # Start mission (normal button)
         self.create_vehicle_button(vehicle_number, "start_mission", "Start Mission", lambda: self.spec_start_missions_button(vehicle_number))
-        #start mission (normal button)
+        # Start mission (normal button)
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
-        #sync vehicle (normal button)
+        # Sync vehicle (normal button)
         self.create_vehicle_button(vehicle_number, "sync", "Calibrate Vehicle (BUGGY)", lambda: self.run_calibrate_script(vehicle_number))
 
-        #emergency surface (danger button)
+        # Emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
-        #abort mission (danger button)
+        # Abort mission (danger button)
         self.create_vehicle_button(vehicle_number, "recall", f"Recall Vehicle (No Signal)", lambda: self.recall_spec_vehicle(vehicle_number), danger=True)
-        #emergency shutdown (danger button)
+        # Emergency shutdown (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(vehicle_number), danger=True)
-        #clear console (danger button)
+        # Clear console (danger button)
         self.create_vehicle_button(vehicle_number, "clear_console", "Clear Console", lambda: self.clear_console(vehicle_number), danger=True)
 
         temp_spacing = 20

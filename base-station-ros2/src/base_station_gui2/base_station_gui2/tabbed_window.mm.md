@@ -191,10 +191,3 @@
   - **MainWindow.insert_label**
 
 ---
-
-
-## GUI Layouts
-- TODO
-
-## Theme
--TODO
