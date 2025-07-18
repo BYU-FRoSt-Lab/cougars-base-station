@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
     QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog, 
-    QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
+    QDialogButtonBox, QMessageBox, QColorDialog
 )
 from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
     QPainter, QAction, QIcon, QActionGroup
@@ -114,7 +114,6 @@ class MainWindow(QMainWindow):
         dark_mode.setChecked(True)
 
         # Create status bar and theme menu
-        self.setStatusBar(QStatusBar(self))
         menu = self.menuBar()
         file_menu = menu.addMenu("Theme")
         file_submenu = file_menu.addMenu("Set Theme")
@@ -1539,7 +1538,7 @@ class MainWindow(QMainWindow):
 
         # Set the widgets for each Vehicle column
         for vehicle_number in self.selected_vehicles:
-            self.set_general_page_column_widgets(self.general_page_vehicle_layouts[vehicle_number], vehicle_number)
+            self.set_general_page_C1_widgets(self.general_page_vehicle_layouts[vehicle_number], vehicle_number)
 
     def set_general_page_C0_widgets(self):
         """
@@ -1612,7 +1611,7 @@ class MainWindow(QMainWindow):
         self.general_page_C0_layout.addItem(spacer)
             
     #template to set the rest of widgets on the rest of the columns on the general page
-    def set_general_page_column_widgets(self, layout, vehicle_number):
+    def set_general_page_C1_widgets(self, layout, vehicle_number):
         """
         Sets up the widgets for each Vehicle column on the General tab.
         Adds section labels, connection and sensor icons, and emergency status for each vehicle.

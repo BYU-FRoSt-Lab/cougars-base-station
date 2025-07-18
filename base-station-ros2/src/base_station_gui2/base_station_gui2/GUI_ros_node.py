@@ -255,7 +255,7 @@ def main():
     rclpy.init()
 
     # Create the Qt application and main window (window will be set later)
-    app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
+    app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=True)
 
     def after_window_ready():
         """
