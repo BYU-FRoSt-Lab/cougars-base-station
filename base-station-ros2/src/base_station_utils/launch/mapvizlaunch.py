@@ -12,7 +12,9 @@ from ament_index_python.packages import get_package_share_directory
 MAXSUB=99
 VISUALIZER_PATH="/home/frostlab/base_station/base-station-ros2/src/base_station_utils/base_station_utils/temp_mission_visualizer"
 CONFIG_PATH="/home/frostlab/config/mapvizconfig.mvc"
+
 def generate_launch_description():
+    base_params_path = "/home/frostlab/base_station/base-station-ros2/base_station_params.yaml"
     activesubs=[False]*MAXSUB
 
     rclpy.init()
@@ -21,7 +23,7 @@ def generate_launch_description():
     dummynode.destroy_node()
     rclpy.shutdown()
     topicnames=[name for name, _ in alltopics]
-    for i in range(MAXSUB):
+    for i in range(MAXSUB): 
         if f"/coug{i}/map_viz_path" in topicnames:
             activesubs[i]=True
             print(f"Coug {i} path showing")
@@ -117,8 +119,9 @@ def generate_launch_description():
         launch_ros.actions.Node( #mapviz 
             package='mapviz',
             executable='mapviz',
+            name='mapviz',
             output='screen',
-            parameters= [VISUALIZER_PATH+"/mapvizconfig.yaml"]
+            parameters= [base_params_path]
             # arguments=[LaunchConfiguration('config')] #path of mapviz config yaml
         ),
         # launch_ros.actions.Node( #origin broadcaster
@@ -129,7 +132,7 @@ def generate_launch_description():
             package="swri_transform_util",
             executable="initialize_origin.py",
             name="initialize_origin",
-            parameters=[
+            parameters= [base_params_path,
                 {"local_xy_frame": "map"},
                 {"local_xy_origin": "swri"},
                 {"local_xy_origins": """[
@@ -143,8 +146,7 @@ def generate_launch_description():
                         "longitude": -98.629367,
                         "altitude": 1350.0,
                         "heading": 0.0}
-                ]"""},
-            ]
+                ]"""}]
         ),
         launch_ros.actions.Node(
             package="tf2_ros",
