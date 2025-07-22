@@ -36,5 +36,6 @@ RUN mkdir -p /home/ue4/sim_ws/src/holo-translator && \
     source /home/ue4/sim_ws/install/setup.bash" >> /home/ue4/sim_ws/setup.bash
 
 USER ue4
+WORKDIR /home/ue4/sim_ws
 # Default command
 CMD ["/bin/bash"]
