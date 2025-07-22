@@ -28,7 +28,12 @@ USER ue4
 RUN pip install --upgrade transforms3d
 #### END OF SOLUTION TO THE TF TRANSFORMATIONS ISSUE
 
-
+RUN mkdir -p /home/ue4/sim_ws/src/holo-translator && \
+    touch /home/ue4/sim_ws/setup.bash && \
+    echo "source /opt/ros/humble/setup.bash && \
+    source /home/ue4/coug_ros2/install/setup.bash && \
+    source /home/ue4/ros2_ws/install/setup.bash && \
+    source /home/ue4/sim_ws/install/setup.bash" >> /home/ue4/sim_ws/setup.bash
 
 USER ue4
 # Default command
