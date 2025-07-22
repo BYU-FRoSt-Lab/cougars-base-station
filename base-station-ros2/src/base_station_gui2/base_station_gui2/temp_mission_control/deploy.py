@@ -6,30 +6,13 @@ from base_station_interfaces.msg import ConsoleLog
 import rclpy
 from rclpy.node import Node
 
-global deployment_node
+global ros_node
 
 PARAM_DIR = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "deploy_config.json")
 
 os.makedirs(DEPLOY_HISTORY_DIR, exist_ok=True)
-
-class DeploymentPublisher(Node):
-    def __init__(self):
-        super().__init__('deployment_publisher')
-        self.publisher_ = self.create_publisher(ConsoleLog, 'console_log', 10)
-
-    def publish_log(self, passed_msg):
-        self.publisher_.publish(passed_msg)
-        self.get_logger().info(f"Published: {passed_msg.message} to Coug#{passed_msg.vehicle_number}")
-
-def publish_console_log(msg_text, msg_num):
-    global deployment_node
-    msg = ConsoleLog()
-    msg.message = msg_text
-    msg.vehicle_number = msg_num
-    deployment_node.publish_log(msg)
-    
 
 def load_config(sel_vehicles):
     with open(CONFIG_FILE, "r") as f:
@@ -40,19 +23,19 @@ def load_config(sel_vehicles):
         if str(num) in vehicles:
             result.append(vehicles[str(num)])
         else:
-            publish_console_log(f"❌ Vehicle {num} not found in config, consider adding (skipping)", num)
+            ros_node.publish_console_log(f"❌ Vehicle {num} not found in config, consider adding (skipping)", num)
     return result
 
 def scp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num):
     """Deletes existing file then copies a new one via SCP."""
     delete_cmd = f"rm -f {os.path.join(remote_path, remote_filename)}"
     print(f"🗑️ Deleting {remote_filename} on {remote_host}...")
-    publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
+    ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
     subprocess.run(["ssh", f"{remote_user}@{remote_host}", delete_cmd])
 
     destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
     print(f"📤 Copying {file_path} to {destination}...")
-    publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
+    ros_node.publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
     result = subprocess.run(["scp", file_path, destination])
     return result.returncode == 0
 
@@ -65,11 +48,11 @@ def log_deployment(vehicle, files_sent, vehicle_num):
         for label, path in files_sent:
             f.write(f"{label}: {path}\n")
     print(f"✅ Deployment logged: {log_file}\n")
-    publish_console_log(f"✅ Deployment logged: {log_file}\n", vehicle_num)
+    ros_node.publish_console_log(f"✅ Deployment logged: {log_file}\n", vehicle_num)
 
-def main(sel_vehicles, passed_file_paths=[]): #selected vehicles
-    global deployment_node
-    deployment_node = DeploymentPublisher()
+def main(passed_ros_node, sel_vehicles, passed_file_paths=[]): #selected vehicles
+    global ros_node
+    ros_node = passed_ros_node
 
     vehicles = load_config(sel_vehicles)
     for i, vehicle in enumerate(vehicles):
@@ -78,8 +61,8 @@ def main(sel_vehicles, passed_file_paths=[]): #selected vehicles
         mission_path = passed_file_paths[i]
         param_path = os.path.join(PARAM_DIR, vehicle["param_file"])
         fleet_path = os.path.join(PARAM_DIR, vehicle["fleet_param_file"])
-        vehicle_num = int(vehicle["remote_host"][-1])
-        publish_console_log(f"Mission path for coug{vehicle_num} was set as: {mission_path}", vehicle_num)
+        vehicle_num = int(vehicle["name"][-1])
+        ros_node.publish_console_log(f"Mission path for coug{vehicle_num} was set as: {mission_path}", vehicle_num)
 
         for label, file_path, remote_filename in [
             ("Mission File", mission_path, "mission.yaml"),
@@ -99,13 +82,13 @@ def main(sel_vehicles, passed_file_paths=[]): #selected vehicles
                     files_sent.append((label, file_path))
                 else:
                     print(f"❌ Failed to deploy {label} to {vehicle['name']}")
-                    publish_console_log(f"❌ Failed to deploy {label} to {vehicle['name']}", vehicle_num)
+                    ros_node.publish_console_log(f"❌ Failed to deploy {label} to {vehicle['name']}", vehicle_num)
                     load_success = False
             else:
                 print(f"⚠️ File not found: {file_path} (skipping)")
-                publish_console_log(f"⚠️ File not found: {file_path} (skipping)", vehicle_num)
+                ros_node.publish_console_log(f"⚠️ File not found: {file_path} (skipping)", vehicle_num)
                 load_success = False
 
         log_deployment(vehicle, files_sent, vehicle_num)
         message = f"Coug{vehicle_num} mission loading finished with no errors." if load_success else f"Coug{vehicle_num} mission loading failed."
-        publish_console_log(message, vehicle_num)
+        ros_node.publish_console_log(message, vehicle_num)

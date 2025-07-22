@@ -2,20 +2,9 @@
 
 ## frost_interfaces
 ### msg
-#### Connections (name: connections)
-- connection_type
-  - GUI Radio Icon
-  - GUI Modem Icon
-  - GUI Radio Seconds
-  - GUI Modem Seconds
-- connections
-  - GUI Radio Icon
-  - GUI Modem Icon
-- last_ping
-  - GUI Radio Seconds
-  - GUI Modem Seconds
-- ConsoleLog (name: console_log)
-  - GUI Console Logs (Individual or together)
+
+#### UCommand (name: /coug{coug_number}/controls/command)
+- fin calibration
 
 #### SystemControl (name: /coug{coug_number}/system/status)
 - start
@@ -29,8 +18,6 @@
 - dvl_acoustics
   - GUI Start Mission Buttons
 
-## base_station_interfaces
-### msg
 #### SystemStatus (name: coug{coug_number}/safety_status)
 - std_msgs/Header header
 - std_msgs/Int8 depth_status
@@ -47,6 +34,24 @@
   - GUI IMU Icon
 - std_msgs/Int8 emergency_status
   - GUI Emergency Status Message
+
+## base_station_interfaces
+### msg
+
+#### Connections (name: connections)
+- connection_type
+  - GUI Radio Icon
+  - GUI Modem Icon
+  - GUI Radio Seconds
+  - GUI Modem Seconds
+- connections
+  - GUI Radio Icon
+  - GUI Modem Icon
+- last_ping
+  - GUI Radio Seconds
+  - GUI Modem Seconds
+#### ConsoleLog (name:console_log)
+- GUI Console Logs (Individual or together)
 
 ### srv
 ##### BeaconId (name: e_surface_service, name: e_kill_service)
@@ -79,6 +84,17 @@
       - y
         - GUI y position
 
+### Path (name: /coug{coug_number}/map_viz_path)
+- mapviz path data
+
+## rcl_interfaces.srv
+### SetParameters (name: /coug{coug_number}/coug_kinematics)
+- fin calibration
+
+## rcl_interfaces.msg
+### Parameter (name: coug{coug_number}_kinematics_client)
+- fin calibration set parameters (TODO)
+
 ## geometry_msgs.msg
 ### PoseWithCovarianceStamped (name: coug{coug_number}/depth_data)
 - pose
@@ -95,5 +111,7 @@
 ### BatteryState (name: coug{coug_number}/battery/data)
 - voltage
   - GUI battery voltage
+### NavSatFix (name: /map_viz_origin)
+- mapviz origin 
 
 ## Waypoint (TODO)
