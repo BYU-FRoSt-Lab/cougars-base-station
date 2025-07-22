@@ -49,7 +49,29 @@
 
     logging_verbosity: 0
     seatrac_serial_port: /dev/ttyUSB1
-    
 
 
+/mapviz:
+  ros__parameters:
+    config: /home/frostlab/config/mapvizconfig.mvc
 
+# /initialize_origin:
+#   ros__parameters:
+#     local_xy_frame: map
+#     local_xy_origin: swri
+#     # local_xy_origins: >
+#     # [
+#     #   {"name": "swri", "latitude": 40.249999, "longitude": -111.6499974, "altitude": 1387.0, "heading": 0.0},
+#     #   {"name": "back_40", "latitude": 29.447507, "longitude": -98.629367, "altitude": 1350.0, "heading": 0.0}
+#     # ]
+#     local_xy_origins:
+#     - name: swri
+#       latitude: 40.249999
+#       longitude: -111.6499974
+#       altitude: 1387.0
+#       heading: 0.0
+#     - name: back_40
+#       latitude: 29.447507
+#       longitude: -98.629367
+#       altitude: 1350.0
+#       heading: 0.0

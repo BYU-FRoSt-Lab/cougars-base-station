@@ -1,31 +1,16 @@
 #!/usr/bin/env python3
-from frost_interfaces.msg import SystemControl  # Change to your actual package name
+from frost_interfaces.msg import SystemControl
 from base_station_interfaces.msg import ConsoleLog
 from std_msgs.msg import Header, Bool
 from rclpy.node import Node
-global deployment_node
-
-class DeploymentPublisher(Node):
-    def __init__(self):
-        super().__init__('deployment_publisher')
-        self.publisher_ = self.create_publisher(ConsoleLog, 'console_log', 10)
-
-    def publish_log(self, passed_msg):
-        self.publisher_.publish(passed_msg)
-        self.get_logger().info(f"Published: {passed_msg.message} to Coug#{passed_msg.vehicle_number}")
-
-def publish_console_log(msg_text, msg_num):
-    global deployment_node
-    msg = ConsoleLog()
-    msg.message = msg_text
-    msg.vehicle_number = msg_num
-    deployment_node.publish_log(msg)
+#The passed ros node from tabbed_window.py, created in GUI_ros_node.py
+global ros_node
 
 def publish_system_control(node, sel_vehicles, start_config):
     # example of start_config
     # {'start_node': False, 'record_rosbag': False, 'rosbag_prefix': False, 'arm_thruster': True, 'start_dvl': False}
-    global deployment_node
-    deployment_node = DeploymentPublisher()
+    global ros_node
+    ros_node = node
     msg = SystemControl()
     msg.header = Header()
     msg.header.stamp = node.get_clock().now().to_msg()
@@ -46,7 +31,7 @@ def publish_system_control(node, sel_vehicles, start_config):
                 node.get_logger().info(
                     f"Start: {msg.start.data}, Rosbag Flag: {msg.rosbag_flag.data}, Prefix: {msg.rosbag_prefix}, Thruster: {msg.thruster_arm.data}, DVL: {msg.dvl_acoustics.data}"
                 )
-                publish_console_log(f"Start: {msg.start.data}, Rosbag Flag: {msg.rosbag_flag.data}, Prefix: {msg.rosbag_prefix}, Thruster: {msg.thruster_arm.data}, DVL: {msg.dvl_acoustics.data}", vehicle)  
+                ros_node.publish_console_log(f"Start: {msg.start.data}, Rosbag Flag: {msg.rosbag_flag.data}, Prefix: {msg.rosbag_prefix}, Thruster: {msg.thruster_arm.data}, DVL: {msg.dvl_acoustics.data}", vehicle)  
             else:
                 node.get_logger().error(f"No publisher found for coug{vehicle}")
 
