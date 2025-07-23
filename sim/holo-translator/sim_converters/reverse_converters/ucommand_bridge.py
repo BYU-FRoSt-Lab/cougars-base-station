@@ -92,7 +92,9 @@ class UCommandBridge(Node):
         # Thruster: only publish if enabled
         u_cmd_msg.thruster = int(msg.cs[3]) if (self.publish_thruster and len(msg.cs) >= 4) else 0
 
-        self.frost_pub.publish(u_cmd_msg)
+
+        # TODO: Need to figure out how to handle when running holoocean commands
+        # self.frost_pub.publish(u_cmd_msg)
         # self.get_logger().info("Forwarded to frost UCommand")
 
 
