@@ -22,3 +22,4 @@
     
     # Right now only setup with manual mission - should probably change the name since there will be other types of missions
     mission_file_path: '/home/frostlab/config/deploy_tmp/mission.yaml'
+    mission_folder_path: '/home/frostlab/config/deploy_tmp'
