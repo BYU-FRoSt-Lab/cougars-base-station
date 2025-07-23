@@ -35,6 +35,8 @@ RUN mkdir -p /home/ue4/sim_ws/src/holo-translator && \
     source /home/ue4/ros2_ws/install/setup.bash && \
     source /home/ue4/sim_ws/install/setup.bash" >> /home/ue4/sim_ws/setup.bash
 
+RUN echo "source /home/ue4/config/cougarsrc.sh" >> /home/ue4/.bashrc
+
 USER ue4
 WORKDIR /home/ue4/sim_ws
 # Default command
