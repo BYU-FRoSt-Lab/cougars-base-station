@@ -4,6 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import chi2
 from scipy.spatial.transform import Rotation as R
+from pathlib import Path
+import matplotlib.lines as mlines
+import math
+import post_mission_processor_config as CONFIG
 
 def get_dataframes(
         rosbags_dir:str,
@@ -44,7 +48,7 @@ def get_topic(bag:dict[str,pd.DataFrame], topic_name:str, ns=None):
 
 
 
-def plot_mahalanobis_ellipse(x, y, cov, confidence=0.95, ax=None, **kwargs):
+def plot_mahalanobis_ellipse(x, y, cov, confidence=0.95, ax=None, plt=None, **kwargs):
     """
     Plot a 2D ellipse based on a Mahalanobis distance from a 2x2 covariance matrix.
 
@@ -93,6 +97,13 @@ def cov_from_str(cov_str:str):
     size = int(np.sqrt(len(cov_list)))
     return np.array(cov_list).reshape((size,size))
 
+def clean_converted_bags_path(path):
+    fixed_path = Path(path).name
+    if fixed_path.startswith("converted__"):
+        return '/' + fixed_path[len("converted__"):]
+    else:
+        return '/' + fixed_path
+    
     
 def plot_arb(
         pose_dfs : list, #array of data frames
@@ -146,6 +157,8 @@ def plot_arb(
         pose_y = pose_df["pose.pose.position.y"]
         ax.plot(pose_x,pose_y,pose_colors[pose_num])
     return ax
+
+
 def plot_pose_w_cov(
         pose_df,
         seconds_between_cov=2,
@@ -163,6 +176,7 @@ def plot_pose_w_cov(
 
     delta = pd.to_timedelta(seconds_between_cov, unit='s')
     last_time = pose_df["timestamp"].iloc[0]
+    i = 0
     for idx, row in pose_df.iterrows():
     
         timestamp = row["timestamp"]
@@ -180,7 +194,9 @@ def plot_pose_w_cov(
                     row["pose.pose.orientation.w"]
                 ])
                 yaw = R_.as_euler('zyx', degrees=False)[0]
-                plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-')
+                label = "Robot Orientation" if i == 0 else None
+                i+=1
+                plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-', label=label)
     
             cov = cov_from_str(row["pose.covariance"])
             xy_cov = cov[:2,:2]
@@ -188,10 +204,64 @@ def plot_pose_w_cov(
             
     pose_x = pose_df["pose.pose.position.x"]
     pose_y = pose_df["pose.pose.position.y"]
-    ax.plot(pose_x,pose_y, **kwargs)
+    ax.plot(pose_x,pose_y, color='blue', **kwargs)
     ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
-
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.title("Dead Reckoning With Covariance")
+    handles, labels = plt.gca().get_legend_handles_labels()
+    black_line = mlines.Line2D([], [], color='black')
+    handles.append(black_line)
+    labels.append('Covariance')
+    blue_line = mlines.Line2D([], [], color='blue', label='Covariance')
+    handles.append(blue_line)
+    labels.append('path')
+    plt.legend(handles=handles, labels=labels)
     ax.axis('equal')
     return ax
 
+# ortated by a quaternion plus an extra 90 degrees to account for modem frame
+def rotate_vector(vector, quaternion):
+    # First, rotate the vector by the provided quaternion
+    r1 = R.from_quat(quaternion)
+    v1 = r1.apply(vector)
+    
+    # Because of difference in modems frame, extra rotation of 90 degrees
+    sqrt2_div_2 = np.sqrt(2) / 2
+    q_90cw = [0, 0, -sqrt2_div_2, sqrt2_div_2]
+    
+    # Apply the additional 90° rotation
+    r2 = R.from_quat(q_90cw)
+    v2 = r2.apply(v1)
+    return v2[0], v2[1], v2[2]
 
+# Converts spherical to cartesian.
+# Elevation is measured from the xy-plane. 90 is straight ip and -90 is straight down
+# Azimuth is 360 degress CLOCKWISE from -x axis
+def spherical_to_cartesian(range_d, azimuth, elevation):
+    elevation = np.deg2rad(elevation)
+    azimuth = np.deg2rad(-azimuth)
+    x = range_d * np.cos(elevation) * np.cos(azimuth)
+    y = range_d * np.cos(elevation) * np.sin(azimuth)
+    z = range_d * np.sin(elevation)
+    return x, y, z
+
+def CalculateHaversine(refLat, refLong, pointLat, pointLong):
+    # convert GPS coordinates to radians
+    ref_lat_rad     = math.radians(refLat)
+    ref_long_rad    = math.radians(refLong)
+    point_lat_rad   = math.radians(pointLat)
+    point_lon_rad   = math.radians(pointLong)
+
+    # calculate distance and direction from reference point to GPS coordinate
+    delta_lon = point_lon_rad - ref_long_rad
+    delta_lat = point_lat_rad - ref_lat_rad
+    a = math.sin(delta_lat/2)**2 + math.cos(ref_lat_rad) * math.cos(point_lat_rad) * math.sin(delta_lon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    d = 6371000 * c
+    theta = math.atan2(math.sin(delta_lon) * math.cos(point_lat_rad), math.cos(ref_lat_rad) * math.sin(point_lat_rad) - math.sin(ref_lat_rad) * math.cos(point_lat_rad) * math.cos(delta_lon))
+
+    # convert distance and direction to xy coordinates in meters
+    x = d * math.cos(theta)
+    y = d * math.sin(theta)
+    return x, y

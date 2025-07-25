@@ -1,6 +1,8 @@
 import os
 from sys import argv
 from pathlib import Path
+import struct  # make sure this is at the top of your file
+
 
 from rosbags.highlevel import AnyReader
 import rosbags.typesys as ts
@@ -130,8 +132,11 @@ def rosmsg_generator(
                                 yield connection, msg, path
                             except KeyError as e:
                                 print(f"Could not find {e} in typestore. Skipping message")
+                            except struct.error as e:
+                                print(f"Struct error deserializing {connection.topic} — likely malformed message: {e}")
                     except RuntimeError as e:
                         print(f"Error reading rosbag at {path}. Skipping Bag. Error msg: {e}")
+                    
 
 
 def convert_rosbags(
