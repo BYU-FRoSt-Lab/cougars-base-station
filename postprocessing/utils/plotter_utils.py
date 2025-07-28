@@ -165,6 +165,7 @@ def plot_pose_w_cov(
         confidence=.95,
         plot_direction_line=False,
         ax=None,
+        plot_cov_ell=True,
         **kwargs
 ):
     if ax is None:
@@ -197,14 +198,14 @@ def plot_pose_w_cov(
                 label = "Robot Orientation" if i == 0 else None
                 i+=1
                 plt.plot([x, x+dist*np.cos(yaw)],[y, y+dist*np.sin(yaw)], 'r-', label=label)
-    
-            cov = cov_from_str(row["pose.covariance"])
-            xy_cov = cov[:2,:2]
-            plot_mahalanobis_ellipse(x,y,xy_cov,confidence,ax)
+            if plot_cov_ell:
+                cov = cov_from_str(row["pose.covariance"])
+                xy_cov = cov[:2,:2]
+                plot_mahalanobis_ellipse(x,y,xy_cov,confidence,ax)
             
     pose_x = pose_df["pose.pose.position.x"]
     pose_y = pose_df["pose.pose.position.y"]
-    ax.plot(pose_x,pose_y, color='blue', **kwargs)
+    ax.plot(pose_x,pose_y, color='green', **kwargs)
     ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
     plt.xlabel("X")
     plt.ylabel("Y")
@@ -213,7 +214,7 @@ def plot_pose_w_cov(
     black_line = mlines.Line2D([], [], color='black')
     handles.append(black_line)
     labels.append('Covariance')
-    blue_line = mlines.Line2D([], [], color='blue', label='Covariance')
+    blue_line = mlines.Line2D([], [], color='blue')
     handles.append(blue_line)
     labels.append('path')
     plt.legend(handles=handles, labels=labels)
@@ -253,15 +254,47 @@ def CalculateHaversine(refLat, refLong, pointLat, pointLong):
     point_lat_rad   = math.radians(pointLat)
     point_lon_rad   = math.radians(pointLong)
 
-    # calculate distance and direction from reference point to GPS coordinate
+    # calculate distance using haversine formula
     delta_lon = point_lon_rad - ref_long_rad
     delta_lat = point_lat_rad - ref_lat_rad
     a = math.sin(delta_lat/2)**2 + math.cos(ref_lat_rad) * math.cos(point_lat_rad) * math.sin(delta_lon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    d = 6371000 * c
-    theta = math.atan2(math.sin(delta_lon) * math.cos(point_lat_rad), math.cos(ref_lat_rad) * math.sin(point_lat_rad) - math.sin(ref_lat_rad) * math.cos(point_lat_rad) * math.cos(delta_lon))
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    d = 6371000 * c  # distance in meters
 
-    # convert distance and direction to xy coordinates in meters
-    x = d * math.cos(theta)
-    y = d * math.sin(theta)
-    return x, y
+    # calculate bearing from ref to point
+    theta = math.atan2(
+        math.sin(delta_lon) * math.cos(point_lat_rad),
+        math.cos(ref_lat_rad) * math.sin(point_lat_rad) -
+        math.sin(ref_lat_rad) * math.cos(point_lat_rad) * math.cos(delta_lon)
+    )
+
+    # convert distance and bearing to east/north offset
+    east = d * math.sin(theta)
+    north = d * math.cos(theta)
+    return east, north  # so plot(x=east, y=north)
+
+
+def FindCenter(latList, longList):
+    """
+    Computes the median center of two lists of latitude and longitude coordinates.
+
+    Args:
+        latList (list or np.ndarray): List or array of latitude values.
+        longList (list or np.ndarray): List or array of longitude values.
+
+    Returns:
+        tuple: Median latitude and longitude as floats.
+    """
+    # Convert to numpy arrays if they aren't already
+    latList = np.array(latList)
+    longList = np.array(longList)
+
+    # Filter out NaN values
+    cleaned_lat = latList[~np.isnan(latList)]
+    cleaned_long = longList[~np.isnan(longList)]
+
+    # Compute the median of cleaned data
+    latCenter = np.median(cleaned_lat)
+    longCenter = np.median(cleaned_long)
+
+    return latCenter, longCenter
