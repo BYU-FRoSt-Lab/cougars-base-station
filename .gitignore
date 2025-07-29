@@ -5,3 +5,4 @@
 **/.vscode
 /postprocessing/converted_bags
 **/mapproxy/mapcache
+*.csv
