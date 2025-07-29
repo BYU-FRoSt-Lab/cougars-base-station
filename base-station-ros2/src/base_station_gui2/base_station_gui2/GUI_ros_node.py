@@ -13,6 +13,7 @@ from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
 from sensor_msgs.msg import FluidPressure, BatteryState
+from dvl_msgs.msg import DVLDR
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -52,8 +53,8 @@ class GuiNode(Node):
 
             #dynamic subscriptions for the smoothed_output messages
             sub = self.create_subscription(
-                Odometry,
-                f'coug{coug_number}/smoothed_output',
+                DVLDR,
+                f'coug{coug_number}/dvl/position',
                 lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
                 10
             )

@@ -15,6 +15,10 @@
   <build_depend>base_station_interfaces</build_depend>
   <exec_depend>base_station_interfaces</exec_depend>
 
+
+  <build_depend>dvl_msgs</build_depend>
+  <exec_depend>dvl_msgs</exec_depend>
+
   <build_depend>frost_interfaces</build_depend>
   <build_export_depend>frost_interfaces</build_export_depend>
   <exec_depend>frost_interfaces</exec_depend>

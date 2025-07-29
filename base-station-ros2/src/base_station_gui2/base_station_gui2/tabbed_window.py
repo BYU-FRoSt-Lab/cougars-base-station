@@ -1666,44 +1666,40 @@ class MainWindow(QMainWindow):
         self.smoothed_ouput_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
-        position = msg.pose.pose.position
-        x = position.x
-        y = position.y
+        position = msg.position
+        x = position[0]
+        y = position[1]
         #won't use z, will use depth data instead
         
         # Quaternion from Odometry message
-        q = (
-            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
-            msg.pose.pose.orientation.x,
-            msg.pose.pose.orientation.y,
-            msg.pose.pose.orientation.z
-        )
+        # q = (
+        #     msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
+        #     msg.pose.pose.orientation.x,
+        #     msg.pose.pose.orientation.y,
+        #     msg.pose.pose.orientation.z
+        # )
 
-        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
-        _, _, yaw = quat2euler(q)
+        # # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
+        # _, _, yaw = quat2euler(q)
 
-        # heading
-        heading_deg = math.degrees(yaw) % 360
+        # # heading
+        # heading_deg = math.degrees(yaw) % 360
 
-        l_vel = msg.twist.twist.linear
-        a_vel = msg.twist.twist.angular
 
-        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
-        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
 
         #update feedback dict 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
-        self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
+        # self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
+        # self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
+        # self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
-        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
-        self.replace_specific_status_widget(vehicle_number, "Angular_vel")
-        self.replace_specific_status_widget(vehicle_number, "Heading")
+        # self.replace_specific_status_widget(vehicle_number, "DVL_vel")
+        # self.replace_specific_status_widget(vehicle_number, "Angular_vel")
+        # self.replace_specific_status_widget(vehicle_number, "Heading")
 
     def recieve_depth_data_message(self, vehicle_number, msg):
         self.depth_data_signal.emit(vehicle_number, msg)
