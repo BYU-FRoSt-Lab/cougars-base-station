@@ -2,6 +2,7 @@ import sys
 import random, time, os
 import yaml
 import json
+from .post_processing.PostProcessingWindow import PostProcessingWindow
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
@@ -2379,15 +2380,7 @@ class StartMissionsDialog(QDialog):
         return result
 
 class ConfigurationWindow(QDialog):
-    """
-    Custom configuration dialog with multiple checkboxes.
-    Returns the checked states as a dictionary if accepted.
-    """
     def __init__(self, options, parent=None, background_color="white", text_color="black"):
-        """
-        Parameters:
-            options (list of str): List of checkbox labels.
-        """
         super().__init__(parent)
         self.setWindowTitle("Configuration")
         self.checkboxes = {}
@@ -2399,8 +2392,6 @@ class ConfigurationWindow(QDialog):
         self.MAX_VEHICLES = 4
         self.HIGHEST_VEHICLE_LABEL = 999
 
-        # Make the dialog not resizable
-        # self.setFixedSize(300, 200)  
         self.setMinimumWidth(300)
         self.resize(300, 200)
 
@@ -2409,25 +2400,20 @@ class ConfigurationWindow(QDialog):
                 background-color: {self.background_color};
                 color: {self.text_color};
             }}
-            
             QLabel, QCheckBox {{
                 color: {self.text_color};
             }}
-
             QCheckBox::indicator {{
                 width: 13px;
                 height: 13px;
             }}
-
             QCheckBox::indicator:checked {{
                 border: 1px solid {self.text_color};
             }}
-
             QCheckBox::indicator:unchecked {{
                 background-color: {self.text_color};
                 border: 1px solid {self.text_color};
             }}
-
             QLineEdit {{
                 background-color: {self.background_color};
                 color: {self.text_color};
@@ -2437,6 +2423,12 @@ class ConfigurationWindow(QDialog):
         """)
 
         self.inputs = []
+
+        # 🌟 Post Processing Button
+        self.post_processing_button = QPushButton("Go To Post Processing")
+        self.post_processing_button.setStyleSheet(f"color: {self.text_color}; background-color: {self.background_color};")
+        self.post_processing_button.clicked.connect(self.handle_post_processing)
+        layout.addWidget(self.post_processing_button)
 
         # Create a checkbox for each option
         for opt in options:
@@ -2453,10 +2445,11 @@ class ConfigurationWindow(QDialog):
         # Add the first "+" button
         self.add_custom_plus_button()
 
-        # OK/Cancel buttons
+        # OK button
         buttonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttonBox.accepted.connect(self.validate_and_accept)
         layout.addWidget(buttonBox)
+
         self.setLayout(layout)
 
     def add_custom_plus_button(self):
@@ -2468,23 +2461,18 @@ class ConfigurationWindow(QDialog):
         self.custom_plus_buttons.append(plus_btn)
 
     def add_custom_input(self, plus_btn):
-        # Count currently selected Vehicles (checkboxes + custom inputs)
         current_count = sum(cb.isChecked() for cb in self.checkboxes.values())
         current_count += len(self.custom_inputs)
         if current_count >= self.MAX_VEHICLES:
             QMessageBox.warning(self, "Limit Reached", f"You cannot add more than {self.MAX_VEHICLES} Vehicles.")
             return
-        # Remove the plus button that was clicked
         self.custom_container.removeWidget(plus_btn)
         plus_btn.hide()
-        # Add a new QLineEdit for custom input
         le = QLineEdit()
         le.setPlaceholderText("Enter Custom Number...")
         self.custom_inputs.append(le)
         self.custom_container.addWidget(le)
-        # Add a new plus button below this input
         self.add_custom_plus_button()
-        # Adjust the dialog size to fit new content
         self.adjustSize()
         
     def validate_and_accept(self):
@@ -2499,7 +2487,8 @@ class ConfigurationWindow(QDialog):
             for value in states:
                 try:
                     num = int(value)
-                    if num > self.HIGHEST_VEHICLE_LABEL or num <= 0: valid_vehicle_number = False
+                    if num > self.HIGHEST_VEHICLE_LABEL or num <= 0:
+                        valid_vehicle_number = False
                 except:
                     valid_custom = False
             if len(states) != len(set(states)):
@@ -2528,3 +2517,12 @@ class ConfigurationWindow(QDialog):
                 except ValueError:
                     selected_vehicles.append(value)
         return selected_vehicles
+
+    def handle_post_processing(self):
+        import subprocess
+        subprocess.Popen(["python3", "/home/frostlab/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/post_processing/PostProcessingWindow.py"])
+        self.close()
+
+
+
+        

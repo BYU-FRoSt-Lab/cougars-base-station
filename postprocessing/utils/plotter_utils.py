@@ -221,20 +221,11 @@ def plot_pose_w_cov(
     ax.axis('equal')
     return ax
 
-# ortated by a quaternion plus an extra 90 degrees to account for modem frame
+# ortated by a quaternion 
 def rotate_vector(vector, quaternion):
-    # First, rotate the vector by the provided quaternion
     r1 = R.from_quat(quaternion)
     v1 = r1.apply(vector)
-    
-    # Because of difference in modems frame, extra rotation of 90 degrees
-    sqrt2_div_2 = np.sqrt(2) / 2
-    q_90cw = [0, 0, -sqrt2_div_2, sqrt2_div_2]
-    
-    # Apply the additional 90° rotation
-    r2 = R.from_quat(q_90cw)
-    v2 = r2.apply(v1)
-    return v2[0], v2[1], v2[2]
+    return v1[0], v1[1], v1[2]
 
 # Converts spherical to cartesian.
 # Elevation is measured from the xy-plane. 90 is straight ip and -90 is straight down
@@ -246,6 +237,7 @@ def spherical_to_cartesian(range_d, azimuth, elevation):
     y = range_d * np.cos(elevation) * np.sin(azimuth)
     z = range_d * np.sin(elevation)
     return x, y, z
+
 
 def CalculateHaversine(refLat, refLong, pointLat, pointLong):
     # convert GPS coordinates to radians

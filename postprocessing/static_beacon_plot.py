@@ -58,7 +58,8 @@ def raw_modem_rec_to_global(line, modem_data, imu_data):
     x_orientaion, y_orientation, z_orientaion, w_orientaion = get_imu_data(timestamp, imu_data)
     vector = np.array([x,y,z])
     quaternion = [x_orientaion, y_orientation, z_orientaion, w_orientaion]
-    x_rot, y_rot, z_rot, = util.rotate_vector(vector, quaternion)
+    x_rot, y_rot, z_rot = util.rotate_vector(vector, quaternion)
+    x_rot, y_rot, z_rot = util.rotate_vector(np.array([x_rot, y_rot, z_rot]), [0, 0, -np.sqrt(2)/2, np.sqrt(2)/2])
     x_fixed_frame, y_fixed_frame, z_fixed_frame = fix_modem_origin(x_rot,y_rot,z_rot,modem_id)
 
     return x_fixed_frame, y_fixed_frame, z_fixed_frame, modem_id, timestamp
@@ -114,7 +115,7 @@ def plot_vehicle_location(modem_points, ax, live=False):
     last_pos = {}  # modem_id -> (x, y)
 
     for t, modem_id, x, y in combined:
-        print(f"Time: {t}, Modem: {modem_id}, Pos: ({x}, {y})")
+        # print(f"Time: {t}, Modem: {modem_id}, Pos: ({x}, {y})")
         
         if modem_id in last_pos:
             lastx, lasty = last_pos[modem_id]

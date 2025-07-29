@@ -11,8 +11,8 @@ def plot_gps(ax, cen_lat, cen_long, latlist, lonlist):
 
     for i in range(1,len(latlist)):
         x,y = p_utils.CalculateHaversine(cen_lat,cen_long,latlist[i],lonlist[i])
-        print(f"Lat: {latlist[i]}, Lon: {lonlist[i]}")
-        print(f"({x},{y})")
+        # print(f"Lat: {latlist[i]}, Lon: {lonlist[i]}")
+        # print(f"({x},{y})")
         ax.plot(
                     [x, lastx],
                     [y, lasty],
