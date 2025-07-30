@@ -114,8 +114,8 @@ public:
                std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
                safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
                    ros_namespace + "/safety_status", 10);
-               smoothed_odom_publishers_[vehicle_id] = this->create_publisher<nav_msgs::msg::Odometry>(
-                   ros_namespace + "/smoothed_output", 10);
+               dvl_publishers_[vehicle_id] = this->create_publisher<dvl_msgs::msg::DVLDR>(
+                   ros_namespace + "/dvl/position", 10);
                battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
                    ros_namespace + "/battery/data", 10);
                depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -327,13 +327,13 @@ public:
         if (std::find(vehicles_in_mission_.begin(), vehicles_in_mission_.end(), vehicle_id) != vehicles_in_mission_.end()) {
             // Publish the status to the appropriate topic
             frost_interfaces::msg::SystemStatus safety_status = msg->safety_status;
-            nav_msgs::msg::Odometry smoothed_odom = msg->smoothed_odom;
+            dvl_msgs::msg::DVLDR dvl_pos = msg->dvl_pos;
             sensor_msgs::msg::BatteryState battery_state = msg->battery_state;
             geometry_msgs::msg::PoseWithCovarianceStamped depth_status = msg->depth_data;
             sensor_msgs::msg::FluidPressure pressure_status = msg->pressure;
 
             safety_status_publishers_[vehicle_id]->publish(safety_status);
-            smoothed_odom_publishers_[vehicle_id]->publish(smoothed_odom);
+            dvl_publishers_[vehicle_id]->publish(dvl_pos);
             battery_publishers_[vehicle_id]->publish(battery_state);
             depth_publishers_[vehicle_id]->publish(depth_status);
             pressure_publishers_[vehicle_id]->publish(pressure_status);
@@ -363,7 +363,7 @@ private:
 
     rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
     std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
-    std::unordered_map<int64_t, rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr> smoothed_odom_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<dvl_msgs::msg::DVLDR>::SharedPtr> dvl_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr> battery_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr> depth_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr> pressure_publishers_;

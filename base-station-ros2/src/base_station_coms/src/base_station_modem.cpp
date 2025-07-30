@@ -162,11 +162,12 @@ public:
         status_msg.safety_status.modem_status.data = (status->safety_mask & 0x04) != 0;
         status_msg.safety_status.dvl_status.data = (status->safety_mask & 0x08) != 0;
         status_msg.safety_status.emergency_status.data = (status->safety_mask & 0x10) != 0;
-        status_msg.dvl_pos.position = std::vector {status->x, status->y, 0};
+        status_msg.dvl_pos.position.x = status->x;
+        status_msg.dvl_pos.position.y = status->y;
+        status_msg.dvl_pos.position.z = status->depth;
         status_msg.dvl_pos.roll = status->roll;
         status_msg.dvl_pos.pitch = status->pitch;
-        status_msg.dvl_pos.yaw = status->yaw
-        status_msg.smoothed_odom.pose.pose.position.z = status->depth;
+        status_msg.dvl_pos.yaw = status->yaw;
         status_msg.battery_state.voltage = status->battery_voltage;
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;

@@ -1669,37 +1669,21 @@ class MainWindow(QMainWindow):
         position = msg.position
         x = position[0]
         y = position[1]
-        #won't use z, will use depth data instead
         
-        # Quaternion from Odometry message
-        # q = (
-        #     msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
-        #     msg.pose.pose.orientation.x,
-        #     msg.pose.pose.orientation.y,
-        #     msg.pose.pose.orientation.z
-        # )
-
-        # # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
-        # _, _, yaw = quat2euler(q)
-
-        # # heading
-        # heading_deg = math.degrees(yaw) % 360
+        roll = msg.roll
+        pitch = msg.pitch
+        heading = msg.yaw
 
 
-
-        #update feedback dict 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        # self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
-        # self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
-        # self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
+        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
-        # self.replace_specific_status_widget(vehicle_number, "DVL_vel")
-        # self.replace_specific_status_widget(vehicle_number, "Angular_vel")
-        # self.replace_specific_status_widget(vehicle_number, "Heading")
+        self.replace_specific_status_widget(vehicle_number, "Heading")
+
 
     def recieve_depth_data_message(self, vehicle_number, msg):
         self.depth_data_signal.emit(vehicle_number, msg)
