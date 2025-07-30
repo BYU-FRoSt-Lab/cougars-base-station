@@ -221,8 +221,7 @@ public:
    // checks the connections of the vehicles in the mission and publishes the connections
     void check_modem_connections() {
         rclcpp::Time now = this->now();
-        std::vector<bool> connections;
-        std::vector<uint32_t> last_ping;
+        std::vector<uint64_t> last_ping;
 
 
         base_station_interfaces::msg::Connections msg;
@@ -241,10 +240,8 @@ public:
             msg.last_ping.push_back(static_cast<uint64_t>(this->now().seconds() - last_message_time_[id].seconds()));
         }
         msg.vehicle_ids = this->vehicles_in_mission_;
-        
+
         modem_connections_publisher_->publish(msg);
-
-
    }
 
    

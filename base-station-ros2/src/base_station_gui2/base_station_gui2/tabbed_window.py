@@ -1667,9 +1667,9 @@ class MainWindow(QMainWindow):
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
         position = msg.position
-        x = position[0]
-        y = position[1]
-        
+        x = position.x
+        y = position.y
+
         roll = msg.roll
         pitch = msg.pitch
         heading = msg.yaw
