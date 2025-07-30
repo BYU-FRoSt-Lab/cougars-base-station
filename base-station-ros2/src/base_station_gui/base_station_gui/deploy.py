@@ -5,12 +5,13 @@ from datetime import datetime
 from base_station_interfaces.msg import ConsoleLog
 import rclpy
 from rclpy.node import Node
+from pathlib import Path
 
 global deployment_node
 
 PARAM_DIR = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "deploy_config.json")
+CONFIG_FILE = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
 
 os.makedirs(DEPLOY_HISTORY_DIR, exist_ok=True)
 

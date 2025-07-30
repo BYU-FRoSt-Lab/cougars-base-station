@@ -1,0 +1,18 @@
+mission_type: waypoint
+mission_name: mission_plan
+origin_lla:
+  latitude: 40.0717592
+  longitude: -111.6001751
+  altitude: 1564.568
+  name: Spanish Oaks
+reference_frame_for_waypoints: ENU_at_origin_LLA
+waypoints:
+- id: 1
+  position_enu:
+    x: 8.531
+    y: 40.775
+    z: -0.0
+  depth: 1.0
+  original_map_click_lla:
+    latitude: 40.0721263
+    longitude: -111.6000751

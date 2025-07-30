@@ -1,7 +1,4 @@
-import sys 
-import random, time, os
-import yaml
-import json
+import sys, yaml, os, json
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
@@ -16,10 +13,11 @@ from base_station_interfaces.srv import BeaconId, ModemControl
 from functools import partial
 from transforms3d.euler import quat2euler
 import math
-from base_station_gui2.temp_mission_control import deploy
-from base_station_gui2.cougars_bringup.scripts import startup_call
+from base_station_gui import deploy
+from base_station_gui import startup_call
 import tkinter
-from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+from base_station_gui.temp_waypoint_planner import App as WaypointPlannerApp
+from pathlib import Path
 import threading
 import subprocess
 import multiprocessing
@@ -285,11 +283,7 @@ class MainWindow(QMainWindow):
         self.ping_timer.start(3000) #try to ping the Cougs every 3 seconds 
 
     def get_IP_addresses(self):
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
@@ -791,7 +785,7 @@ class MainWindow(QMainWindow):
                 self.replace_confirm_reject_label(f"Loading Vehicle{vehicle_number} Mission Command Complete")
 
             except Exception as e:
-                err_msg = f"Mission loading for vehicle{vehicle_number} failed: {e}"
+                err_msg = f"Mission loading for vehicle {vehicle_number} failed: {e}"
                 print(err_msg)
                 self.replace_confirm_reject_label(err_msg)
                 self.recieve_console_update(err_msg, vehicle_number)
@@ -839,7 +833,7 @@ class MainWindow(QMainWindow):
 
         def run_waypoint_planner():
             import tkinter
-            from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+            from base_station_gui.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
             root = tkinter.Tk()
             app = WaypointPlannerApp(root)
             root.mainloop()
@@ -1790,7 +1784,7 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
-        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
+        # print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio"
@@ -1954,7 +1948,7 @@ def OpenWindow(ros_node, borders=False):
     window_width, window_height = 1200, 800
 
     # Prepare splash image
-    img_path = os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
+    img_path = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/images/FRoSt_Lab.png" #os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
     pixmap = QPixmap(img_path)
     pixmap = pixmap.toImage()
     pixmap.invertPixels()

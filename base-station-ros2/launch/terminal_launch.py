@@ -42,7 +42,7 @@ def generate_launch_description():
         ),        
         launch_ros.actions.Node(
             package='base_station_gui2',
-            executable='talker',
+            executable='gui_node',
             name='base_station_gui2',
             output='screen'
         ),
