@@ -6,3 +6,4 @@
 /postprocessing/converted_bags
 **/mapproxy/mapcache
 *.csv
+*.pdf
