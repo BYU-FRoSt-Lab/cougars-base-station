@@ -1,34 +1,25 @@
-# Created by Seth Ricks, July 2025
+import sys, yaml, os, json
+from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
+    QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
+    QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, QToolBar,
+    QStyle, QLineEdit, QWidget, QDialog, QFileDialog, QDialogButtonBox, QMessageBox, QColorDialog, QStatusBar
+)
 
 # Standard library imports
 import sys, random, time, os, re
 import yaml, json
 import base64, math, functools
 from functools import partial
-import subprocess, multiprocessing, threading
-import tkinter
 from transforms3d.euler import quat2euler
-
-# PyQt6 imports for GUI components
-from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
-    QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
-    QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog, 
-    QDialogButtonBox, QMessageBox, QColorDialog
-)
-from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
-    QPainter, QAction, QIcon, QActionGroup
-)
-from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
-
-# ROS 2 service imports
-from base_station_interfaces.srv import BeaconId, ModemControl
-
-# Import custom modules for mission control, calibration, startup, and waypoint planner
-from base_station_gui2.temp_mission_control import deploy
-from base_station_gui2.vehicles_calibrate import calibrate
-from base_station_gui2.cougars_bringup.scripts import startup_call
-from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+import math
+from base_station_gui import deploy
+from base_station_gui import startup_call
+import tkinter
+from base_station_gui.waypoint_planner import App as WaypointPlannerApp
+from pathlib import Path
+import threading
+import subprocess
+import multiprocessing
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -370,18 +361,7 @@ class MainWindow(QMainWindow):
         return bytes(byte_list)
 
     def get_IP_addresses(self):
-        """
-        Loads the IP addresses for each selected vehicle from the deploy_config.json file.
-        Populates self.Vehicle_IP_addresses and self.ip_to_vehicle for later use.
-        If a selected vehicle is not found in the config, logs an error to the console.
-        """
-        # Build the path to the config file
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
-        # Open and parse the config file
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
@@ -1001,7 +981,7 @@ class MainWindow(QMainWindow):
                 deploy.main(self.ros_node, [vehicle_number], [selected_file])
                 self.replace_confirm_reject_label(f"Loading Vehicle{vehicle_number} Mission Command Complete")
             except Exception as e:
-                err_msg = f"Mission loading for vehicle{vehicle_number} failed: {e}"
+                err_msg = f"Mission loading for vehicle {vehicle_number} failed: {e}"
                 print(err_msg)
                 self.replace_confirm_reject_label(err_msg)
                 self.recieve_console_update(err_msg, vehicle_number)
@@ -1059,8 +1039,6 @@ class MainWindow(QMainWindow):
         for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
         def run_waypoint_planner():
-            import tkinter
-            from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
             root = tkinter.Tk()
             app = WaypointPlannerApp(root)
             root.mainloop()
@@ -2194,48 +2172,24 @@ class MainWindow(QMainWindow):
         self.smoothed_ouput_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
-        """
-        Updates the GUI widgets for position, heading, velocity, and angular velocity
-        based on the received smoothed output message.
-        """
-        position = msg.pose.pose.position
+        position = msg.position
         x = position.x
         y = position.y
-        #won't use z, will use depth data instead
-        
-        # Quaternion from Odometry message
-        q = (
-            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
-            msg.pose.pose.orientation.x,
-            msg.pose.pose.orientation.y,
-            msg.pose.pose.orientation.z
-        )
 
-        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
-        _, _, yaw = quat2euler(q)
+        roll = msg.roll
+        pitch = msg.pitch
+        heading = msg.yaw
 
-        # heading
-        heading_deg = math.degrees(yaw) % 360
 
-        l_vel = msg.twist.twist.linear
-        a_vel = msg.twist.twist.angular
-
-        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
-        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
-
-        #update feedback dict 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
-        self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
+        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
-        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
-        self.replace_specific_status_widget(vehicle_number, "Angular_vel")
         self.replace_specific_status_widget(vehicle_number, "Heading")
+
 
     def recieve_depth_data_message(self, vehicle_number, msg):
         """
@@ -2355,7 +2309,7 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
-        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
+        # print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio"
@@ -2557,8 +2511,7 @@ def OpenWindow(ros_node, borders=False):
     window_width, window_height = 1200, 800
 
     # Prepare splash image
-    img_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/FRoSt_Lab.png")
-
+    img_path = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/images/FRoSt_Lab.png" #os.path.join(os.path.dirname(__file__), "FRoSt_Lab.png")
     pixmap = QPixmap(img_path)
     pixmap = pixmap.toImage()
     pixmap.invertPixels() #This turns the Splash image from dark to light for dark mode

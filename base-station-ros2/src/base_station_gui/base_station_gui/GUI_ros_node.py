@@ -17,10 +17,19 @@ from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 import time
 from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseWithCovariance, PoseWithCovarianceStamped
+from sensor_msgs.msg import FluidPressure, BatteryState
+from dvl_msgs.msg import DVLDR
 
-from nav_msgs.msg import Path #used to publish the map viz path
-from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState #NavSatFix used to publish the origin
-from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
+
+import base_station_gui.GUI
+from rclpy.executors import SingleThreadedExecutor
+
+from nav_msgs.msg import Path #used to publish the path
+from sensor_msgs.msg import NavSatFix #used to publish the origin
+from geometry_msgs.msg import PoseStamped
 
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, ConsoleLog
@@ -51,8 +60,8 @@ class GuiNode(Node):
 
             # Subscribe to smoothed output messages for each vehicle
             sub = self.create_subscription(
-                Odometry,
-                f'coug{coug_number}/smoothed_output',
+                DVLDR,
+                f'coug{coug_number}/dvl/position',
                 lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
                 10
             )
@@ -255,7 +264,7 @@ def main():
     rclpy.init()
 
     # Create the Qt application and main window (window will be set later)
-    app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
+    app, result, selected_cougs = base_station_gui.GUI.OpenWindow(None, borders=False)
 
     def after_window_ready():
         """

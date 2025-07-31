@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'base_station_gui2'
+package_name = 'base_station_gui'
 
 setup(
     name=package_name,
@@ -8,16 +8,15 @@ setup(
     packages=find_packages(exclude=['test']),
     package_data={
         package_name: ['FRoSt_Lab.png'],
-        'base_station_gui2.temp_mission_control': ['*.json'],
-        'base_station_gui2.temp_waypoint_planner': ['*.py'],
-        'base_station_gui2.vehicles_calibrate': ['*.sh']
+        'base_station_gui.temp_mission_control': ['*.json'],
+        'base_station_gui.temp_waypoint_planner': ['*.py']
     },
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'base_station_interfaces', 'frost_interfaces'],
+    install_requires=['setuptools', 'base_station_interfaces', 'frost_interfaces', 'dvl_msgs'],
     zip_safe=True,
     maintainer='frostlab',
     maintainer_email='frostlab@todo.todo',
@@ -26,7 +25,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-		    'talker = base_station_gui2.GUI_ros_node:main'
+		    'gui_node = base_station_gui.GUI_ros_node:main'
         ],
     },
 )

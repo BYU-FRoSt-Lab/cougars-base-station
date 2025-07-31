@@ -78,12 +78,13 @@ public:
         RCLCPP_INFO(this->get_logger(), "base station coms node started");
 
         this->timer_ = this->create_wall_timer(
-            std::chrono::seconds(3), std::bind(&ModemComs::check_modem_connections, this)
+            std::chrono::seconds(1), std::bind(&ModemComs::check_modem_connections, this)
         );
 
         for (int vehicle : vehicles_in_mission_) {
             this->modem_connection[vehicle] = false;
             this->messages_missed_[vehicle] = 3;
+            this->last_message_time_[vehicle] = this->now();
         }
 
     }
@@ -103,11 +104,12 @@ public:
                 emergency_kill_confirmed(msg);
             } break;
             case CONFIRM_EMERGENCY_SURFACE: {
-                emergency_kill_confirmed(msg);
+                emergency_surface_confirmed(msg);
             } break;
         }
     }
 
+    
 
     // Sends emergency kill signal to coug specified in request
     void emergency_kill_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
@@ -152,21 +154,25 @@ public:
         
         const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
         auto status_msg = base_station_interfaces::msg::Status();
+
+        // Fill in the status message from the data received
         status_msg.vehicle_id = msg.src_id;
         status_msg.safety_status.depth_status.data = (status->safety_mask & 0x01) != 0;
         status_msg.safety_status.gps_status.data = (status->safety_mask & 0x02) != 0;
         status_msg.safety_status.modem_status.data = (status->safety_mask & 0x04) != 0;
         status_msg.safety_status.dvl_status.data = (status->safety_mask & 0x08) != 0;
         status_msg.safety_status.emergency_status.data = (status->safety_mask & 0x10) != 0;
-        status_msg.smoothed_odom.pose.pose.position.x = status->x;
-        status_msg.smoothed_odom.pose.pose.position.y = status->y;
-        status_msg.smoothed_odom.twist.twist.linear.x = status->x_vel;
-        status_msg.smoothed_odom.twist.twist.linear.y = status->y_vel;
-        status_msg.smoothed_odom.pose.pose.position.z = status->depth;
+        status_msg.dvl_pos.position.x = status->x;
+        status_msg.dvl_pos.position.y = status->y;
+        status_msg.dvl_pos.position.z = status->depth;
+        status_msg.dvl_pos.roll = status->roll;
+        status_msg.dvl_pos.pitch = status->pitch;
+        status_msg.dvl_pos.yaw = status->yaw;
         status_msg.battery_state.voltage = status->battery_voltage;
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;
         status_msg.pressure.fluid_pressure = status->pressure;
+
         this->status_publisher_->publish(status_msg);
 
     RCLCPP_INFO(this->get_logger(), "position (x, y, z): (%.2f, %.2f, %.2f)", 
@@ -215,8 +221,7 @@ public:
    // checks the connections of the vehicles in the mission and publishes the connections
     void check_modem_connections() {
         rclcpp::Time now = this->now();
-        std::vector<bool> connections;
-        std::vector<uint32_t> last_ping;
+        std::vector<uint64_t> last_ping;
 
 
         base_station_interfaces::msg::Connections msg;
@@ -232,13 +237,11 @@ public:
                 msg.connections.push_back(true);
                 this->modem_connection[id] = true;
             }
-            msg.last_ping.push_back(static_cast<uint64_t>(last_message_time_[id].seconds()));
+            msg.last_ping.push_back(static_cast<uint64_t>(this->now().seconds() - last_message_time_[id].seconds()));
         }
         msg.vehicle_ids = this->vehicles_in_mission_;
-        
+
         modem_connections_publisher_->publish(msg);
-
-
    }
 
    
