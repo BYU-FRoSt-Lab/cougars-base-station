@@ -16,7 +16,7 @@ import math
 from base_station_gui import deploy
 from base_station_gui import startup_call
 import tkinter
-from base_station_gui.temp_waypoint_planner import App as WaypointPlannerApp
+from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 from pathlib import Path
 import threading
 import subprocess
