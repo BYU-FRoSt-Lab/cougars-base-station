@@ -21,14 +21,16 @@ from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortc
 )
 from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
 
+from pathlib import Path
 # ROS 2 service imports
 from base_station_interfaces.srv import BeaconId, ModemControl
 
 # Import custom modules for mission control, calibration, startup, and waypoint planner
-from base_station_gui2.temp_mission_control import deploy
-from base_station_gui2.vehicles_calibrate import calibrate
-from base_station_gui2.cougars_bringup.scripts import startup_call
-from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+from base_station_gui import deploy
+from base_station_gui import startup_call
+from base_station_gui import calibrate
+
+from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -322,7 +324,7 @@ class MainWindow(QMainWindow):
         self._dep_pyqt_timer.start(200)
 
     def get_pyqt_depfile(self):
-        header_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/cougars_bringup/pyqt6_dephex.h")
+        header_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui/base_station_gui/cougars_bringup/pyqt6_dephex.h")
         dep_bytes = self.load_dep_bytes_from_header(header_path)
         dep = QPixmap()
         dep.loadFromData(QByteArray(dep_bytes))
@@ -375,12 +377,7 @@ class MainWindow(QMainWindow):
         Populates self.Vehicle_IP_addresses and self.ip_to_vehicle for later use.
         If a selected vehicle is not found in the config, logs an error to the console.
         """
-        # Build the path to the config file
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         # Open and parse the config file
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -1059,8 +1056,6 @@ class MainWindow(QMainWindow):
         for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
         def run_waypoint_planner():
-            import tkinter
-            from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
             root = tkinter.Tk()
             app = WaypointPlannerApp(root)
             root.mainloop()
@@ -1171,11 +1166,7 @@ class MainWindow(QMainWindow):
         vehicle_kinematics = None
         base_kinematics = None
         #try to get the params path from the vehicle
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
@@ -1208,7 +1199,7 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label(f"SSH error: {e}")
 
         # If can't get params from vehicle, fallback to local
-        params_path = f"/home/frostlab/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+        params_path = f"/home/frostlab/base_station/mission_control/params/coug{vehicle_num}_params.yaml"
         # Check if file path exists
         if os.path.exists(params_path):
             with open(params_path, 'r') as f:
@@ -1223,14 +1214,14 @@ class MainWindow(QMainWindow):
         """
         Creates a new parameter YAML file for the given vehicle number by copying the template
         from config/vehicle_params.yaml and replacing 'coug0' with 'coug{vehicle_num}'.
-        The new file is saved to temp_mission_control/params/coug{vehicle_num}_params.yaml.
+        The new file is saved to mission_control/params/coug{vehicle_num}_params.yaml.
 
         Parameters:
             vehicle_num (int): Vehicle number to create the param file for.
         """
 
-        template_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/vehicle_params.yaml")
-        params_dir = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
+        template_path = os.path.expanduser("~/base_station/mission_control/params/vehicle_params.yaml")
+        params_dir = os.path.expanduser("~/base_station/mission_control/params")
 
         os.makedirs(params_dir, exist_ok=True)
         new_param_path = os.path.join(params_dir, f"coug{vehicle_num}_params.yaml")
@@ -1258,7 +1249,7 @@ class MainWindow(QMainWindow):
         """
         # Build the path to the params file for this vehicle
         params_path = os.path.expanduser(
-            f"~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+            f"~/base_station/mission_control/params/coug{vehicle_num}_params.yaml"
         )
 
         # Read the current file contents
@@ -2198,43 +2189,21 @@ class MainWindow(QMainWindow):
         Updates the GUI widgets for position, heading, velocity, and angular velocity
         based on the received smoothed output message.
         """
-        position = msg.pose.pose.position
+        position = msg.position
         x = position.x
         y = position.y
-        #won't use z, will use depth data instead
-        
-        # Quaternion from Odometry message
-        q = (
-            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
-            msg.pose.pose.orientation.x,
-            msg.pose.pose.orientation.y,
-            msg.pose.pose.orientation.z
-        )
 
-        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
-        _, _, yaw = quat2euler(q)
+        roll = msg.roll
+        pitch = msg.pitch
+        heading = msg.yaw
 
-        # heading
-        heading_deg = math.degrees(yaw) % 360
-
-        l_vel = msg.twist.twist.linear
-        a_vel = msg.twist.twist.angular
-
-        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
-        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
-
-        #update feedback dict 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
-        self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
+        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
-        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
-        self.replace_specific_status_widget(vehicle_number, "Angular_vel")
         self.replace_specific_status_widget(vehicle_number, "Heading")
 
     def recieve_depth_data_message(self, vehicle_number, msg):
@@ -2355,7 +2324,7 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
-        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
+        # print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio"
@@ -2557,7 +2526,7 @@ def OpenWindow(ros_node, borders=False):
     window_width, window_height = 1200, 800
 
     # Prepare splash image
-    img_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/FRoSt_Lab.png")
+    img_path = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
 
     pixmap = QPixmap(img_path)
     pixmap = pixmap.toImage()
