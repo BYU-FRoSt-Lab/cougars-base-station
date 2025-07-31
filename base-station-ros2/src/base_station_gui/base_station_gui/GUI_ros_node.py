@@ -18,7 +18,7 @@ from dvl_msgs.msg import DVLDR
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
 
-import base_station_gui.tabbed_window
+import base_station_gui.GUI
 from rclpy.executors import SingleThreadedExecutor
 
 from nav_msgs.msg import Path #used to publish the path
@@ -174,7 +174,7 @@ def main():
     rclpy.init()
 
     # Create the Qt application and main window (window will be set later)
-    app, result, selected_cougs = base_station_gui.tabbed_window.OpenWindow(None, borders=False)
+    app, result, selected_cougs = base_station_gui.GUI.OpenWindow(None, borders=False)
 
     def after_window_ready():
         window = result.get('window')

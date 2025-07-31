@@ -832,8 +832,6 @@ class MainWindow(QMainWindow):
         for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
         def run_waypoint_planner():
-            import tkinter
-            from base_station_gui.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
             root = tkinter.Tk()
             app = WaypointPlannerApp(root)
             root.mainloop()

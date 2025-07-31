@@ -44,8 +44,7 @@ public:
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
 
         // When true the node will periodically request status from vehicles in mission
-        this->declare_parameter<bool>("request_status", true);
-        bool request_status = this->get_parameter("request_status").as_bool();
+        bool request_status = this->declare_parameter<bool>("request_status", true);
 
 
         // client for the base_station_radio node. Requests that the radio sends an emergency kill command to a specific coug
@@ -103,8 +102,10 @@ public:
             std::bind(&ComsNode::listen_to_connections, this, _1)
         );
 
+        // RCLCPP_INFO(this->get_logger(), "request status: %d", request_status);
         if (request_status) {
            // timer that periodically requests status from vehicles in mission
+           RCLCPP_INFO(this->get_logger(), "requesting status");
            timer_ = this->create_wall_timer(
                        std::chrono::seconds(status_request_frequency), std::bind(&ComsNode::request_status_callback, this));
 
