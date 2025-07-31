@@ -13,7 +13,7 @@ tmux new-session -d -s cougars -n "demo"
 
 tmux send-keys "bash coug_ssh.sh $VEHICLE_ID" Enter
 
-tmux send-keys "cd CoUGARs" Enter
+tmux send-keys "cd cougars" Enter
 
 tmux send-keys "bash compose.sh" Enter
 tmux send-keys "cd ros2_ws" Enter

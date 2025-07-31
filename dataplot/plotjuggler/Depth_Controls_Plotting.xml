@@ -118,7 +118,7 @@
   <plugin ID="ROS2 Topic Re-Publisher"/>
  </Plugins>
  <!-- - - - - - - - - - - - - - - -->
- <previouslyLoaded_Datafiles>
+ <!-- <previouslyLoaded_Datafiles>
   <fileInfo prefix="" filename="../../../bag/coug1/SIM_2.3_controller-2025-01-29-20-55-15/metadata.yaml">
    <plugin ID="DataLoad ROS2 bags">
     <use_header_stamp value="false"/>
@@ -129,7 +129,7 @@
     <selected_topics value="/coug1/battery/data;/coug1/controls/command;/coug1/depth_data;/coug1/desired_depth;/coug1/desired_heading;/coug1/desired_speed;/coug1/dvl/data;/coug1/dvl/dead_reckoning;/coug1/dvl/dr_global;/coug1/dvl/position;/coug1/dvl/velocity;/coug1/extended_fix;/coug1/gps_odom;/coug1/kinematics/command;/coug1/leak/data;/coug1/modem_imu;/coug1/modem_rec;/coug1/modem_send;/coug1/modem_status;/coug1/pressure/data;/parameter_events;/rosout;/coug1/controls/debug"/>
    </plugin>
   </fileInfo>
- </previouslyLoaded_Datafiles>
+ </previouslyLoaded_Datafiles> -->
  <!-- - - - - - - - - - - - - - - -->
  <customMathEquations>
   <snippet name="negative_depth">
