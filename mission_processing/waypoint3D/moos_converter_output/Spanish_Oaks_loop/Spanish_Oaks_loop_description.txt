@@ -1,8 +1,0 @@
-Mission Description for: Spanish_Oaks_loop
-Generated on: 2025-05-14
-Input .waypoints file: Spanish_Oaks_loop.waypoints
-Origin Latitude: 40.071744
-Origin Longitude: -111.600131
-
-User-provided description:
-simple 4 waypoint loop for spanish oaks reservoir.

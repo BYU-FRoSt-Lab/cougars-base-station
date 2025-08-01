@@ -33,10 +33,6 @@ class GuiNode(Node):
     """
     def __init__(self, window, selected_cougs):
         super().__init__('gui_node')
-        # Set reliable and transient local QoS profile
-        qos_reliable_profile = QoSProfile(depth=5)
-        qos_reliable_profile.reliability = ReliabilityPolicy.RELIABLE
-        qos_reliable_profile.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
         # Dynamically create subscriptions and publishers for each selected vehicle (coug)
         for coug_number in selected_cougs:
@@ -89,7 +85,7 @@ class GuiNode(Node):
             pub = self.create_publisher(
                 SystemControl,
                 f'/coug{coug_number}/system/status',
-                qos_reliable_profile
+                1
             )
             setattr(self, f'coug{coug_number}_publisher_', pub)
 
@@ -97,7 +93,7 @@ class GuiNode(Node):
             pub = self.create_publisher(
                 Path,
                 f'/coug{coug_number}/map_viz_path',
-                qos_reliable_profile
+                10
             )
             setattr(self, f'coug{coug_number}_path_', pub)
 
@@ -105,7 +101,7 @@ class GuiNode(Node):
             pub = self.create_publisher(
                 UCommand,
                 f'/coug{coug_number}/kinematics/command',
-                qos_reliable_profile
+                10
             )
             setattr(self, f'coug{coug_number}_fins_kinematics', pub)
 
@@ -113,7 +109,7 @@ class GuiNode(Node):
             pub = self.create_publisher(
                 UCommand,
                 f'/coug{coug_number}/controls/command',
-                qos_reliable_profile
+                10
             )
             setattr(self, f'coug{coug_number}_fins_controls', pub)
 
@@ -154,7 +150,8 @@ class GuiNode(Node):
         ) 
 
         # Publisher for the map visualization origin 
-        self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', qos_reliable_profile)
+        #TODO: Fix the origin to be a transient local publisher
+        self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', 10)
 
         # Publisher for console log messages
         self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
