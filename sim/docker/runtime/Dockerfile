@@ -9,15 +9,30 @@ RUN apt update && apt install -y --no-install-recommends \
     ros-humble-gps-msgs \
     ros-humble-geometry-msgs \
     ros-humble-nav-msgs \ 
-    ros-humble-tf-transformations
+    ros-humble-tf-transformations \
+    openssh-server \
+    && rm -rf /var/lib/apt/lists/*
 
+
+RUN mkdir -p /var/run.sshd && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/\(^Port\)/#\1/' /etc/ssh/sshd_config && echo Port 2233 >> /etc/ssh/sshd_config && \
+    echo 'ue4:ue4' | chpasswd && \
+    chsh -s /bin/bash ue4 && \
+    mkdir -p /run/sshd && \
+    chmod 755 /run/sshd
 
 # Install Dev tools for building and other tasks
-RUN apt install -y python3-colcon-common-extensions \
+RUN apt update && apt install -y \
+    python3-colcon-common-extensions \
     build-essential \
     cmake \
     python3-vcstool \
-    sudo 
+    sudo \ 
+    xauth && \
+    usermod -aG sudo ue4 && \
+    echo "ue4 ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 #### BELOW IS A SOLUTION TO THE TF TRANSFORMATIONS ISSUE
 # Install pip
