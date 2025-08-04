@@ -5,7 +5,8 @@ import sys, random, time, os, re
 import yaml, json
 import base64, math, functools
 from functools import partial
-import subprocess, multiprocessing, threading
+import subprocess, multiprocessing, threading, paramiko
+from ping3 import ping
 import tkinter
 from transforms3d.euler import quat2euler
 
@@ -405,9 +406,9 @@ class MainWindow(QMainWindow):
                 IPs_reachable = {}
                 # Ping each IP address in the list
                 for ip in self.Vehicle_IP_addresses:
-                    # Use subprocess to ping the IP once, with a 2 second timeout
-                    result = subprocess.run(["ping", "-c", "1", "-W", "2", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    reachable = 1 if result.returncode == 0 else 0
+                    # Use ping3 to ping the IP once, with a 1 second timeout
+                    result = ping(ip, timeout=1)
+                    reachable = 1 if result is not None else 0
                     IPs_reachable[ip] = reachable
                 # Emit the results to update the GUI
                 self.update_wifi_signal.emit(IPs_reachable)
@@ -1115,57 +1116,88 @@ class MainWindow(QMainWindow):
         else: vehicles = [vehicle_number]
         calibrate.main(self.ros_node, vehicles)
 
+    def sftp_get_dir(self, sftp, remote_dir, local_dir, vehicle_number):
+        """
+        Recursively copies a remote directory to a local directory using SFTP.
+        """
+        os.makedirs(local_dir, exist_ok=True)
+        for entry in sftp.listdir_attr(remote_dir):
+            remote_path = os.path.join(remote_dir, entry.filename)
+            local_path = os.path.join(local_dir, entry.filename)
+            if entry.st_mode & 0o170000 == 0o040000:  # Directory
+                self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
+            else:
+                try:
+                    sftp.get(remote_path, local_path)
+                except Exception as e:
+                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
+
     #used by copy bags
     def run_sync_bags(self, vehicle_number):
         """
-        Runs the bag synchronization script for the specified vehicle.
+        Uses paramiko to sync bag files from the specified vehicle.
         Reports success or failure through the confirmation/rejection label and console log.
         """
+
         try:
-            # Path to the sync_bags.sh script
-            script_path = os.path.join(
-                os.path.expanduser("~"),  # Start from home directory
-                "base_station", 
-                "mission_control", 
-                "sync_bags.sh"
-            )
+            # Set up connection info (customize as needed)
+            vehicle_id = f"coug{vehicle_number}"
+            vehicle_suffix = str(vehicle_number)
+            ip_address = f"192.168.0.10{vehicle_suffix}"
+            remote_user = "frostlab"
+            remote_folder = "/home/frostlab/cougars/bag"
+            local_folder = os.path.expanduser(f"~/bag/{vehicle_id}")
+            password = 'frostlab'
 
-            # Run the script with the vehicle number as argument
-            result = subprocess.run(
-                [script_path, str(vehicle_number)], 
-                capture_output=True, 
-                text=True,
-                cwd=os.path.dirname(script_path)  # Run from mission_control directory
-            )
-                            
-            if result.returncode == 0:
-                success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
-                self.replace_confirm_reject_label(success_msg)
-                self.recieve_console_update(success_msg, vehicle_number)
-                # Also show any output from the script
-                if result.stdout:
-                    self.recieve_console_update(f"Script output: {result.stdout.strip()}", vehicle_number)
-            else:
-                error_msg = f"Bag sync failed for Vehicle {vehicle_number}. Exit code: {result.returncode}"
-                self.replace_confirm_reject_label(error_msg)
-                self.recieve_console_update(error_msg, vehicle_number)
-                if result.stderr:
-                    self.recieve_console_update(f"Error: {result.stderr.strip()}", vehicle_number)
+            # Ensure local folder exists
+            os.makedirs(local_folder, exist_ok=True)
 
+            # Set up SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(ip_address, username=remote_user, password=password)
+            self.recieve_console_update(f"Connected to Vehicle {vehicle_number} via SSH", vehicle_number)
+            # Set up SFTP client
+            sftp = ssh.open_sftp()
+            file_list = sftp.listdir(remote_folder)
+            self.recieve_console_update(f"Found {len(file_list)} bag files to sync for Vehicle {vehicle_number}", vehicle_number)
+            i = 0
+            for dirname in file_list:
+                remote_path = os.path.join(remote_folder, dirname)
+                local_path = os.path.join(local_folder, dirname)
+                try:
+                    stat = sftp.stat(remote_path)
+                    if stat.st_mode & 0o170000 == 0o040000:  # Directory
+                        self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
+                    else:
+                        sftp.get(remote_path, local_path)
+                except Exception as e:
+                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
+                msg = f"Copied {i + 1}/{len(file_list)} bags from Vehicle {vehicle_number}"
+                self.recieve_console_update(msg, vehicle_number)
+                i += 1
+
+            success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
+            self.replace_confirm_reject_label(success_msg)
+            self.recieve_console_update(success_msg, vehicle_number)
 
         except Exception as e:
-            error_msg = f"Failed to run bag sync script: {str(e)}"
+            error_msg = f"Failed to sync bags via SSH: {str(e)}"
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
+        
+
 
     def load_vehicle_kinematics_params(self, vehicle_num):
         """
-        Loads the vehicle kinematics parameters from the vehicle or falls back to local params file.
+        Loads the vehicle kinematics parameters from the vehicle using paramiko or falls back to local params file.
         Returns the vehicle and base kinematics parameters.
         """
+
         vehicle_kinematics = None
         base_kinematics = None
-        #try to get the params path from the vehicle
+
+        # Try to get the params path from the vehicle
         config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -1177,36 +1209,37 @@ class MainWindow(QMainWindow):
             remote_param_path = os.path.join(
                 vehicle_info["remote_path"], vehicle_info["param_file"]
             )
+            password = "frostlab"  # Or get from config/env
 
-        # Use ssh to cat the file and read its contents
-        try:
-            result = subprocess.run(
-                ["ssh", f"{remote_user}@{remote_host}", f"cat {remote_param_path}"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0 and result.stdout:
-                data = yaml.safe_load(result.stdout)
-                vehicle_key = f"coug{vehicle_num}"
-                try:
-                    vehicle_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
-                except KeyError:
-                    self.replace_confirm_reject_label(f"Could not find kinematics in remote file for coug{vehicle_num}")
-            else:
-                self.replace_confirm_reject_label(f"Failed to read remote params: {result.stderr.strip()}")
-        except Exception as e:
-            self.replace_confirm_reject_label(f"SSH error: {e}")
+            try:
+                # Connect via SSH and SFTP
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(remote_host, username=remote_user, password=password, timeout=5)
+                sftp = ssh.open_sftp()
+                with sftp.open(remote_param_path, "r") as remote_file:
+                    file_content = remote_file.read().decode()
+                    data = yaml.safe_load(file_content)
+                    vehicle_key = f"coug{vehicle_num}"
+                    try:
+                        vehicle_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+                    except KeyError:
+                        self.replace_confirm_reject_label(f"Could not find kinematics in remote file for coug{vehicle_num}")
+                sftp.close()
+                ssh.close()
+            except Exception as e:
+                self.replace_confirm_reject_label(f"SSH error: {e}")
 
         # If can't get params from vehicle, fallback to local
         params_path = f"/home/frostlab/base_station/mission_control/params/coug{vehicle_num}_params.yaml"
-        # Check if file path exists
         if os.path.exists(params_path):
             with open(params_path, 'r') as f:
                 data = yaml.safe_load(f)
             vehicle_key = f"coug{vehicle_num}"
-            try: base_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
-            except KeyError: base_kinematics = None
+            try:
+                base_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+            except KeyError:
+                base_kinematics = None
 
         return vehicle_kinematics, base_kinematics
 
