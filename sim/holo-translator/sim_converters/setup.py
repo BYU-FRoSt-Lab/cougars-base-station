@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = 'reverse_converters'
+package_name = 'sim_converters'
 
 setup(
     name=package_name,
@@ -24,11 +24,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'dvl_reverse = reverse_converters.dvl_reverse:main',
-            'depth_reverse = reverse_converters.depth_reverse:main',
-            'gps_reverse = reverse_converters.gps_reverse:main',
-            'imu_reverse = reverse_converters.imu_reverse:main',
-            'ucommand_bridge = reverse_converters.ucommand_bridge:main',
+            'dvl_convert = sim_converters.dvl_convert:main',
+            'depth_convert = sim_converters.depth_convert:main',
+            'gps_convert = sim_converters.gps_convert:main',
+            'imu_convert = sim_converters.imu_convert:main',
+            'ucommand_bridge = sim_converters.ucommand_bridge:main',
         ],
     },
 )
