@@ -38,7 +38,7 @@
     },
     "0": {
       "name": "Coug0",
-      "remote_user": "bjm225",
+      "remote_user": "ue4",
       "remote_host": "10.2.118.72",
       "remote_path": "~/cougars/config/deploy_tmp/",
       "mission_file": "mission.yaml",

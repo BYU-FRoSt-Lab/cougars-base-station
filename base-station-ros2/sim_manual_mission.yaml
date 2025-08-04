@@ -28,9 +28,9 @@ states:
   #   speed: 1500.0
   #   depth_from_bottom: true
 
-  - name: depth_from_surface
-    time_seconds: 60.0
-    depth: 75.0
-    heading: 210.0
-    speed: 1500.0
-    depth_from_bottom: false
+  # - name: depth_from_surface
+  #   time_seconds: 60.0
+  #   depth: 75.0
+  #   heading: 210.0
+  #   speed: 1500.0
+  #   depth_from_bottom: false
