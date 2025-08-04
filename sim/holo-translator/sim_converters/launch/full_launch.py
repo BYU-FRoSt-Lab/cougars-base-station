@@ -12,7 +12,7 @@ from pathlib import Path
 def generate_launch_description():
     print('Launching HoloOcean Vehicle Simulation')
 
-    base = Path(get_package_share_directory('reverse_converters'))
+    base = Path(get_package_share_directory('sim_converters'))
     params_file = base / 'config' / 'config.yaml'
 
     # List contents of the directory to debug
@@ -28,40 +28,40 @@ def generate_launch_description():
     )
 
     depth = launch_ros.actions.Node(
-        name='depth_reverse',
-        package='reverse_converters',
-        executable='depth_reverse',  
+        name='depth_convert',
+        package='sim_converters',
+        executable='depth_convert',  
         output='screen',
         parameters=[params_file]  
     )
 
     gps = launch_ros.actions.Node(
-        name='gps_reverse',
-        package='reverse_converters',
-        executable='gps_reverse',  
+        name='gps_convert',
+        package='sim_converters',
+        executable='gps_convert',  
         output='screen',
         parameters=[params_file]  
     )
 
     dvl = launch_ros.actions.Node(
-        name='dvl_reverse',
-        package='reverse_converters',
-        executable='dvl_reverse',  
+        name='dvl_convert',
+        package='sim_converters',
+        executable='dvl_convert',  
         output='screen',
         parameters=[params_file]  
     )
 
     imu = launch_ros.actions.Node(
-        name='imu_reverse',
-        package='reverse_converters',
-        executable='imu_reverse',  
+        name='imu_convert',
+        package='sim_converters',
+        executable='imu_convert',  
         output='screen',
         parameters=[params_file]  
     )
 
     ucommand = launch_ros.actions.Node(
         name='ucommand_bridge',
-        package='reverse_converters',
+        package='sim_converters',
         executable='ucommand_bridge',  
         output='screen',
         parameters=[params_file]  

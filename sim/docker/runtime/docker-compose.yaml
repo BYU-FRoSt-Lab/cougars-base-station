@@ -22,5 +22,6 @@ services:
       - ../../holo-translator:/home/ue4/sim_ws/src/holo-translator
       - ../../config:/home/ue4/sim_config
       - ../../../../config:/home/ue4/config
-    command: ["tail", "-f", "/dev/null"]
+      - ./entrypoint.sh:/home/ue4/entrypoint.sh
+    entrypoint: ["/bin/bash", "/home/ue4/entrypoint.sh"]
     restart: always  # Optional: Keeps the container running after exit unless you want it to be removed like with --rm

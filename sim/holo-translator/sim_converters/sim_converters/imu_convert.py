@@ -2,6 +2,8 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
+from geometry_msgs.msg import Quaternion
+from tf_transformations import euler_from_quaternion, quaternion_from_euler
 
 class ImuCombiner(Node):
     def __init__(self):
@@ -36,6 +38,23 @@ class ImuCombiner(Node):
         # Create timer to check and publish combined data at 10Hz
         self.timer = self.create_timer(0.1, self.timer_callback)
 
+    def rotate_yaw_180(self, q: Quaternion) -> Quaternion:
+        # Convert quaternion to Euler angles
+        euler = euler_from_quaternion([q.x, q.y, q.z, q.w])  # (roll, pitch, yaw)
+        
+        # Rotate yaw by 180 degrees (pi radians)
+        new_yaw = euler[2] + 3.141592653589793  # or use math.pi
+
+        # Wrap yaw to [-pi, pi]
+        if new_yaw > 3.141592653589793:
+            new_yaw -= 2 * 3.141592653589793
+
+        # Convert back to quaternion
+        new_q = quaternion_from_euler(euler[0], euler[1], new_yaw)
+
+        # Return as geometry_msgs.msg.Quaternion
+        return Quaternion(x=new_q[0], y=new_q[1], z=new_q[2], w=new_q[3])
+    
     def dynamics_callback(self, msg):
         self.dynamics_msg = msg
 
@@ -50,7 +69,12 @@ class ImuCombiner(Node):
             combined_msg.header = self.imu_msg.header
             
             # Use orientation from DynamicsSensor
+            
+            # Rotate yaw by 180 degrees 
+            # combined_msg.orientation = self.rotate_yaw_180(self.dynamics_msg.orientation)
+            # Use the original orientation from DynamicsSensor
             combined_msg.orientation = self.dynamics_msg.orientation
+            
             combined_msg.orientation_covariance = self.dynamics_msg.orientation_covariance
             
             # Copy all other fields from IMUSensor
