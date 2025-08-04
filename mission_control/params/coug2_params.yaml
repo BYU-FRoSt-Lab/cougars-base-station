@@ -24,7 +24,7 @@ coug2:
       depth_max_output: 15.0 # maximum fin angle from center (25.0 from advice from NSWC PCD)
       pitch_kp: 0.45
       pitch_ki: 0.000
-      pitch_kd: 0.0
+      pitch_kd: 0.7
       pitch_min_output: -40.0 # minimum fin angle from center (-25.0 from advice from NSWC PCD)
       pitch_max_output: 40.0 # maximum fin angle from center (25.0 from advice from NSWC PCD)
       heading_kp: 3.0

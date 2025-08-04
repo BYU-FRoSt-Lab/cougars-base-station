@@ -1,0 +1,36 @@
+mission_type: manual
+mission_name: manual_test
+
+origin_lla:
+  latitude: 40.0717592
+  longitude: -111.6001751
+  altitude: 1564.568
+
+states:
+  - name: dive_phase
+    time_seconds: 60.0
+    depth: 7.0
+    heading: 210.0
+    speed: 1500.0
+    depth_from_bottom: true
+
+  # - name: turn_phase
+  #   time_seconds: 60.0
+  #   depth: 5.0
+  #   heading: 210.0
+  #   speed: 1500.0
+  #   depth_from_bottom: true
+
+  # - name: surface
+  #   time_seconds: 60.0
+  #   depth: 3.0
+  #   heading: 210.0
+  #   speed: 1500.0
+  #   depth_from_bottom: true
+
+  # - name: depth_from_surface
+  #   time_seconds: 60.0
+  #   depth: 75.0
+  #   heading: 210.0
+  #   speed: 1500.0
+  #   depth_from_bottom: false
