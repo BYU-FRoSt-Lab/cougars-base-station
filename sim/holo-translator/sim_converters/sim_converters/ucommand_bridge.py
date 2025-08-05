@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Header
 from holoocean_interfaces.msg import ControlCommand
-from frost_interfaces.msg import UCommand
+from cougars_interfaces.msg import UCommand
 import math
 
 

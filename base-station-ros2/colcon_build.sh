@@ -9,7 +9,7 @@
 
 # build required packages in cougars-ros2 and source
 cd ~/ros2_ws
-colcon build --packages-select seatrac seatrac_interfaces frost_interfaces
+colcon build --packages-select seatrac seatrac_interfaces cougars_interfaces
 source install/setup.bash
 
 # Build packages in base station. "--merge-install" tells 

@@ -6,7 +6,7 @@
 #include "base_station_interfaces/srv/beacon_id.hpp"
 #include "base_station_interfaces/msg/status.hpp"
 #include "base_station_interfaces/msg/connections.hpp"
-#include "frost_interfaces/msg/system_status.hpp"
+#include "cougars_interfaces/msg/system_status.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "base_station_interfaces/srv/modem_control.hpp"
@@ -115,7 +115,7 @@ public:
            // Status publishers for each vehicle in the mission modelling the topics on each vehicle
            for (int vehicle_id : vehicles_in_mission_) {
                std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
-               safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
+               safety_status_publishers_[vehicle_id] = this->create_publisher<cougars_interfaces::msg::SystemStatus>(
                    ros_namespace + "/safety_status", 10);
                smoothed_odom_publishers_[vehicle_id] = this->create_publisher<nav_msgs::msg::Odometry>(
                    ros_namespace + "/smoothed_output", 10);
@@ -324,7 +324,7 @@ public:
         int64_t vehicle_id = msg->vehicle_id;
         if (std::find(vehicles_in_mission_.begin(), vehicles_in_mission_.end(), vehicle_id) != vehicles_in_mission_.end()) {
             // Publish the status to the appropriate topic
-            frost_interfaces::msg::SystemStatus safety_status = msg->safety_status;
+            cougars_interfaces::msg::SystemStatus safety_status = msg->safety_status;
             nav_msgs::msg::Odometry smoothed_odom = msg->smoothed_odom;
             sensor_msgs::msg::BatteryState battery_state = msg->battery_state;
             geometry_msgs::msg::PoseWithCovarianceStamped depth_status = msg->depth_data;
@@ -360,7 +360,7 @@ private:
     rclcpp::Service<base_station_interfaces::srv::ModemControl>::SharedPtr wifi_connection_service_;
 
     rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
-    std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<cougars_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr> smoothed_odom_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr> battery_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr> depth_publishers_;

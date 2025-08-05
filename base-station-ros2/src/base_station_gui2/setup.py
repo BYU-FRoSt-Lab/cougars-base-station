@@ -17,7 +17,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'base_station_interfaces', 'frost_interfaces'],
+    install_requires=['setuptools', 'base_station_interfaces', 'cougars_interfaces'],
     zip_safe=True,
     maintainer='frostlab',
     maintainer_email='frostlab@todo.todo',
