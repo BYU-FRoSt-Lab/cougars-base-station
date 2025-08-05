@@ -49,7 +49,7 @@ coug2:
       trim_ratio: 0.0 # multiplied by the velocity
       top_fin_offset: 65.0 # offset in degrees for the top fin (from front of vehicle) (-30.0)
       right_fin_offset: -10.0 # offset starboard side in degrees (from front of vehicle) (15)
-      left_fin_offset: -15.0 # offset port side in degrees for the left fin (from front of vehicle) (32)
+      left_fin_offset: 15.0 # offset port side in degrees for the left fin (from front of vehicle) (32)
       demo_mode: false # if true, disables the thruster
       fin_0_direction: 1 # 1 for forward, -1 for reverse
       fin_1_direction: 1 # 1 for forward, -1 for reverse
@@ -71,6 +71,19 @@ coug2:
   #     origin.latitude: 40.238833 # 40.2735 for Utah Lake
   #     origin.longitude: -111.742249 # -111.7126 for Utah Lake
   #     origin.altitude: 1367.00 # from testing
+
+
+  emergency_protocols:
+    ros__parameters:
+      deepest_safe_depth: -2.0
+      critical_voltage: 0.0
+      monitor_leak: false
+      monitor_low_battery: false
+      monitor_depth: false
+      monitor_gps_sats: false
+      monitor_modem_timeout: false
+      monitor_dvl_timeout: false
+
 
   modem:
     ros__parameters:
