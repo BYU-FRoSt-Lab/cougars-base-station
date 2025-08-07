@@ -1,0 +1,27 @@
+services:
+  holoros-sim:
+    image: frostlab/cougars:sim-holoros-cuda12.4
+    build: .
+    container_name: cougars-sim-holoros
+    user: ue4
+    runtime: nvidia
+    network_mode: host
+    privileged: true
+    stdin_open: true
+    tty: true
+    environment:
+      - DISPLAY=$DISPLAY
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # - ../../sim-packages:/home/ue4/ros2_ws/src
+      # - ~/.local/share/holoocean:/home/ue4/.local/share/holoocean
+      - /dev:/dev
+      - ../../../../cougars-ros2:/home/ue4/coug_ros2
+      - ../../holo-translator:/home/ue4/sim_ws/src/holo-translator
+      - ../../config:/home/ue4/sim_config
+      - ../../../../config:/home/ue4/config
+      - ./entrypoint.sh:/home/ue4/entrypoint.sh
+    entrypoint: ["/bin/bash", "/home/ue4/entrypoint.sh"]
+    restart: always  # Optional: Keeps the container running after exit unless you want it to be removed like with --rm
