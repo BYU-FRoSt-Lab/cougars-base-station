@@ -25,7 +25,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianc
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
-from dvl_msgs.msg import DVLDR
+from dvl_msgs.msg import DVLDR, DVL
 
 class GuiNode(Node):
     """
@@ -50,14 +50,23 @@ class GuiNode(Node):
             )
             setattr(self, f'safety_status_subscription{coug_number}', sub)
 
-            # Subscribe to smoothed output messages for each vehicle
+            # Subscribe to dvl/position messages for each vehicle
             sub = self.create_subscription(
-                Odometry,
+                DVLDR,
                 f'coug{coug_number}/dvl/position',
                 lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
                 10
             )
             setattr(self, f'smoothed_ouput_subscription{coug_number}', sub)
+
+            # Subscribe to smoothed output messages for each vehicle
+            sub = self.create_subscription(
+                DVL,
+                f'coug{coug_number}/dvl/data',
+                lambda msg, n=coug_number: window.recieve_dvl_velocity(n, msg),
+                10
+            )
+            setattr(self, f'dvl_vel_subscription{coug_number}', sub)
 
             # Subscribe to depth data messages for each vehicle
             sub = self.create_subscription(

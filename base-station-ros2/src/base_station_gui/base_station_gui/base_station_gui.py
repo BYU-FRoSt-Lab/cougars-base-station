@@ -40,7 +40,8 @@ class MainWindow(QMainWindow):
     update_console_signal = pyqtSignal(object, int)
     kill_confirm_signal = pyqtSignal(object)
     safety_status_signal = pyqtSignal(int, object)
-    smoothed_ouput_signal = pyqtSignal(int, object)
+    smoothed_output_signal = pyqtSignal(int, object)
+    dvl_velocity_signal = pyqtSignal(int, object)
     depth_data_signal = pyqtSignal(int, object)
     pressure_data_signal = pyqtSignal(int, object)
     battery_data_signal = pyqtSignal(int, object)
@@ -290,7 +291,8 @@ class MainWindow(QMainWindow):
         self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
         self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
         self.safety_status_signal.connect(self._update_safety_status_information)
-        self.smoothed_ouput_signal.connect(self._update_gui_smoothed_output)
+        self.smoothed_output_signal.connect(self._update_gui_smoothed_output)
+        self.dvl_velocity_signal.connect(self._update_dvl_velocity)
         self.depth_data_signal.connect(self.update_depth_data)
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
@@ -2210,12 +2212,29 @@ class MainWindow(QMainWindow):
             existing_label = widget.findChild(QLabel, f"Status_messages{vehicle_number}")
             if existing_label: existing_label.setText(new_status_label.text())
 
+    def recieve_dvl_velocity(self, vehicle_number, msg):
+        """
+        Receives a DVL velocity message from ROS and emits a signal to update the GUI.
+        Used to update the DVL velocity widget for the vehicle.
+        """
+        self.dvl_velocity_signal.emit(vehicle_number, msg)
+    
+    def _update_dvl_velocity(self, vehicle_number, msg):
+        """
+        Updates the DVL velocity widget for the specified vehicle based on the received message.
+        """
+        #gets linear velocity from the x,y,and z components of the velocity vector
+        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.velocity.x**2 + msg.velocity.y**2 + msg.velocity.z**2), 2)
+        #replace specific page status widget
+        self.recieve_console_update(f"DVL Velocity: {self.feedback_dict['DVL_vel'][vehicle_number]}", vehicle_number)
+        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
+
     def recieve_smoothed_output_message(self, vehicle_number, msg):
         """
         Receives a smoothed output message from ROS and emits a signal to update the GUI.
         Used to update position, heading, velocity, and angular velocity widgets.
         """
-        self.smoothed_ouput_signal.emit(vehicle_number, msg)
+        self.smoothed_output_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
         """
