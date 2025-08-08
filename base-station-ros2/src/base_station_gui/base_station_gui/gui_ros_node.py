@@ -1,4 +1,4 @@
-import base_station_gui2.tabbed_window
+import base_station_gui.base_station_gui
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer
@@ -25,6 +25,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianc
 from base_station_interfaces.srv import BeaconId, ModemControl
 from base_station_interfaces.msg import Connections, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
+from dvl_msgs.msg import DVLDR, DVL
 
 class GuiNode(Node):
     """
@@ -45,14 +46,23 @@ class GuiNode(Node):
             )
             setattr(self, f'safety_status_subscription{coug_number}', sub)
 
-            # Subscribe to smoothed output messages for each vehicle
+            # Subscribe to dvl/position messages for each vehicle
             sub = self.create_subscription(
-                Odometry,
-                f'coug{coug_number}/smoothed_output',
+                DVLDR,
+                f'coug{coug_number}/dvl/position',
                 lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
                 10
             )
             setattr(self, f'smoothed_ouput_subscription{coug_number}', sub)
+
+            # Subscribe to smoothed output messages for each vehicle
+            sub = self.create_subscription(
+                DVL,
+                f'coug{coug_number}/dvl/data',
+                lambda msg, n=coug_number: window.recieve_dvl_velocity(n, msg),
+                10
+            )
+            setattr(self, f'dvl_vel_subscription{coug_number}', sub)
 
             # Subscribe to depth data messages for each vehicle
             sub = self.create_subscription(
@@ -252,7 +262,7 @@ def main():
     rclpy.init()
 
     # Create the Qt application and main window (window will be set later)
-    app, result, selected_cougs = base_station_gui2.tabbed_window.OpenWindow(None, borders=False)
+    app, result, selected_cougs = base_station_gui.base_station_gui.OpenWindow(None, borders=False)
 
     def after_window_ready():
         """

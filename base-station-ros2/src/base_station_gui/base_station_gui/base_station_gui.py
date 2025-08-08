@@ -5,7 +5,8 @@ import sys, random, time, os, re
 import yaml, json
 import base64, math, functools
 from functools import partial
-import subprocess, multiprocessing, threading
+import subprocess, multiprocessing, threading, paramiko
+from ping3 import ping
 import tkinter
 from transforms3d.euler import quat2euler
 
@@ -21,14 +22,20 @@ from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortc
 )
 from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
 
+from pathlib import Path
 # ROS 2 service imports
 from base_station_interfaces.srv import BeaconId, ModemControl
 
 # Import custom modules for mission control, calibration, startup, and waypoint planner
-from base_station_gui2.temp_mission_control import deploy
-from base_station_gui2.vehicles_calibrate import calibrate
-from base_station_gui2.cougars_bringup.scripts import startup_call
-from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
+from base_station_gui import deploy
+from base_station_gui import startup_call
+from base_station_gui import calibrate
+
+from base_station_gui.waypoint_planner import App as WaypointPlannerApp
+
+
+media_directory = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
+ssh_key_path = str(Path.home()) + "/.ssh/id_ed25519_cougs"
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -37,7 +44,8 @@ class MainWindow(QMainWindow):
     update_console_signal = pyqtSignal(object, int)
     kill_confirm_signal = pyqtSignal(object)
     safety_status_signal = pyqtSignal(int, object)
-    smoothed_ouput_signal = pyqtSignal(int, object)
+    smoothed_output_signal = pyqtSignal(int, object)
+    dvl_velocity_signal = pyqtSignal(int, object)
     depth_data_signal = pyqtSignal(int, object)
     pressure_data_signal = pyqtSignal(int, object)
     battery_data_signal = pyqtSignal(int, object)
@@ -287,7 +295,8 @@ class MainWindow(QMainWindow):
         self.kill_confirm_signal.connect(self._update_kill_confirmation_gui)
         self.surface_confirm_signal.connect(self._update_surf_confirmation_gui)
         self.safety_status_signal.connect(self._update_safety_status_information)
-        self.smoothed_ouput_signal.connect(self._update_gui_smoothed_output)
+        self.smoothed_output_signal.connect(self._update_gui_smoothed_output)
+        self.dvl_velocity_signal.connect(self._update_dvl_velocity)
         self.depth_data_signal.connect(self.update_depth_data)
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
@@ -296,6 +305,7 @@ class MainWindow(QMainWindow):
         # Get IP addresses for selected vehicles and display in console
         self.get_IP_addresses()
         self.recieve_console_update(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}", 0) #declared in get_IP_addresses
+
 
         # Timer for pinging vehicles via wifi
         self.ping_timer = QTimer(self)
@@ -322,7 +332,7 @@ class MainWindow(QMainWindow):
         self._dep_pyqt_timer.start(200)
 
     def get_pyqt_depfile(self):
-        header_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/cougars_bringup/pyqt6_dephex.h")
+        header_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui/base_station_gui/cougars_bringup/pyqt6_dephex.h")
         dep_bytes = self.load_dep_bytes_from_header(header_path)
         dep = QPixmap()
         dep.loadFromData(QByteArray(dep_bytes))
@@ -375,12 +385,7 @@ class MainWindow(QMainWindow):
         Populates self.Vehicle_IP_addresses and self.ip_to_vehicle for later use.
         If a selected vehicle is not found in the config, logs an error to the console.
         """
-        # Build the path to the config file
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         # Open and parse the config file
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -408,9 +413,9 @@ class MainWindow(QMainWindow):
                 IPs_reachable = {}
                 # Ping each IP address in the list
                 for ip in self.Vehicle_IP_addresses:
-                    # Use subprocess to ping the IP once, with a 2 second timeout
-                    result = subprocess.run(["ping", "-c", "1", "-W", "2", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    reachable = 1 if result.returncode == 0 else 0
+                    # Use ping3 to ping the IP once, with a 1 second timeout
+                    result = ping(ip, timeout=1)
+                    reachable = 1 if result is not None else 0
                     IPs_reachable[ip] = reachable
                 # Emit the results to update the GUI
                 self.update_wifi_signal.emit(IPs_reachable)
@@ -1059,8 +1064,6 @@ class MainWindow(QMainWindow):
         for i in self.selected_vehicles: self.recieve_console_update(msg, i)
 
         def run_waypoint_planner():
-            import tkinter
-            from base_station_gui2.temp_waypoint_planner.temp_waypoint_planner import App as WaypointPlannerApp
             root = tkinter.Tk()
             app = WaypointPlannerApp(root)
             root.mainloop()
@@ -1120,62 +1123,89 @@ class MainWindow(QMainWindow):
         else: vehicles = [vehicle_number]
         calibrate.main(self.ros_node, vehicles)
 
+    def sftp_get_dir(self, sftp, remote_dir, local_dir, vehicle_number):
+        """
+        Recursively copies a remote directory to a local directory using SFTP.
+        """
+        os.makedirs(local_dir, exist_ok=True)
+        for entry in sftp.listdir_attr(remote_dir):
+            remote_path = os.path.join(remote_dir, entry.filename)
+            local_path = os.path.join(local_dir, entry.filename)
+            if entry.st_mode & 0o170000 == 0o040000:  # Directory
+                self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
+            else:
+                try:
+                    sftp.get(remote_path, local_path)
+                except Exception as e:
+                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
+
     #used by copy bags
     def run_sync_bags(self, vehicle_number):
         """
-        Runs the bag synchronization script for the specified vehicle.
+        Uses paramiko to sync bag files from the specified vehicle.
         Reports success or failure through the confirmation/rejection label and console log.
         """
+
         try:
-            # Path to the sync_bags.sh script
-            script_path = os.path.join(
-                os.path.expanduser("~"),  # Start from home directory
-                "base_station", 
-                "mission_control", 
-                "sync_bags.sh"
-            )
+            # Set up connection info (customize as needed)
+            vehicle_id = f"coug{vehicle_number}"
+            vehicle_suffix = str(vehicle_number)
+            ip_address = f"192.168.0.10{vehicle_suffix}"
+            remote_user = "frostlab"
+            remote_folder = "/home/frostlab/cougars/bag"
+            local_folder = os.path.expanduser(f"~/bag/{vehicle_id}")
 
-            # Run the script with the vehicle number as argument
-            result = subprocess.run(
-                [script_path, str(vehicle_number)], 
-                capture_output=True, 
-                text=True,
-                cwd=os.path.dirname(script_path)  # Run from mission_control directory
-            )
-                            
-            if result.returncode == 0:
-                success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
-                self.replace_confirm_reject_label(success_msg)
-                self.recieve_console_update(success_msg, vehicle_number)
-                # Also show any output from the script
-                if result.stdout:
-                    self.recieve_console_update(f"Script output: {result.stdout.strip()}", vehicle_number)
-            else:
-                error_msg = f"Bag sync failed for Vehicle {vehicle_number}. Exit code: {result.returncode}"
-                self.replace_confirm_reject_label(error_msg)
-                self.recieve_console_update(error_msg, vehicle_number)
-                if result.stderr:
-                    self.recieve_console_update(f"Error: {result.stderr.strip()}", vehicle_number)
+            # Ensure local folder exists
+            os.makedirs(local_folder, exist_ok=True)
 
+            # Set up SSH client
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
+            ssh.connect(ip_address, username=remote_user, pkey=private_key)
+            self.recieve_console_update(f"Connected to Vehicle {vehicle_number} via SSH", vehicle_number)
+            # Set up SFTP client
+            sftp = ssh.open_sftp()
+            file_list = sftp.listdir(remote_folder)
+            self.recieve_console_update(f"Found {len(file_list)} bag files to sync for Vehicle {vehicle_number}", vehicle_number)
+            i = 0
+            for dirname in file_list:
+                remote_path = os.path.join(remote_folder, dirname)
+                local_path = os.path.join(local_folder, dirname)
+                try:
+                    stat = sftp.stat(remote_path)
+                    if stat.st_mode & 0o170000 == 0o040000:  # Directory
+                        self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
+                    else:
+                        sftp.get(remote_path, local_path)
+                except Exception as e:
+                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
+                msg = f"Copied {i + 1}/{len(file_list)} bags from Vehicle {vehicle_number}"
+                self.recieve_console_update(msg, vehicle_number)
+                i += 1
+
+            success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
+            self.replace_confirm_reject_label(success_msg)
+            self.recieve_console_update(success_msg, vehicle_number)
 
         except Exception as e:
-            error_msg = f"Failed to run bag sync script: {str(e)}"
+            error_msg = f"Failed to sync bags via SSH: {str(e)}"
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
+        
+
 
     def load_vehicle_kinematics_params(self, vehicle_num):
         """
-        Loads the vehicle kinematics parameters from the vehicle or falls back to local params file.
+        Loads the vehicle kinematics parameters from the vehicle using paramiko or falls back to local params file.
         Returns the vehicle and base kinematics parameters.
         """
+
         vehicle_kinematics = None
         base_kinematics = None
-        #try to get the params path from the vehicle
-        config_path = os.path.join(
-            os.path.dirname(__file__),
-            "temp_mission_control",
-            "deploy_config.json"
-        )
+
+        # Try to get the params path from the vehicle
+        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
         with open(config_path, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
@@ -1186,36 +1216,37 @@ class MainWindow(QMainWindow):
             remote_param_path = os.path.join(
                 vehicle_info["remote_path"], vehicle_info["param_file"]
             )
+            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
 
-        # Use ssh to cat the file and read its contents
-        try:
-            result = subprocess.run(
-                ["ssh", f"{remote_user}@{remote_host}", f"cat {remote_param_path}"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode == 0 and result.stdout:
-                data = yaml.safe_load(result.stdout)
-                vehicle_key = f"coug{vehicle_num}"
-                try:
-                    vehicle_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
-                except KeyError:
-                    self.replace_confirm_reject_label(f"Could not find kinematics in remote file for coug{vehicle_num}")
-            else:
-                self.replace_confirm_reject_label(f"Failed to read remote params: {result.stderr.strip()}")
-        except Exception as e:
-            self.replace_confirm_reject_label(f"SSH error: {e}")
+            try:
+                # Connect via SSH and SFTP
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=5)
+                sftp = ssh.open_sftp()
+                with sftp.open(remote_param_path, "r") as remote_file:
+                    file_content = remote_file.read().decode()
+                    data = yaml.safe_load(file_content)
+                    vehicle_key = f"coug{vehicle_num}"
+                    try:
+                        vehicle_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+                    except KeyError:
+                        self.replace_confirm_reject_label(f"Could not find kinematics in remote file for coug{vehicle_num}")
+                sftp.close()
+                ssh.close()
+            except Exception as e:
+                self.replace_confirm_reject_label(f"SSH error: {e}")
 
         # If can't get params from vehicle, fallback to local
-        params_path = f"/home/frostlab/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
-        # Check if file path exists
+        params_path = f"/home/frostlab/base_station/mission_control/params/coug{vehicle_num}_params.yaml"
         if os.path.exists(params_path):
             with open(params_path, 'r') as f:
                 data = yaml.safe_load(f)
             vehicle_key = f"coug{vehicle_num}"
-            try: base_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
-            except KeyError: base_kinematics = None
+            try:
+                base_kinematics = data[vehicle_key]['coug_kinematics']['ros__parameters']
+            except KeyError:
+                base_kinematics = None
 
         return vehicle_kinematics, base_kinematics
 
@@ -1223,14 +1254,14 @@ class MainWindow(QMainWindow):
         """
         Creates a new parameter YAML file for the given vehicle number by copying the template
         from config/vehicle_params.yaml and replacing 'coug0' with 'coug{vehicle_num}'.
-        The new file is saved to temp_mission_control/params/coug{vehicle_num}_params.yaml.
+        The new file is saved to mission_control/params/coug{vehicle_num}_params.yaml.
 
         Parameters:
             vehicle_num (int): Vehicle number to create the param file for.
         """
 
-        template_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/vehicle_params.yaml")
-        params_dir = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
+        template_path = os.path.expanduser("~/base_station/mission_control/params/vehicle_params.yaml")
+        params_dir = os.path.expanduser("~/base_station/mission_control/params")
 
         os.makedirs(params_dir, exist_ok=True)
         new_param_path = os.path.join(params_dir, f"coug{vehicle_num}_params.yaml")
@@ -1258,7 +1289,7 @@ class MainWindow(QMainWindow):
         """
         # Build the path to the params file for this vehicle
         params_path = os.path.expanduser(
-            f"~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params/coug{vehicle_num}_params.yaml"
+            f"~/base_station/mission_control/params/coug{vehicle_num}_params.yaml"
         )
 
         # Read the current file contents
@@ -2186,55 +2217,50 @@ class MainWindow(QMainWindow):
             existing_label = widget.findChild(QLabel, f"Status_messages{vehicle_number}")
             if existing_label: existing_label.setText(new_status_label.text())
 
+    def recieve_dvl_velocity(self, vehicle_number, msg):
+        """
+        Receives a DVL velocity message from ROS and emits a signal to update the GUI.
+        Used to update the DVL velocity widget for the vehicle.
+        """
+        self.dvl_velocity_signal.emit(vehicle_number, msg)
+    
+    def _update_dvl_velocity(self, vehicle_number, msg):
+        """
+        Updates the DVL velocity widget for the specified vehicle based on the received message.
+        """
+        #gets linear velocity from the x,y,and z components of the velocity vector
+        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.velocity.x**2 + msg.velocity.y**2 + msg.velocity.z**2), 2)
+        #replace specific page status widget
+        self.recieve_console_update(f"DVL Velocity: {self.feedback_dict['DVL_vel'][vehicle_number]}", vehicle_number)
+        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
+
     def recieve_smoothed_output_message(self, vehicle_number, msg):
         """
         Receives a smoothed output message from ROS and emits a signal to update the GUI.
         Used to update position, heading, velocity, and angular velocity widgets.
         """
-        self.smoothed_ouput_signal.emit(vehicle_number, msg)
+        self.smoothed_output_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
         """
         Updates the GUI widgets for position, heading, velocity, and angular velocity
         based on the received smoothed output message.
         """
-        position = msg.pose.pose.position
+        position = msg.position
         x = position.x
         y = position.y
-        #won't use z, will use depth data instead
-        
-        # Quaternion from Odometry message
-        q = (
-            msg.pose.pose.orientation.w,  # transforms3d expects (w, x, y, z)
-            msg.pose.pose.orientation.x,
-            msg.pose.pose.orientation.y,
-            msg.pose.pose.orientation.z
-        )
 
-        # Convert to roll, pitch, yaw in radians (defaults to 'sxyz' convention)
-        _, _, yaw = quat2euler(q)
+        roll = msg.roll
+        pitch = msg.pitch
+        heading = msg.yaw
 
-        # heading
-        heading_deg = math.degrees(yaw) % 360
-
-        l_vel = msg.twist.twist.linear
-        a_vel = msg.twist.twist.angular
-
-        total_linear_vel = math.sqrt(l_vel.x**2 + l_vel.y**2 + l_vel.z**2)
-        total_angular_vel = math.sqrt(a_vel.x**2 + a_vel.y**2 + a_vel.z**2)
-
-        #update feedback dict 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(total_linear_vel, 2)
-        self.feedback_dict["Angular_vel"][vehicle_number] = round(total_angular_vel, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading_deg, 2)
+        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
-        self.replace_specific_status_widget(vehicle_number, "DVL_vel")
-        self.replace_specific_status_widget(vehicle_number, "Angular_vel")
         self.replace_specific_status_widget(vehicle_number, "Heading")
 
     def recieve_depth_data_message(self, vehicle_number, msg):
@@ -2355,7 +2381,6 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
-        print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio"
@@ -2557,7 +2582,7 @@ def OpenWindow(ros_node, borders=False):
     window_width, window_height = 1200, 800
 
     # Prepare splash image
-    img_path = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/FRoSt_Lab.png")
+    img_path = media_directory
 
     pixmap = QPixmap(img_path)
     pixmap = pixmap.toImage()

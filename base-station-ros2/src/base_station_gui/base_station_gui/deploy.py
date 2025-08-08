@@ -1,16 +1,23 @@
 import os
 import json
-import subprocess
 from datetime import datetime
 from base_station_interfaces.msg import ConsoleLog
 import rclpy
 from rclpy.node import Node
+from pathlib import Path
+import paramiko
 
 global ros_node
 
-PARAM_DIR = os.path.expanduser("~/base_station/base-station-ros2/src/base_station_gui2/base_station_gui2/temp_mission_control/params")
+# SSH configuration
+SSH_KEY_PATH = str(Path.home()) + "/.ssh/id_ed25519_cougs"
+
+PARAM_DIR = os.environ.get(
+    "BASE_STATION_PARAM_DIR",
+    os.path.expanduser("~/base_station/mission_control/params")
+)
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "deploy_config.json")
+CONFIG_FILE = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
 
 os.makedirs(DEPLOY_HISTORY_DIR, exist_ok=True)
 
@@ -26,18 +33,40 @@ def load_config(sel_vehicles):
             ros_node.publish_console_log(f"❌ Vehicle {num} not found in config, consider adding (skipping)", num)
     return result
 
-def scp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num):
-    """Deletes existing file then copies a new one via SCP."""
-    delete_cmd = f"rm -f {os.path.join(remote_path, remote_filename)}"
-    print(f"🗑️ Deleting {remote_filename} on {remote_host}...")
-    ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
-    subprocess.run(["ssh", f"{remote_user}@{remote_host}", delete_cmd])
-
-    destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
-    print(f"📤 Copying {file_path} to {destination}...")
-    ros_node.publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
-    result = subprocess.run(["scp", file_path, destination])
-    return result.returncode == 0
+def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num):
+    """Deletes existing file then copies a new one via SFTP using SSH key authentication."""
+    try:
+        ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        # Load SSH private key
+        try:
+            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_PATH)
+        except paramiko.SSHException:
+            # Try Ed25519 key if RSA fails
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_PATH)
+            except paramiko.SSHException:
+                ros_node.publish_console_log(f"❌ Failed to load SSH key from {SSH_KEY_PATH}", vehicle_num)
+                return False
+        
+        ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=10)
+        sftp = ssh.open_sftp()
+        remote_full_path = os.path.join(remote_path, remote_filename)
+        # Try to delete the remote file if it exists
+        try:
+            sftp.remove(remote_full_path)
+        except FileNotFoundError:
+            pass  # It's OK if the file doesn't exist
+        ros_node.publish_console_log(f"📤 Copying {file_path} to {remote_user}@{remote_host}:{remote_full_path}...", vehicle_num)
+        sftp.put(file_path, remote_full_path)
+        sftp.close()
+        ssh.close()
+        return True
+    except Exception as e:
+        ros_node.publish_console_log(f"❌ SFTP error: {e}", vehicle_num)
+        return False
 
 def log_deployment(vehicle, files_sent, vehicle_num):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -47,7 +76,6 @@ def log_deployment(vehicle, files_sent, vehicle_num):
         f.write(f"Host: {vehicle['remote_host']}\n")
         for label, path in files_sent:
             f.write(f"{label}: {path}\n")
-    print(f"✅ Deployment logged: {log_file}\n")
     ros_node.publish_console_log(f"✅ Deployment logged: {log_file}\n", vehicle_num)
 
 def main(passed_ros_node, sel_vehicles, passed_file_paths=[]): #selected vehicles
@@ -70,7 +98,7 @@ def main(passed_ros_node, sel_vehicles, passed_file_paths=[]): #selected vehicle
             ("Fleet Params", fleet_path, os.path.basename(fleet_path)),
         ]:
             if os.path.exists(file_path):
-                success = scp_file(
+                success = sftp_file(
                     file_path,
                     vehicle["remote_user"],
                     vehicle["remote_host"],
@@ -81,11 +109,9 @@ def main(passed_ros_node, sel_vehicles, passed_file_paths=[]): #selected vehicle
                 if success:
                     files_sent.append((label, file_path))
                 else:
-                    print(f"❌ Failed to deploy {label} to {vehicle['name']}")
                     ros_node.publish_console_log(f"❌ Failed to deploy {label} to {vehicle['name']}", vehicle_num)
                     load_success = False
             else:
-                print(f"⚠️ File not found: {file_path} (skipping)")
                 ros_node.publish_console_log(f"⚠️ File not found: {file_path} (skipping)", vehicle_num)
                 load_success = False
 
