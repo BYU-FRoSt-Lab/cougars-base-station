@@ -38,9 +38,10 @@
     },
     "0": {
       "name": "Coug0",
-      "remote_user": "ue4",
-      "remote_host": "10.2.118.72",
-      "remote_path": "~/cougars/config/deploy_tmp/",
+      "remote_user": "bja1701",
+      "remote_host": "127.0.0.1",
+      "remote_port": 22,
+      "remote_path": "/home/bja1701/Documents/cougars/config/deploy_tmp/",
       "mission_file": "mission.yaml",
       "param_file": "coug0_params.yaml",
       "fleet_param_file": "fleet_params.yaml"

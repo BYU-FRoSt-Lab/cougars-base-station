@@ -1007,11 +1007,25 @@ class MainWindow(QMainWindow):
                 self.recieve_console_update(err_msg, vehicle_number)
 
         # Open dialog for selecting mission file
-        dlg = LoadMissionsDialog(parent=self, vehicle=vehicle_number, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
+        dlg = LoadMissionsDialog(parent=self, 
+                                 vehicle=vehicle_number, 
+                                 background_color=self.background_color, 
+                                 text_color=self.text_color, 
+                                 pop_up_window_style=self.pop_up_window_style,
+                                 selected_vehicles=[vehicle_number])
         if dlg.exec():
             start_config = dlg.get_states()
             print(f"config files chosen: {start_config}")
-            threading.Thread(target=deploy_in_thread, args=(start_config['selected_file'],), daemon=True).start()
+
+            selected_file = start_config.get('selected_file')
+            if selected_file:
+                threading.Thread(target=deploy_in_thread, args=(selected_file,), daemon=True).start()
+            else:
+                err_msg = "No mission file was selected."
+                self.recieve_console_update(err_msg, vehicle_number)
+                self.replace_confirm_reject_label(err_msg)
+
+            # threading.Thread(target=deploy_in_thread, args=(start_config['selected_file'],), daemon=True).start()
         else:
             err_msg = "Mission Loading command was cancelled."
             self.recieve_console_update(err_msg, vehicle_number)
@@ -1135,9 +1149,19 @@ class MainWindow(QMainWindow):
                 "sync_bags.sh"
             )
 
-            # Run the script with the vehicle number as argument
+            # Run the script with the vehicle number and port as arguments
+            config_path = os.path.join(
+                os.path.dirname(__file__),
+                "temp_mission_control",
+                "deploy_config.json"
+            )
+            with open(config_path, "r") as f:
+                config = json.load(f)
+            vehicle_info = config["vehicles"].get(str(vehicle_number))
+            port = vehicle_info.get("remote_port", 22)
+
             result = subprocess.run(
-                [script_path, str(vehicle_number)], 
+                [script_path, str(vehicle_number), str(port)], 
                 capture_output=True, 
                 text=True,
                 cwd=os.path.dirname(script_path)  # Run from mission_control directory
@@ -2598,7 +2622,7 @@ def OpenWindow(ros_node, borders=False):
     app.processEvents()
 
     # Show configuration dialog ON TOP of splash
-    options = [f"Vehicle {i}" for i in range(1, 5)] + ["select custom: "]
+    options = [f"Vehicle {i}" for i in range(0, 5)] + ["select custom: "]
     dlg = ConfigurationWindow(options, parent=splash, background_color="#0F1C37", text_color="#FFFFFF")
     dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
     dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
@@ -2727,9 +2751,11 @@ class LoadMissionsDialog(QDialog):
             options (list of str): List of checkbox labels.
         """
         super().__init__(parent)
-        # Set window title based on mode
-        if not vehicle: self.setWindowTitle("Load All Missions")
-        else: self.setWindowTitle(f"Load Vehicle{vehicle} Mission")
+        # Set window title based on mode - fix: check if vehicle is None instead of falsy
+        if vehicle is None or (selected_vehicles and len(selected_vehicles) > 1): 
+            self.setWindowTitle("Load All Missions")
+        else: 
+            self.setWindowTitle(f"Load Vehicle{vehicle} Mission")
         self.checkboxes = {}
         layout = QVBoxLayout()
 
@@ -2740,7 +2766,8 @@ class LoadMissionsDialog(QDialog):
 
         self.file_display_labels = {}  # Store file display labels for each tab
 
-        if not vehicle:
+        # Fix: Use proper condition for multi-vehicle vs single vehicle mode
+        if vehicle is None or (selected_vehicles and len(selected_vehicles) > 1):
             # Multi-vehicle mode: create tabs for each vehicle
             self.selected_files = {}  # Store files per tab
             #Create the tabs
@@ -2805,7 +2832,8 @@ class LoadMissionsDialog(QDialog):
         buttonBox.accepted.connect(self.validate_and_accept)
         button_row = QHBoxLayout()
 
-        if not vehicle:
+        # Fix: Use proper condition for multi-vehicle mode
+        if vehicle is None or (selected_vehicles and len(selected_vehicles) > 1):
             # "Apply to All" button for multi-vehicle mode
             applyAllButton = QPushButton("Apply to All")
             button_row.addWidget(applyAllButton)
@@ -2849,12 +2877,40 @@ class LoadMissionsDialog(QDialog):
                 self.selected_files[tab_name] = selected_file
                 self.update_file_display(tab_name)
 
+    # def browse_file(self, tab_name=None):
+    #     """
+    #     Opens a file dialog to select a mission file for the current tab or single vehicle.
+    #     Updates the display label with the selected file name.
+    #     """
+    #     if tab_name:
+    #         file_path, _ = QFileDialog.getOpenFileName(
+    #             self,
+    #             f"Select Mission File for {tab_name}",
+    #             "",
+    #             "Mission Files (*.yaml *.yml *.json);;All Files (*)"
+    #         )
+    #         if file_path:
+    #             self.selected_files[tab_name] = file_path
+    #             self.update_file_display(tab_name)
+    #     else:
+    #         file_path, _ = QFileDialog.getOpenFileName(
+    #             self,
+    #             "Select Mission File",
+    #             "",
+    #             "Mission Files (*.yaml *.yml *.json);;All Files (*)"
+    #         )
+    #         if file_path:
+    #             self.selected_file = file_path
+    #             self.update_file_display()
+
+# In the LoadMissionsDialog class, replace the browse_file method:
     def browse_file(self, tab_name=None):
         """
         Opens a file dialog to select a mission file for the current tab or single vehicle.
         Updates the display label with the selected file name.
         """
         if tab_name:
+            # Multi-vehicle mode
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
                 f"Select Mission File for {tab_name}",
@@ -2865,15 +2921,34 @@ class LoadMissionsDialog(QDialog):
                 self.selected_files[tab_name] = file_path
                 self.update_file_display(tab_name)
         else:
+            # Single vehicle mode
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
                 "Select Mission File",
                 "",
                 "Mission Files (*.yaml *.yml *.json);;All Files (*)"
             )
+            # Add debug to GUI console instead of print
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                self.parent().recieve_console_update(f"DEBUG: File dialog returned: {file_path}", 0)
+            
             if file_path:
+                # Explicitly set the attribute
                 self.selected_file = file_path
+                if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                    self.parent().recieve_console_update(f"DEBUG: Successfully set selected_file to: {self.selected_file}", 0)
+                
+                # Verify it was set
+                if hasattr(self, 'selected_file'):
+                    if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                        self.parent().recieve_console_update(f"DEBUG: Attribute exists, value: {getattr(self, 'selected_file', 'NONE')}", 0)
+                else:
+                    if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                        self.parent().recieve_console_update("DEBUG: Attribute does not exist!", 0)
                 self.update_file_display()
+            else:
+                if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                    self.parent().recieve_console_update("DEBUG: No file was selected in dialog", 0)
 
     def update_file_display(self, tab_name=None):
         """
@@ -2893,22 +2968,68 @@ class LoadMissionsDialog(QDialog):
                 else:
                     self.file_display_label.setText("No file selected")
 
+    # def validate_and_accept(self):
+    #     """
+    #     Validates that all tabs (multi-vehicle) or the single vehicle have a selected file before accepting.
+    #     Shows a warning if any are missing.
+    #     """
+    #     if hasattr(self, 'selected_files'):
+    #         if len(self.selected_files) == len(self.file_display_labels) and all(self.selected_files.values()):
+    #             self.accept()
+    #         else:
+    #             from PyQt6.QtWidgets import QMessageBox
+    #             QMessageBox.warning(self, "Files Required", "Please select a mission file for each Vehicle before continuing.")
+    #     elif hasattr(self, 'selected_file') and self.selected_file:
+    #         self.accept()
+    #     else:
+    #         from PyQt6.QtWidgets import QMessageBox
+    #         QMessageBox.warning(self, "File Required", "Please select a mission file before continuing.")
+
     def validate_and_accept(self):
         """
         Validates that all tabs (multi-vehicle) or the single vehicle have a selected file before accepting.
         Shows a warning if any are missing.
         """
+        if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+            self.parent().recieve_console_update("DEBUG: validate_and_accept called", 0)
+            self.parent().recieve_console_update(f"DEBUG: Has selected_files attr: {hasattr(self, 'selected_files')}", 0)
+            self.parent().recieve_console_update(f"DEBUG: Has selected_file attr: {hasattr(self, 'selected_file')}", 0)
+        
         if hasattr(self, 'selected_files'):
+            # Multi-vehicle mode
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                self.parent().recieve_console_update(f"DEBUG: Multi-vehicle mode, selected_files: {self.selected_files}", 0)
             if len(self.selected_files) == len(self.file_display_labels) and all(self.selected_files.values()):
                 self.accept()
             else:
-                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Files Required", "Please select a mission file for each Vehicle before continuing.")
-        elif hasattr(self, 'selected_file') and self.selected_file:
-            self.accept()
         else:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "File Required", "Please select a mission file before continuing.")
+            # Single vehicle mode
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                self.parent().recieve_console_update("DEBUG: Single vehicle mode", 0)
+            selected_file_value = getattr(self, 'selected_file', 'ATTRIBUTE_NOT_FOUND')
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                self.parent().recieve_console_update(f"DEBUG: selected_file value: {selected_file_value}", 0)
+            
+            if hasattr(self, 'selected_file') and self.selected_file:
+                if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                    self.parent().recieve_console_update(f"DEBUG: Validation passed, selected_file: {self.selected_file}", 0)
+                self.accept()
+            else:
+                if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                    self.parent().recieve_console_update("DEBUG: Validation failed", 0)
+                QMessageBox.warning(self, "File Required", "Please select a mission file before continuing.")
+    
+    # def get_states(self):
+    #     """
+    #     Returns a dict containing the selected file path(s).
+    #     For multi-vehicle: {"selected_files": {tab_name: file_path, ...}}
+    #     For single vehicle: {"selected_file": file_path}
+    #     """
+    #     if hasattr(self, 'selected_files'):
+    #         return {"selected_files": self.selected_files}
+    #     else:
+    #         return {"selected_file": getattr(self, 'selected_file', None)}
 
     def get_states(self):
         """
@@ -2919,7 +3040,12 @@ class LoadMissionsDialog(QDialog):
         if hasattr(self, 'selected_files'):
             return {"selected_files": self.selected_files}
         else:
-            return {"selected_file": getattr(self, 'selected_file', None)}
+            # For single vehicle mode, check if selected_file exists and has a value
+            selected_file = getattr(self, 'selected_file', None)
+            if hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'recieve_console_update'):
+                self.parent().recieve_console_update(f"DEBUG: get_states returning selected_file: {selected_file}", 0)
+            return {"selected_file": selected_file}
+
 
 class StartMissionsDialog(QDialog):
     """

@@ -8,9 +8,9 @@ select_vehicle() {
     echo "3) coug3" >&2
     echo "4) coug4" >&2
     echo "5) coug5" >&2
-    echo "6) sim" >&2
+    echo "0) Vehicle 0 (Simulator)" >&2
     
-    read -p "Enter the number (1-6): " vehicle_option >&2
+    read -p "Enter the number (0-5): " vehicle_option >&2
 
     case $vehicle_option in
         1) echo "coug1" ;;
@@ -18,7 +18,7 @@ select_vehicle() {
         3) echo "coug3" ;;
         4) echo "coug4" ;;
         5) echo "coug5" ;;
-        6) echo "sim" ;;
+        0) echo "coug0" ;;
         *) echo "Invalid option. Exiting." >&2; exit 1 ;;
     esac
 }
