@@ -9,7 +9,10 @@ import paramiko
 
 global ros_node
 
-PARAM_DIR = os.path.expanduser("~/base_station/mission_control/params")
+PARAM_DIR = os.environ.get(
+    "BASE_STATION_PARAM_DIR",
+    os.path.expanduser("~/base_station/mission_control/params")
+)
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
 CONFIG_FILE = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
 
