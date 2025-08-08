@@ -33,6 +33,9 @@ from base_station_gui import calibrate
 
 from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
+
+media_directory = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
+
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
     # Contains signals for updating various parts of the GUI from ROS callbacks.
@@ -301,6 +304,7 @@ class MainWindow(QMainWindow):
         # Get IP addresses for selected vehicles and display in console
         self.get_IP_addresses()
         self.recieve_console_update(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}", 0) #declared in get_IP_addresses
+
 
         # Timer for pinging vehicles via wifi
         self.ping_timer = QTimer(self)
@@ -2376,7 +2380,6 @@ class MainWindow(QMainWindow):
         Parameters:
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
-        # print(f"connection_type: {conn_message.connection_type}, connections: {conn_message.connections}, last_ping: {conn_message.last_ping}")
         try:
             if conn_message.connection_type:
                 feedback_key = "Radio"
@@ -2578,7 +2581,7 @@ def OpenWindow(ros_node, borders=False):
     window_width, window_height = 1200, 800
 
     # Prepare splash image
-    img_path = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
+    img_path = media_directory
 
     pixmap = QPixmap(img_path)
     pixmap = pixmap.toImage()
