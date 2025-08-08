@@ -35,6 +35,7 @@ from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
 
 media_directory = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
+ssh_key_path = str(Path.home()) + "/.ssh/id_ed25519_cougs"
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -1153,7 +1154,6 @@ class MainWindow(QMainWindow):
             remote_user = "frostlab"
             remote_folder = "/home/frostlab/cougars/bag"
             local_folder = os.path.expanduser(f"~/bag/{vehicle_id}")
-            password = 'frostlab'
 
             # Ensure local folder exists
             os.makedirs(local_folder, exist_ok=True)
@@ -1161,7 +1161,8 @@ class MainWindow(QMainWindow):
             # Set up SSH client
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ip_address, username=remote_user, password=password)
+            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
+            ssh.connect(ip_address, username=remote_user, pkey=private_key)
             self.recieve_console_update(f"Connected to Vehicle {vehicle_number} via SSH", vehicle_number)
             # Set up SFTP client
             sftp = ssh.open_sftp()
@@ -1215,13 +1216,13 @@ class MainWindow(QMainWindow):
             remote_param_path = os.path.join(
                 vehicle_info["remote_path"], vehicle_info["param_file"]
             )
-            password = "frostlab"  # Or get from config/env
+            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
 
             try:
                 # Connect via SSH and SFTP
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(remote_host, username=remote_user, password=password, timeout=5)
+                ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=5)
                 sftp = ssh.open_sftp()
                 with sftp.open(remote_param_path, "r") as remote_file:
                     file_content = remote_file.read().decode()

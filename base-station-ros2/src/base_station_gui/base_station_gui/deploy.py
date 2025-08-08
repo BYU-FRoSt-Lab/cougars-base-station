@@ -9,6 +9,9 @@ import paramiko
 
 global ros_node
 
+# SSH configuration
+SSH_KEY_PATH = str(Path.home()) + "/.ssh/id_ed25519_cougs"
+
 PARAM_DIR = os.environ.get(
     "BASE_STATION_PARAM_DIR",
     os.path.expanduser("~/base_station/mission_control/params")
@@ -30,13 +33,25 @@ def load_config(sel_vehicles):
             ros_node.publish_console_log(f"❌ Vehicle {num} not found in config, consider adding (skipping)", num)
     return result
 
-def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num, password="frostlab"):
-    """Deletes existing file then copies a new one via SFTP (paramiko)."""
+def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename, vehicle_num):
+    """Deletes existing file then copies a new one via SFTP using SSH key authentication."""
     try:
         ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(remote_host, username=remote_user, password=password, timeout=10)
+        
+        # Load SSH private key
+        try:
+            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_PATH)
+        except paramiko.SSHException:
+            # Try Ed25519 key if RSA fails
+            try:
+                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_PATH)
+            except paramiko.SSHException:
+                ros_node.publish_console_log(f"❌ Failed to load SSH key from {SSH_KEY_PATH}", vehicle_num)
+                return False
+        
+        ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=10)
         sftp = ssh.open_sftp()
         remote_full_path = os.path.join(remote_path, remote_filename)
         # Try to delete the remote file if it exists
