@@ -172,13 +172,20 @@ def convert_rosbags(
                 yield name, val
 
     bags_dir = pathof(bags_dir)
-
+    flattening_paths=dict() # origional path to new flattened path
     dataframes: dict[Path, dict[str, pd.DataFrame]] = dict()
     topic_data = None
     for connection, msg, path in rosmsg_generator([bags_dir], 
     typestore, topics, excluded_topics, keywords, verbose=verbose):
         if connection.topic=='/rosout': continue
-        relpath = path.relative_to(bags_dir)       
+        relpath = path.relative_to(bags_dir)    
+        if relpath not in flattening_paths.keys():
+            parts=relpath.parts
+            newpath=parts[0]
+            for part in parts[1:]:
+                newpath+="."+part
+            flattening_paths[relpath]=Path(newpath)
+        relpath=flattening_paths[relpath]
         if relpath not in dataframes.keys():
             dataframes[relpath] = dict()
             topic_data = dataframes[relpath]
@@ -187,12 +194,11 @@ def convert_rosbags(
             topic_data[topic] = list()
         data = topic_data[topic]
         data.append(dict(values_generator(msg)))
-
+    print(flattening_paths)
     for path, topic_data in dataframes.items():
         print(f"Converting {path}")
         for topic in topic_data.keys():
             topic_data[topic] = pd.DataFrame(topic_data[topic])
-
     return dataframes
 
 
@@ -215,7 +221,7 @@ def save_to_csv(
     """
     outpath = pathof(out_dir)
     for relpath, topics in dataframes.items():
-        relpath = relpath.parent / ("converted__"+os.path.basename(relpath))
+        relpath = relpath.parent / ("processed_"+os.path.basename(relpath))
         if verbose: print(f"Saving {os.path.abspath(outpath / relpath)}")
         for topic, dataframe in topics.items():
             topicname = topic.replace('/', '.') + ".csv"
