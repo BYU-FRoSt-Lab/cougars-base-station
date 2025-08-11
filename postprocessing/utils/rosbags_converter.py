@@ -77,6 +77,24 @@ def generate_typestore(
                         if verbose: print(f"\tRegistered {name}")
     return typestore
 
+def flatten_path(path:Path|list[str]|str):
+    parts=list()
+    if isinstance(path,list):#list of strings
+        parts=path
+    elif isinstance(path,Path):
+        parts=path.parts
+    elif isinstance(path,str):
+        parts=Path(parts).parts
+    else:
+        raise TypeError("bad path input")
+    
+    if len(parts)>0:
+        newpath=parts[0]
+        if len(parts)>1:
+            for part in parts[1:]:
+                newpath+="."+part
+        return Path(newpath)
+    return Path()
 
 def rosmsg_generator(
         bags_dirs:list[str|Path], 
@@ -84,7 +102,8 @@ def rosmsg_generator(
         topics:list[str]|None = None,
         excluded_topics:list[str]|None = None,
         keywords:list[str]|None = None, 
-        verbose:bool=False
+        verbose:bool=False,
+        excluded_bags:list[str]|None =None
 ):
     """
     Generates ros messages from a directory containing rosbags.
@@ -113,6 +132,15 @@ def rosmsg_generator(
                 if not has_keyword: continue
             # process rosbag
             if "metadata.yaml" in files:
+                if excluded_bags:
+                    dirpath= Path(root)
+                    flatdirpath=flatten_path(dirpath)
+                    has_keyword=False
+                    for keyword in excluded_bags:
+                        if keyword in str(flatdirpath): has_keyword=True
+                    if has_keyword: 
+                        print("bag excluded")
+                        continue
                 if verbose: print(f"Unpacking {os.path.abspath(path)}")
                 msgs: dict[str, pd.DataFrame] = dict()
                 with AnyReader([path], default_typestore=typestore) as reader:
@@ -145,7 +173,8 @@ def convert_rosbags(
         topics:list[str]|None = None,
         excluded_topics:list[str]|None = None,
         keywords:list[str]|None = None, 
-        verbose:bool=False
+        verbose:bool=False,
+        excluded_bags:list[str]=None
 ):
     """
     Converts rosbags into pandas DataFrames.
@@ -176,14 +205,11 @@ def convert_rosbags(
     dataframes: dict[Path, dict[str, pd.DataFrame]] = dict()
     topic_data = None
     for connection, msg, path in rosmsg_generator([bags_dir], 
-    typestore, topics, excluded_topics, keywords, verbose=verbose):
+    typestore, topics, excluded_topics, keywords, verbose=verbose,excluded_bags=excluded_bags):
         if connection.topic=='/rosout': continue
         relpath = path.relative_to(bags_dir)    
         if relpath not in flattening_paths.keys():
-            parts=relpath.parts
-            newpath=parts[0]
-            for part in parts[1:]:
-                newpath+="."+part
+            newpath=flatten_path(path)
             flattening_paths[relpath]=Path(newpath)
         relpath=flattening_paths[relpath]
         if relpath not in dataframes.keys():
@@ -194,7 +220,6 @@ def convert_rosbags(
             topic_data[topic] = list()
         data = topic_data[topic]
         data.append(dict(values_generator(msg)))
-    print(flattening_paths)
     for path, topic_data in dataframes.items():
         print(f"Converting {path}")
         for topic in topic_data.keys():
