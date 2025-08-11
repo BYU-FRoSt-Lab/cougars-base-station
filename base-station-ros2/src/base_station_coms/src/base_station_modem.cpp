@@ -8,6 +8,7 @@
 #include "base_station_interfaces/msg/connections.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "base_station_interfaces/msg/console_log.hpp"
+#include "base_station_interfaces/srv/init.hpp"
 
 
 
@@ -66,6 +67,12 @@ public:
             std::bind(&ModemComs::emergency_surface_callback, this, _1, _2)
         );
 
+        // service that sends an init command to a vehicle specified in the request
+        init_service_ = this->create_service<base_station_interfaces::srv::Init>(
+            "modem_init",
+            std::bind(&ModemComs::init_callback, this, _1, _2)
+        );
+
         // publisher for the status of the cougs, published to the status topic
         this->status_publisher_ = this->create_publisher<base_station_interfaces::msg::Status>("status", 10);
 
@@ -98,13 +105,13 @@ public:
             default: break;
             case EMPTY: break;
             case VEHICLE_STATUS:{
-                recieve_status(msg);
+                recieve_status(&msg);
             } break;
             case CONFIRM_EMERGENCY_KILL: {
-                emergency_kill_confirmed(msg);
+                emergency_kill_confirmed(&msg);
             } break;
             case CONFIRM_EMERGENCY_SURFACE: {
-                emergency_surface_confirmed(msg);
+                emergency_surface_confirmed(&msg);
             } break;
         }
     }
@@ -145,18 +152,31 @@ public:
         response->success = true;
     }
 
+    void init_callback(const std::shared_ptr<base_station_interfaces::srv::Init::Request> request,
+                        std::shared_ptr<base_station_interfaces::srv::Init::Response> response)
+    {
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Init command received for Coug %i", request->vehicle_id);
+
+        Init init_msg;
+        init_msg.init_bitmask = (request->start.data ? 0x01 : 0x00) | (request->rosbag_flag.data ? 0x02 : 0x00) | (request->thruster_arm.data ? 0x04 : 0x00) | (request->dvl_acoustics.data ? 0x08 : 0x00);
+        strncpy(init_msg.rosbag_prefix, request->rosbag_prefix.c_str(), sizeof(init_msg.rosbag_prefix) - 1);
+        init_msg.rosbag_prefix[sizeof(init_msg.rosbag_prefix) - 1] = '\0';  // Ensure null termination
+
+        send_acoustic_message(request->vehicle_id, sizeof(init_msg), (uint8_t*)&init_msg, MSG_OWAY);
+        response->success = true;
+    }
+
     // publishes the status recieved through the modem
-    void recieve_status(seatrac_interfaces::msg::ModemRec msg) {
+    void recieve_status(seatrac_interfaces::msg::ModemRec* msg) {
 
-        this->messages_missed_[msg.src_id] = 0;
-        this->last_message_time_[msg.src_id] = this->now();
+        this->messages_missed_[msg->src_id] = 0;
+        this->last_message_time_[msg->src_id] = this->now();
 
-        
-        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg.packet_data.data());
+        const VehicleStatus* status = reinterpret_cast<const VehicleStatus*>(msg->packet_data.data());
         auto status_msg = base_station_interfaces::msg::Status();
 
         // Fill in the status message from the data received
-        status_msg.vehicle_id = msg.src_id;
+        status_msg.vehicle_id = msg->src_id;
         status_msg.safety_status.depth_status.data = (status->safety_mask & 0x01) != 0;
         status_msg.safety_status.gps_status.data = (status->safety_mask & 0x02) != 0;
         status_msg.safety_status.modem_status.data = (status->safety_mask & 0x04) != 0;
@@ -189,32 +209,32 @@ public:
     }
  
     // publishes succes or failure of emergency kill command
-    void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec msg){
+    void emergency_kill_confirmed(seatrac_interfaces::msg::ModemRec* msg){
         std::string message;
 
-        if (msg.packet_data[0]){
-            message = "Emergency kill command was successful for Coug " + std::to_string(msg.src_id);
+        if (msg->packet_data[1]){
+            message = "Emergency kill command was successful for Coug " + std::to_string(msg->src_id);
         } else {
-            message = "Emergency kill command failed for Coug " + std::to_string(msg.src_id);
+            message = "Emergency kill command failed for Coug " + std::to_string(msg->src_id);
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.vehicle_number = msg.src_id;
+        log_msg.vehicle_number = msg->src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
     // publishes success or failure of emergency surface command
-    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec msg){
+    void emergency_surface_confirmed(seatrac_interfaces::msg::ModemRec* msg){
         std::string message;
 
-        if (msg.packet_data[0]){
-            message = "Emergency surface command was successful for Coug " + std::to_string(msg.src_id);
+        if (msg->packet_data[1]){
+            message = "Emergency surface command was successful for Coug " + std::to_string(msg->src_id);
         } else {
-            message = "Emergency surface command failed for Coug " + std::to_string(msg.src_id);
+            message = "Emergency surface command failed for Coug " + std::to_string(msg->src_id);
         }
         base_station_interfaces::msg::ConsoleLog log_msg;
         log_msg.message = message;
-        log_msg.vehicle_number = msg.src_id;
+        log_msg.vehicle_number = msg->src_id;
         this->print_to_gui_pub->publish(log_msg);
     }
 
@@ -276,6 +296,7 @@ private:
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr request_status_service_;
+    rclcpp::Service<base_station_interfaces::srv::Init>::SharedPtr init_service_;
 
 
     rclcpp::TimerBase::SharedPtr timer_;

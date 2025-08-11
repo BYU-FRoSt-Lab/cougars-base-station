@@ -10,6 +10,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "base_station_interfaces/srv/modem_control.hpp"
+#include "base_station_interfaces/srv/init.hpp"
 
 #include "base_station_coms/coms_protocol.hpp"
 #include "base_station_coms/seatrac_enums.hpp"
@@ -72,6 +73,14 @@ public:
             "radio_status_request"
         );
 
+        modem_init_client_ = this->create_client<base_station_interfaces::srv::Init>(
+            "modem_init"
+        );
+
+        radio_init_client_ = this->create_client<base_station_interfaces::srv::Init>(
+            "radio_init"
+        );
+
         // service for sending e_kill message. Decides whether to send over radio or modem
         emergency_kill_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "e_kill_service",
@@ -82,6 +91,11 @@ public:
         emergency_surface_service_ = this->create_service<base_station_interfaces::srv::BeaconId>(
             "e_surface_service",
             std::bind(&ComsNode::emergency_surface_callback, this, _1, _2)
+        );
+
+        init_service_ = this->create_service<base_station_interfaces::srv::Init>(
+            "init_service",
+            std::bind(&ComsNode::init_callback, this, _1, _2)
         );
 
         // Handle the request to toggle modem and radio status requests based on wifi connection
@@ -309,6 +323,45 @@ public:
         }
     }
 
+
+    void init_callback(const std::shared_ptr<base_station_interfaces::srv::Init::Request> request,
+                       std::shared_ptr<base_station_interfaces::srv::Init::Response> response) {
+        int vehicle_id = request->vehicle_id;
+        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Sending init command to %i", vehicle_id);
+        if (std::find(vehicles_in_mission_.begin(), vehicles_in_mission_.end(), vehicle_id) != vehicles_in_mission_.end()) {
+            if (radio_connection[vehicle_id]) {
+                radio_init_client_->async_send_request(request,
+                    [this, vehicle_id](rclcpp::Client<base_station_interfaces::srv::Init>::SharedFuture future) {
+                        auto response = future.get();
+                        if (response->success)
+                            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Init command sent to Coug %i through radio", vehicle_id);
+                        else
+                            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Init command sent to Coug %i through radio failed", vehicle_id);
+                    });
+                response->success = true;
+            } else if (modem_connection[vehicle_id]) {
+
+                modem_init_client_->async_send_request(request,
+                    [this, vehicle_id](rclcpp::Client<base_station_interfaces::srv::Init>::SharedFuture future) {
+                        auto response = future.get();
+                        if (response->success)
+                            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Init command sent to Coug %i through modem", vehicle_id);
+                        else
+                            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Init command sent to Coug %i through modem failed", vehicle_id);
+                    });
+                response->success = true;
+
+            } else {
+                // error message, no connection to coug
+                RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send init command to Coug %i because there is no connection", vehicle_id);
+                response->success = false;
+            }
+        } else {
+            RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "Cannot send init command. There is no Vehicle with ID %i", vehicle_id);
+            response->success = false;
+        }
+    }
+
     // Callback for the wifi connection service, toggles the modem and radio connections based on the request
     void wifi_connection_callback(const std::shared_ptr<base_station_interfaces::srv::ModemControl::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::ModemControl::Response> response) {
@@ -357,10 +410,13 @@ private:
     rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedPtr modem_e_surface_client_;
     rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedPtr radio_status_request_client_;
     rclcpp::Client<base_station_interfaces::srv::BeaconId>::SharedPtr modem_status_request_client_;
+    rclcpp::Client<base_station_interfaces::srv::Init>::SharedPtr modem_init_client_;
+    rclcpp::Client<base_station_interfaces::srv::Init>::SharedPtr radio_init_client_;
 
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_kill_service_;
     rclcpp::Service<base_station_interfaces::srv::BeaconId>::SharedPtr emergency_surface_service_;
     rclcpp::Service<base_station_interfaces::srv::ModemControl>::SharedPtr wifi_connection_service_;
+    rclcpp::Service<base_station_interfaces::srv::Init>::SharedPtr init_service_;
 
     rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
     std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
