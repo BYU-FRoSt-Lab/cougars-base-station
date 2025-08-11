@@ -16,14 +16,14 @@ def get_dataframes(
         keywords:list[str],
         topics:list[str]=None,
         verbose:bool=True,
+        excluded_bags:list[str]=None
 ):
     print("converting rosbags")
     typestore = rc.generate_typestore(rosmsgs_dir)
     dataframes = rc.convert_rosbags(rosbags_dir, typestore, 
                                     keywords=keywords,verbose=verbose,
-                                    topics=topics)
+                                    topics=topics,excluded_bags=excluded_bags)
     rc.save_to_csv(dataframes, csv_dir, verbose=verbose)
-    dataframes = rc.load_dataframes(csv_dir, keywords=keywords)
     return dataframes
 
 
@@ -97,12 +97,6 @@ def cov_from_str(cov_str:str):
     size = int(np.sqrt(len(cov_list)))
     return np.array(cov_list).reshape((size,size))
 
-def clean_converted_bags_path(path):
-    fixed_path = Path(path).name
-    if fixed_path.startswith("converted__"):
-        return '/' + fixed_path[len("converted__"):]
-    else:
-        return '/' + fixed_path
     
     
 def plot_arb(
@@ -202,10 +196,9 @@ def plot_pose_w_cov(
                 cov = cov_from_str(row["pose.covariance"])
                 xy_cov = cov[:2,:2]
                 plot_mahalanobis_ellipse(x,y,xy_cov,confidence,ax)
-            
     pose_x = pose_df["pose.pose.position.x"]
     pose_y = pose_df["pose.pose.position.y"]
-    ax.plot(pose_x,pose_y, color='green', **kwargs)
+    ax.plot(pose_x.to_numpy(),pose_y.to_numpy(), color='green', **kwargs)
     ax.plot(pose_x[0],pose_y[0],'o', **kwargs)
     plt.xlabel("X")
     plt.ylabel("Y")

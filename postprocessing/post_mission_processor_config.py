@@ -1,5 +1,5 @@
 # Directory information
-COUGARS_REPO = "/home/frostlab/cougars"
+COUGARS_REPO = "/home/frostlab"
 BAGPATH = COUGARS_REPO + "/bag"
 SAVES_DIR = BAGPATH + "/converted_bags"
 PLOT_SAVES_DIR = COUGARS_REPO + "/cougars-base-station/postprocessing/saved_plots"
