@@ -130,6 +130,8 @@ def rosmsg_generator(
                                 yield connection, msg, path
                             except KeyError as e:
                                 print(f"Could not find {e} in typestore. Skipping message")
+                            except:
+                                raise RuntimeError(f"Could not decode message on topic {connection.topic} with msgtype:{connection.msgtype}")
                     except RuntimeError as e:
                         print(f"Error reading rosbag at {path}. Skipping Bag. Error msg: {e}")
 
