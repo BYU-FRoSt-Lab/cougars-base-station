@@ -22,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 "msg/Connections.msg"
 "msg/CommandVerify.msg"
 "msg/ConsoleLog.msg"
+"msg/Init.msg"
 DEPENDENCIES std_msgs frost_interfaces sensor_msgs nav_msgs dvl_msgs
 )
 

@@ -969,7 +969,7 @@ class MainWindow(QMainWindow):
         def deploy_in_thread(start_config):
             try:
                 # Publish system control message to start missions
-                startup_call.publish_system_control(self.ros_node, self.selected_vehicles, start_config)
+                startup_call.publish_system_control(self.ros_node, self.selected_vehicles, start_config, self.feedback_dict["Wifi"])
                 self.replace_confirm_reject_label("Starting Mission Command Complete")
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
@@ -1034,7 +1034,7 @@ class MainWindow(QMainWindow):
         def deploy_in_thread(start_config):
             try:
                 # Publish system control message to start mission for the specific vehicle
-                startup_call.publish_system_control(self.ros_node, [vehicle_number], start_config)
+                startup_call.publish_system_control(self.ros_node, [vehicle_number], start_config, self.feedback_dict["Wifi"])
                 self.replace_confirm_reject_label(f"Starting Mission Vehicle{vehicle_number} Command Complete")
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"

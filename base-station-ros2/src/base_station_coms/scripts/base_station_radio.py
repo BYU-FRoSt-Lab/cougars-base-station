@@ -3,9 +3,8 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
-from base_station_interfaces.msg import Status
-from base_station_interfaces.msg import Connections, ConsoleLog
-from base_station_interfaces.srv import BeaconId
+from base_station_interfaces.msg import Connections, ConsoleLog, Status
+from base_station_interfaces.srv import BeaconId, Init
 from std_msgs.msg import String
 from std_msgs.msg import Bool
 from std_msgs.msg import Int8
@@ -76,6 +75,7 @@ class RFBridge(Node):
         # Service to request status from a specific vehicle
         self.status_service = self.create_service(BeaconId, 'radio_status_request', self.request_status_callback)
 
+        self.init_service = self.create_service(Init, 'radio_init', self.init_callback)
 
         self.subscription = self.create_subscription(
             String,
@@ -258,6 +258,34 @@ class RFBridge(Node):
         self.radio_addresses[sender_id] = sender_address
         self.ping_timestamp[sender_id] = time.time()
         self.connections[sender_id] = True
+
+
+    def init_callback(self, request, response):
+        try:
+            target_vehicle_id = request.vehicle_id
+            if target_vehicle_id is None:
+                self.get_logger().error("Initialization request missing target vehicle ID.")
+                response.success = False
+                return response
+
+            self.get_logger().debug(f"Received initialization request for Coug {target_vehicle_id}")
+
+            init_msg = {
+                "message" : "INIT",
+                "start" : request.start,
+                "rosbag_flag" : request.rosbag_flag,
+                "rosbag_prefix" : request.rosbag_prefix,
+                "thruster_arm" : request.thruster_arm,
+                "dvl_acoustic" : request.dvl_acoustic,
+                }
+
+            self.send_message(json.dumps(init_msg), self.radio_addresses.get(target_vehicle_id, None))
+            response.success = True
+        except Exception as e:
+            self.get_logger().error(f"Error processing emergency kill request: {e}")
+            response.success = False
+
+        return response
 
     # Function to handle emergency kill requests
     def send_e_kill_callback(self, request, response):
