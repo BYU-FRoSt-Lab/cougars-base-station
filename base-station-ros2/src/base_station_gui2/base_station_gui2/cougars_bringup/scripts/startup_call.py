@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from frost_interfaces.msg import SystemControl
+from cougars_interfaces.msg import SystemControl
 from base_station_interfaces.msg import ConsoleLog
 from std_msgs.msg import Header, Bool
 from rclpy.node import Node

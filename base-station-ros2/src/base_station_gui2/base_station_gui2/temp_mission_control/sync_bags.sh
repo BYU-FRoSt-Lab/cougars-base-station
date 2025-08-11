@@ -29,8 +29,25 @@ printWarning "Make sure you are running this inside the container"
 printWarning "TODO create setup ssh keys script -Braden"
 
 # Extract the last character of VEHICLE_ID and use it for IP_ADDRESS
-VEHICLE_SUFFIX=${VEHICLE_ID: -1}
-IP_ADDRESS="192.168.0.10$VEHICLE_SUFFIX"
+# VEHICLE_SUFFIX=${VEHICLE_ID: -1}
+# IP_ADDRESS="192.168.0.10$VEHICLE_SUFFIX"
+CONFIG_FILE="$(dirname "$0")/deploy_config.json"
+if [[ -f "$CONFIG_FILE" ]]; then
+  IP_ADDRESS=$(python3 -c "import json; config=json.load(open('$CONFIG_FILE')); print(config['vehicles']['${VEHICLE_SUFFIX}']['remote_host'])" 2>/dev/null)
+  if [[ -z "$IP_ADDRESS" ]]; then
+    printError "Vehicle ${VEHICLE_SUFFIX} not found in config"
+    exit 1
+  fi
+else
+  printError "Config file not found: $CONFIG_FILE"
+  exit 1
+fi
+PORT=22 # Default SSH port
+
+# Check if a custom port is provided
+if [[ ! -z "$2" ]]; then
+  PORT=$2
+fi
 
 printInfo "Using IP address: $IP_ADDRESS"
 # Variables
@@ -52,7 +69,7 @@ LOCAL_FOLDER="$HOME/bag/$VEHICLE_ID"
 mkdir -p "$LOCAL_FOLDER"
 
 # Run rsync with sshpass to avoid password prompt
-rsync -avz --progress \
+rsync -avz --progress -e "ssh -p $PORT" 
     "${REMOTE_USER}@$IP_ADDRESS:${REMOTE_FOLDER}/" "$LOCAL_FOLDER/"
 
 # # Check if rsync was successful

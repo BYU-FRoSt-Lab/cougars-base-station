@@ -1,0 +1,45 @@
+mission_type: waypoint
+mission_name: sim_waypoint
+origin_lla:
+  latitude: 40.238947
+  longitude: -111.739538
+  altitude: 1365.4333
+  name: UL Provo Marina
+reference_frame_for_waypoints: ENU_at_origin_LLA
+waypoints:
+- id: 1
+  position_enu:
+    x: 57.301
+    y: 7.152
+    z: -0.0
+  depth: 5.0
+  original_map_click_lla:
+    latitude: 40.2390114
+    longitude: -111.7388648
+- id: 2
+  position_enu:
+    x: 94.97
+    y: -20.818
+    z: -0.001
+  depth: 10.0
+  original_map_click_lla:
+    latitude: 40.2387596
+    longitude: -111.7384222
+- id: 3
+  position_enu:
+    x: 55.476
+    y: -66.071
+    z: -0.001
+  depth: 25.0
+  original_map_click_lla:
+    latitude: 40.2383521
+    longitude: -111.7388862
+- id: 4
+  position_enu:
+    x: -5.251
+    y: -43.331
+    z: -0.0
+  depth: 5.0
+  original_map_click_lla:
+    latitude: 40.2385568
+    longitude: -111.7395997
