@@ -64,9 +64,7 @@ class PostProcessingWindow(QMainWindow):
         dialog = PlotConfigDialog(self)
         if dialog.exec():
             cfg = dialog.get_config()
-            sys_args = get_sys_args_from_config(cfg)
-            # print("Sys Args:", sys_args)
-            cmd = ['python3', '/home/frostlab/base_station/postprocessing/postmissionprocessor.py'] + sys_args
+            cmd = ['python3', '/home/frostlab/base_station/postprocessing/postmissionprocessor.py'] + get_sys_args_from_config(cfg)
 
             try:
                 # Run the script and print its output/errors in the console
@@ -81,36 +79,32 @@ class PostProcessingWindow(QMainWindow):
 def get_sys_args_from_config(cfg):
     # Defaults: Assume False unless plot type or config is present
     plot_types = {"dead_reckoning": False, "static_beacon": False, "gps_pings": False}
+    options={}
     plot_covariance = False
     run_live = False
     plot_separate = False
     modem_positions = []
     central_modem = 0
-
+    sys_args=str()
     for plot in cfg.get("plots", []):
         if plot["type"] == "dead_reckoning":
             plot_types["dead_reckoning"] = True
-            plot_covariance = plot.get("plot_covariance", False)
+            options["plot_covariance"]=plot.get("plot_covariance", False)
         if plot["type"] == "static_beacon":
             plot_types["static_beacon"] = True
-            run_live = plot.get("run_live", False)
-            plot_separate = plot.get("plot_separate", False)
-            modem_positions = plot.get("modem_positions", [])
-            central_modem = plot.get("central_modem", 0)
+            options["run_live"]=plot.get("run_live", False)
+            options["plot_separate"] = plot.get("plot_separate", False)
+            options["modem_positions"]=plot.get("modem_positions", [])
+            options["central_modem"] = plot.get("central_modem", 0)
         if plot["type"] == "gps_pings":
             plot_types["gps_pings"] = True
+    sys_args.append(str(plot_types["dead_reckoning"]))
+    sys_args.append(str(plot_types["static_beacon"]))
+    sys_args.append(str(plot_types["gps_pings"]))
 
-    # Arguments in specified order:
-    sys_args = [
-        str(plot_types["dead_reckoning"]),
-        str(plot_types["static_beacon"]),
-        str(plot_types["gps_pings"]),
-        str(plot_covariance),
-        str(run_live),
-        str(plot_separate),
-        json.dumps(modem_positions),  # Proper JSON string for modem positions
-        str(central_modem)
-    ]
+    for key,val in plot_types:
+        sys_args.append(f'--{key}')
+        sys_args.append(str(val))
     return sys_args
 
 

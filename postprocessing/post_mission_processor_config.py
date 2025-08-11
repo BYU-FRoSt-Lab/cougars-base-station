@@ -1,5 +1,5 @@
 # Directory information
-COUGARS_REPO = "/home/benwash/cougars"
+COUGARS_REPO = "/home/frostlab/cougars"
 BAGPATH = COUGARS_REPO + "/bag"
 SAVES_DIR = BAGPATH + "/converted_bags"
 PLOT_SAVES_DIR = COUGARS_REPO + "/cougars-base-station/postprocessing/saved_plots"
@@ -21,7 +21,7 @@ PLOT_DEAD_RECKONING = True
 PLOT_COV_ELL = True
 PLOT_DIRECTION_LINE = True
 
-
+PLOT_GPS_LOCKS = True
 
 PLOT_STATIC_BEACON_TEST = False
 CENTRAL_MODEM = 15      # sets lat and long of this modem to be (0,0) on graph
@@ -32,11 +32,4 @@ MODEM_POSITIONS = {             # Recorded modem lat, long, and depth. Depth sho
 }
 RUN_LIVE = False
 PLOT_SEPERATE = True
-
-
-
-PLOT_GPS_PINGS = True
-
-
-
 PLOT_STATIC_BEACON_DVL = False

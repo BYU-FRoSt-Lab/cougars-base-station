@@ -8,36 +8,49 @@ import post_mission_processor_config as CONFIG
 import static_beacon_plotter as beacon_plot
 import os
 import plot_gps_pings as gps_plot
-import sys
+import argparse
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('true', 't', '1', 'yes', 'y'):
+        return True
+    elif v.lower() in ('false', 'f', '0', 'no', 'n'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
-
-print("Post Mission Processing Script Running")
 
 ROSMSGS_DIR = CONFIG.ROSMSGS_DIR
 SAVES_DIR = CONFIG.SAVES_DIR
 PLOT_SAVES_DIR = CONFIG.PLOT_SAVES_DIR
+argparser=argparse.ArgumentParser(description="Mission Postprocessing Script")
+argparser.add_argument("plot_dead_reckoning", help="True or False to plot dead reckoning info",type=str2bool)
+argparser.add_argument("plot_static_beacon", help="True or False to plot for a static beacon test",type=str2bool)
+argparser.add_argument("plot_gps_pings", help="True or False to plot gps pings",type=str2bool)
+argparser.add_argument("--plot_static_beacon_dvl", help="True or False to plot dvl data for static beacon stuff",type=str2bool)
+argparser.add_argument("--plot_covariance", help="True or False to plot covariance ellipsoids for dead reckoning plots",type=str2bool,default=False)
+argparser.add_argument("--plot_direction_line", help="True or False to plot heading line on dead reckoning plots",type=str2bool,default=False)
+argparser.add_argument("--run_live", help="True or False to run static beacon live",type=str2bool,default=False)
+args=argparser.parse_args()
+print(args.plot_dead_reckoning)
 
-if len(sys.argv) > 1:
-    #sets al configs from here
-    pass
-else:
-    BAGPATH = CONFIG.BAGPAT
+BAGPATH = CONFIG.BAGPATH
 
 
-    PLOT_DEAD_RECKONING = CONFIG.PLOT_DEAD_RECKONING
-    PLOT_COV_ELL = CONFIG.PLOT_COV_ELL
-    PLOT_DIRECTION_LINE = CONFIG.PLOT_DIRECTION_LINE
+PLOT_DEAD_RECKONING = CONFIG.PLOT_DEAD_RECKONING
+PLOT_COV_ELL = CONFIG.PLOT_COV_ELL
+PLOT_DIRECTION_LINE = CONFIG.PLOT_DIRECTION_LINE
 
-    PLOT_STATIC_BEACON_TEST = CONFIG.PLOT_STATIC_BEACON_TEST
-    RUN_LIVE = CONFIG.RUN_LIVE
-    PLOT_SEPERATE = CONFIG.PLOT_SEPERATE
-    MODEM_POSITIONS = CONFIG.MODEM_POSITIONS
-    CENTRAL_MODEM = CONFIG.CENTRAL_MODEM
+PLOT_STATIC_BEACON_TEST = CONFIG.PLOT_STATIC_BEACON_TEST
+RUN_LIVE = CONFIG.RUN_LIVE
+PLOT_SEPERATE = CONFIG.PLOT_SEPERATE
+MODEM_POSITIONS = CONFIG.MODEM_POSITIONS
+CENTRAL_MODEM = CONFIG.CENTRAL_MODEM
 
-    PLOT_GPS_PINGS = CONFIG.PLOT_GPS_PINGS
+PLOT_GPS_PINGS = CONFIG.PLOT_GPS_PINGS
 
-    PLOT_STATIC_BEACON_DVL = CONFIG.PLOT_STATIC_BEACON_DVL
+PLOT_STATIC_BEACON_DVL = CONFIG.PLOT_STATIC_BEACON_DVL
 
 # Convert Rosbags or get data from already converted CSVs
 if CONFIG.RELOAD:
