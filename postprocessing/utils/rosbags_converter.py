@@ -164,6 +164,8 @@ def rosmsg_generator(
                                 print(f"Struct error deserializing {connection.topic} — likely malformed message: {e}")
                     except RuntimeError as e:
                         print(f"Error reading rosbag at {path}. Skipping Bag. Error msg: {e}")
+                    except KeyError as e:
+                        print(f"KeyError reading bag: {path}. Skipping")
                     
 
 

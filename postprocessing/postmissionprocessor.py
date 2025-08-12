@@ -27,6 +27,8 @@ CENTRAL_MODEM = config.get("CENTRAL_MODEM")
 PLOT_STATIC_BEACON_DVL = config.get("PLOT_STATIC_BEACON_DVL")
 RELOAD=config.get("RELOAD")
 VERBOSE=config.get("VERBOSE")
+if not os.path.isdir(SAVES_DIR):
+    os.mkdir(SAVES_DIR)
 # print(config)
 # Convert Rosbags or get data from already converted CSVs
 
