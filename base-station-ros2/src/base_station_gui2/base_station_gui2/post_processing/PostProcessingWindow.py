@@ -1,12 +1,17 @@
 import sys
 import json
+import yaml
 from PyQt6.QtWidgets import (
     QDialog, QApplication, QVBoxLayout, QRadioButton, QLineEdit, QSpinBox, QCheckBox, QTextEdit, QHBoxLayout, QLabel, QMainWindow, QWidget, QPushButton
 )
 
 import subprocess
 from PyQt6.QtCore import Qt
-
+CONFIG_PATH="/home/frostlab/base_station/postprocessing/post_mission_processor_config.yaml"
+COUGARS_REPO="/home/frostlab"
+BAGPATH=COUGARS_REPO+"/bag"
+SAVES_DIR=BAGPATH+"/converted_bags"
+ROSMSGS_DIR= "/home/frostlab/cougars-ros2/src"
 class PostProcessingWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -64,8 +69,8 @@ class PostProcessingWindow(QMainWindow):
         dialog = PlotConfigDialog(self)
         if dialog.exec():
             cfg = dialog.get_config()
-            cmd = ['python3', '/home/frostlab/base_station/postprocessing/postmissionprocessor.py'] + get_sys_args_from_config(cfg)
-
+            set_config(cfg)
+            cmd = ['python3', '/home/frostlab/base_station/postprocessing/postmissionprocessor.py']
             try:
                 # Run the script and print its output/errors in the console
                 result = subprocess.run(cmd, capture_output=True, text=True)
@@ -74,39 +79,33 @@ class PostProcessingWindow(QMainWindow):
             except Exception as e:
                 print(f"Failed to run script: {e}")
             # You can now use sys_args to call your plotting script!
-
-
-def get_sys_args_from_config(cfg):
-    # Defaults: Assume False unless plot type or config is present
+def set_config(cfg):
     plot_types = {"dead_reckoning": False, "static_beacon": False, "gps_pings": False}
-    options={}
-    plot_covariance = False
-    run_live = False
-    plot_separate = False
-    modem_positions = []
-    central_modem = 0
-    sys_args=str()
+    options={"dead_reckoning": False, "static_beacon": False, "gps_pings": False}
     for plot in cfg.get("plots", []):
         if plot["type"] == "dead_reckoning":
             plot_types["dead_reckoning"] = True
+            options["dead_reckoning"]=True
             options["plot_covariance"]=plot.get("plot_covariance", False)
         if plot["type"] == "static_beacon":
             plot_types["static_beacon"] = True
             options["run_live"]=plot.get("run_live", False)
+            options["dead_reckoning"]=True
             options["plot_separate"] = plot.get("plot_separate", False)
             options["modem_positions"]=plot.get("modem_positions", [])
-            options["central_modem"] = plot.get("central_modem", 0)
+            options["static_beacon"] = plot.get("central_modem", 0)
         if plot["type"] == "gps_pings":
             plot_types["gps_pings"] = True
-    sys_args.append(str(plot_types["dead_reckoning"]))
-    sys_args.append(str(plot_types["static_beacon"]))
-    sys_args.append(str(plot_types["gps_pings"]))
-
-    for key,val in plot_types:
-        sys_args.append(f'--{key}')
-        sys_args.append(str(val))
-    return sys_args
-
+            options["PLOT_GPS_LOCKS"]=True
+    options["COUGARS_REPO"]=COUGARS_REPO
+    options["BAGPATH"]=plot.get("bagpath", BAGPATH)
+    options["SAVES_DIR"]=SAVES_DIR
+    options["ROSMSGS_DIR"]=ROSMSGS_DIR
+    options["VERBOSE"]=False
+    options["RELOAD"]=plot.get("reload", False)
+    with open(CONFIG_PATH,"w") as f:
+        yaml.dump(options,f)
+    
 
 class PlotConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -149,6 +148,8 @@ class PlotConfigDialog(QDialog):
         layout.addWidget(QLabel("Bagpath:"))
         self.bagpath_input = QLineEdit()
         layout.addWidget(self.bagpath_input)
+        self.cb_reload = QCheckBox("Reload bags")
+        layout.addWidget(self.cb_reload)
 
         # Plot type selection
         self.cb_dead_reckoning = QCheckBox("Plot Dead Reckoning")
@@ -214,7 +215,7 @@ class PlotConfigDialog(QDialog):
         self.gps_config.setVisible(self.cb_gps_pings.isChecked())
 
     def get_config(self):
-        out = {"bagpath": self.bagpath_input.text(), "plots": []}
+        out = {"bagpath": self.bagpath_input.text(), "plots": [],"reload":self.cb_reload.isChecked()}
         if self.cb_dead_reckoning.isChecked():
             dr_cfg = {
                 "type": "dead_reckoning",

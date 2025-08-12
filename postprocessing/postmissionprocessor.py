@@ -4,72 +4,51 @@ import utils.plotter_utils as p_utils
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import post_mission_processor_config as CONFIG
+import yaml
 import static_beacon_plotter as beacon_plot
 import os
 from pathlib import Path
 import plot_gps_pings as gps_plot
-import argparse
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('true', 't', '1', 'yes', 'y'):
-        return True
-    elif v.lower() in ('false', 'f', '0', 'no', 'n'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-
-argparser=argparse.ArgumentParser(description="Mission Postprocessing Script")
-argparser.add_argument("plot_dead_reckoning", help="True or False to plot dead reckoning info",type=str2bool)
-argparser.add_argument("plot_static_beacon", help="True or False to plot for a static beacon test",type=str2bool)
-argparser.add_argument("plot_gps_pings", help="True or False to plot gps pings",type=str2bool)
-argparser.add_argument("--plot_static_beacon_dvl", help="True or False to plot dvl data for static beacon stuff",type=str2bool)
-argparser.add_argument("--plot_covariance", help="True or False to plot covariance ellipsoids for dead reckoning plots",type=str2bool,default=False)
-argparser.add_argument("--plot_direction_line", help="True or False to plot heading line on dead reckoning plots",type=str2bool,default=False)
-argparser.add_argument("--run_live", help="True or False to run static beacon live",type=str2bool,default=False)
-args=argparser.parse_args()
-
-BAGPATH = CONFIG.BAGPATH
-ROSMSGS_DIR = CONFIG.ROSMSGS_DIR
-SAVES_DIR = CONFIG.SAVES_DIR
-PLOT_SAVES_DIR = CONFIG.PLOT_SAVES_DIR
-
-PLOT_DEAD_RECKONING = CONFIG.PLOT_DEAD_RECKONING
-PLOT_COV_ELL = CONFIG.PLOT_COV_ELL
-PLOT_DIRECTION_LINE = CONFIG.PLOT_DIRECTION_LINE
-
-PLOT_STATIC_BEACON_TEST = CONFIG.PLOT_STATIC_BEACON_TEST
-RUN_LIVE = CONFIG.RUN_LIVE
-PLOT_SEPERATE = CONFIG.PLOT_SEPERATE
-MODEM_POSITIONS = CONFIG.MODEM_POSITIONS
-CENTRAL_MODEM = CONFIG.CENTRAL_MODEM
-
-PLOT_STATIC_BEACON_DVL = CONFIG.PLOT_STATIC_BEACON_DVL
+CONFIG_PATH="/home/frostlab/base_station/postprocessing/post_mission_processor_config.yaml"
+with open(CONFIG_PATH,"r") as f:
+    config=yaml.safe_load(f)
+BAGPATH = config.get("BAGPATH")
+ROSMSGS_DIR = config.get("ROSMSGS_DIR")
+SAVES_DIR = config.get("SAVES_DIR")
+PLOT_GPS_LOCKS = config.get("PLOT_GPS_LOCKS")
+PLOT_DEAD_RECKONING = config.get("PLOT_DEAD_RECKONING")
+PLOT_COV_ELL = config.get("PLOT_COV_ELL")
+PLOT_DIRECTION_LINE = config.get("PLOT_DIRECTION_LINE")
+PLOT_STATIC_BEACON_TEST = config.get("PLOT_STATIC_BEACON_TEST")
+RUN_LIVE = config.get("RUN_LIVE")
+PLOT_SEPERATE = config.get("PLOT_SEPERATE")
+MODEM_POSITIONS = config.get("MODEM_POSITIONS")
+CENTRAL_MODEM = config.get("CENTRAL_MODEM")
+PLOT_STATIC_BEACON_DVL = config.get("PLOT_STATIC_BEACON_DVL")
+RELOAD=config.get("RELOAD")
+VERBOSE=config.get("VERBOSE")
+# print(config)
 # Convert Rosbags or get data from already converted CSVs
 
-if CONFIG.RELOAD:
+if RELOAD:
     print("converting rosbags")
     dataframes = p_utils.get_dataframes(
-        rosbags_dir=CONFIG.BAGPATH, rosmsgs_dir=CONFIG.ROSMSGS_DIR, csv_dir=CONFIG.SAVES_DIR,
-        keywords=None, topics=None,verbose=CONFIG.VERBOSE)
+        rosbags_dir= BAGPATH, rosmsgs_dir= ROSMSGS_DIR, csv_dir= SAVES_DIR,
+        keywords=None, topics=None,verbose= VERBOSE)
 else:
-    convertedbags=os.listdir(CONFIG.SAVES_DIR)
+    convertedbags=os.listdir( SAVES_DIR)
     for bagn in range(len(convertedbags)):
         convertedbags[bagn]=convertedbags[bagn].removeprefix('processed_')
     print(f"skipping: {convertedbags}")
     dataframes = p_utils.get_dataframes(
-        rosbags_dir=BAGPATH, rosmsgs_dir=CONFIG.ROSMSGS_DIR, csv_dir=CONFIG.SAVES_DIR,
-        keywords=None, topics=None,verbose=CONFIG.VERBOSE,excluded_bags=convertedbags)
-    print(f"loading dataframes from {CONFIG.SAVES_DIR}")
-    dataframes = rc.load_dataframes(CONFIG.SAVES_DIR, keywords=None, verbose=CONFIG.VERBOSE)
+        rosbags_dir=BAGPATH, rosmsgs_dir= ROSMSGS_DIR, csv_dir= SAVES_DIR,
+        keywords=None, topics=None,verbose= VERBOSE,excluded_bags=convertedbags)
+    print(f"loading dataframes from { SAVES_DIR}")
+    dataframes = rc.load_dataframes( SAVES_DIR, keywords=None, verbose= VERBOSE)
     if len(dataframes)==0:
         raise RuntimeError("Lenth of dataframes is 0. Dataframes may not be loaded")
 print("dataframes loaded")
-print(dataframes.keys())
+# print(dataframes.keys())
 def plot_dead_reckoning(bag, ax):
     # print(f"Graphing: {path}")
     dvl_odom = p_utils.get_topic(bag, "/dvl/dead_reckoning")
@@ -113,7 +92,7 @@ fig, ax = plt.subplots()
 if PLOT_DEAD_RECKONING:
     for path, bag in dataframes.items():
         plot_dead_reckoning(bag, ax)
-        savepath=Path(CONFIG.SAVES_DIR).joinpath(path,'dead_reckoning_w_cov.png')
+        savepath=Path( SAVES_DIR).joinpath(path,'dead_reckoning_w_cov.png')
         print(f"Saving to {savepath}")
         plt.savefig(savepath)
         ax.cla()
@@ -123,15 +102,15 @@ if PLOT_STATIC_BEACON_TEST:
     for path, bag in dataframes.items():
         print(bag)
         plot_static_beacon(bag, ax)
-        savepath=Path(CONFIG.SAVES_DIR).joinpath(path,'static_beacon_test.png')
+        savepath=Path( SAVES_DIR).joinpath(path,'static_beacon_test.png')
         print(f"Saving {savepath}")
         plt.savefig(savepath)
         ax.cla()
         # plt.show()
-if CONFIG.PLOT_GPS_LOCKS:
+if  PLOT_GPS_LOCKS:
     for path, bag in dataframes.items():
         plot_gps_pings(bag, ax)
-        savepath=Path(CONFIG.SAVES_DIR).joinpath(path,'gps_path.png')
+        savepath=Path( SAVES_DIR).joinpath(path,'gps_path.png')
         print(f"Saving {savepath}")
         plt.savefig(savepath)
         ax.cla()

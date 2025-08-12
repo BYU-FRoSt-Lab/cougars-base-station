@@ -7,7 +7,6 @@ from scipy.spatial.transform import Rotation as R
 from pathlib import Path
 import matplotlib.lines as mlines
 import math
-import post_mission_processor_config as CONFIG
 
 def get_dataframes(
         rosbags_dir:str,

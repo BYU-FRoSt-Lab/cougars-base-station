@@ -1,9 +1,11 @@
 from utils import plotter_utils as p_utils
 import numpy as np
 import pandas as pd
-import post_mission_processor_config as CONFIG
+import yaml
 import matplotlib.pyplot as plt
 import time
+
+CONFIG_PATH="/home/frostlab/base_station/postprocessing/post_mission_processor_config.yaml"
 
 
 MODEM_COLORS = {
@@ -115,8 +117,10 @@ def plot_modems(ax, modem_offsets):
         ax.text(x + 0.1, y + 0.1, f'Modem {modem_id}', fontsize=12)
 
 def load_csv_with_timestamp(file):
+    with open(CONFIG_PATH,"r") as f:
+        config=yaml.safe_load(f)
     MISSION_NAME ="/converted__2.0_lawnmower_varying_depth-2025-07-15-12-30-44"
-    df = pd.read_csv(CONFIG.SAVES_DIR+ MISSION_NAME + file)
+    df = pd.read_csv(config.get("SAVES_DIR")+ MISSION_NAME + file)
     df['timestamp'] = pd.to_datetime(df["header.stamp.sec"] + df["header.stamp.nanosec"] * 1e-9, unit="s")
     df.set_index("timestamp", inplace=True)
     return df
@@ -127,11 +131,13 @@ def test():
     ax.set_ylabel('Y')
 
     modem_positions_corrected = {}
-    center = CONFIG.MODEM_POSITIONS[CONFIG.CENTRAL_MODEM]
-    for modem in CONFIG.MODEM_POSITIONS:
+    with open(CONFIG_PATH,"r") as f:
+        config=yaml.safe_load(f)
+    center = config.get("MODEM_POSITIONS")[config.get("CENTRAL_MODEM")]
+    for modem in config.get("MODEM_POSITIONS"):
         modem_positions_corrected[modem] = []
-        x,y = p_utils.CalculateHaversine(center['lat'], center['lon'], CONFIG.MODEM_POSITIONS[modem]['lat'], CONFIG.MODEM_POSITIONS[modem]['lon'])
-        z = CONFIG.MODEM_POSITIONS[modem]['depth']
+        x,y = p_utils.CalculateHaversine(center['lat'], center['lon'], config.get("MODEM_POSITIONS")[modem]['lat'], config.get("MODEM_POSITIONS")[modem]['lon'])
+        z = config.get("MODEM_POSITIONS")[modem]['depth']
         modem_positions_corrected[modem] = [x,y,z]
 
     modem_rec_data = load_csv_with_timestamp('/coug3.modem_rec.csv')

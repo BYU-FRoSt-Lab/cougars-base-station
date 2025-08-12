@@ -1,0 +1,31 @@
+COUGARS_REPO: "/home/frostlab"
+BAGPATH: "/home/frostlab/bag"
+SAVES_DIR: "/home/frostlab/bag/converted_bags"
+ROSMSGS_DIR: "/home/frostlab/cougars-ros2/src"
+RELOAD: false
+VERBOSE: true
+PLOT_DEAD_RECKONING: true
+PLOT_COV_ELL: true
+PLOT_DIRECTION_LINE: true
+
+PLOT_GPS_LOCKS: true
+
+PLOT_STATIC_BEACON_TEST: false
+CENTRAL_MODEM: 15  # sets lat and long of this modem to be (0,0) on graph
+MODEM_POSITIONS:
+  1:
+    lon: -111.02801757
+    lat: 40.14641604
+    depth: -0.8128
+  2:
+    lon: -111.02795235
+    lat: 40.14619182
+    depth: -1.164
+  15:
+    lon: -111.02801804
+    lat: 40.14627160
+    depth: -1.3218
+
+RUN_LIVE: false
+PLOT_SEPERATE: true
+PLOT_STATIC_BEACON_DVL: false
