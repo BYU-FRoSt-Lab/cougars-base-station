@@ -14,7 +14,7 @@
 
 
     # If true, the base station will request a status update form each vehicle during a mission
-    request_status: False
+    request_status: True
 
     # During a mission, the base station requests a status update from each vehicle one at
     # a time on a schedule.  The request frequency is the number of seconds between the
@@ -37,7 +37,7 @@
 
     ping_frequency: 3
 
-    xbee_port: /dev/ttyUSB0
+    xbee_port: /dev/frost/xbee_radio
     xbee_baud: 9600
 
 
@@ -48,7 +48,7 @@
     vehicle_ID: 15
 
     logging_verbosity: 0
-    seatrac_serial_port: /dev/ttyUSB1
+    seatrac_serial_port: /dev/frost/rs232_connector_seatrac
 
 
 /mapviz:

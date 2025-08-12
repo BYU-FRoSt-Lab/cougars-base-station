@@ -21,6 +21,7 @@ def generate_launch_description():
 
 
     param_file = os.path.join('/home/frostlab/base_station/base-station-ros2', 'base_station_params.yaml')
+    # fast_dds_config = os.path.join(os.path.expanduser('~'), 'config', 'fast_discovery_config.xml')
 
     return launch.LaunchDescription([
         launch_ros.actions.Node(

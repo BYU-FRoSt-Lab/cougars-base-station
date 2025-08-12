@@ -45,8 +45,9 @@ struct VehicleStatus {
 
     float x;
     float y;
-    int8_t x_vel;
-    int8_t y_vel;
+    int16_t x_vel;
+    int16_t y_vel;
+    int16_t z_vel;
     uint8_t pressure;
     int16_t roll;
     int16_t pitch;
@@ -85,7 +86,7 @@ struct ConfirmEmergencySurface {
 
 struct RequestLocalizationInfo{
    COUG_MSG_ID msg_id = REQUEST_LOCALIZATION_INFO;
-};__attribute__((packed));
+}__attribute__((packed));
 
 
 struct LocalizationInfo {

@@ -126,17 +126,19 @@ public:
 
            // Status publishers for each vehicle in the mission modelling the topics on each vehicle
            for (int vehicle_id : vehicles_in_mission_) {
-               std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
-               safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
-                   ros_namespace + "/safety_status", 10);
-               dvl_publishers_[vehicle_id] = this->create_publisher<dvl_msgs::msg::DVLDR>(
-                   ros_namespace + "/dvl/position", 10);
-               battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
-                   ros_namespace + "/battery/data", 10);
-               depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-                   ros_namespace + "/depth_data", 10);
-               pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
-                   ros_namespace + "/pressure/data", 10);
+                std::string ros_namespace = "/coug" + std::to_string(vehicle_id);
+                safety_status_publishers_[vehicle_id] = this->create_publisher<frost_interfaces::msg::SystemStatus>(
+                    ros_namespace + "/safety_status", 10);
+                dvl_publishers_[vehicle_id] = this->create_publisher<dvl_msgs::msg::DVLDR>(
+                    ros_namespace + "/dvl/position", 10);
+                dvl_vel_publishers_[vehicle_id] = this->create_publisher<dvl_msgs::msg::DVL>(
+                    ros_namespace + "/dvl/data", 10);
+                battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
+                    ros_namespace + "/battery/data", 10);
+                depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
+                    ros_namespace + "/depth_data", 10);
+                pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
+                    ros_namespace + "/pressure/data", 10);
            }
        }
 
@@ -187,7 +189,7 @@ public:
 
         // Does not make status request if the vehicle is connected via wifi
         if (wifi_connection[vehicles_in_mission_[vehicle_id_index]]) {
-            RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Vehicle %li is connected via wifi, skipping status request.", vehicles_in_mission_[vehicle_id_index]);
+            RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Vehicle %li is connected via wifi, skipping status request.", vehicles_in_mission_[vehicle_id_index]);
             return;
         }
 
@@ -382,12 +384,14 @@ public:
             // Publish the status to the appropriate topic
             frost_interfaces::msg::SystemStatus safety_status = msg->safety_status;
             dvl_msgs::msg::DVLDR dvl_pos = msg->dvl_pos;
+            dvl_msgs::msg::DVL dvl_vel;
             sensor_msgs::msg::BatteryState battery_state = msg->battery_state;
             geometry_msgs::msg::PoseWithCovarianceStamped depth_status = msg->depth_data;
             sensor_msgs::msg::FluidPressure pressure_status = msg->pressure;
 
             safety_status_publishers_[vehicle_id]->publish(safety_status);
             dvl_publishers_[vehicle_id]->publish(dvl_pos);
+            dvl_vel_publishers_[vehicle_id]->publish(dvl_vel);
             battery_publishers_[vehicle_id]->publish(battery_state);
             depth_publishers_[vehicle_id]->publish(depth_status);
             pressure_publishers_[vehicle_id]->publish(pressure_status);
@@ -421,6 +425,7 @@ private:
     rclcpp::Subscription<base_station_interfaces::msg::Status>::SharedPtr status_subscriber_;
     std::unordered_map<int64_t, rclcpp::Publisher<frost_interfaces::msg::SystemStatus>::SharedPtr> safety_status_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<dvl_msgs::msg::DVLDR>::SharedPtr> dvl_publishers_;
+    std::unordered_map<int64_t, rclcpp::Publisher<dvl_msgs::msg::DVL>::SharedPtr> dvl_vel_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr> battery_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr> depth_publishers_;
     std::unordered_map<int64_t, rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr> pressure_publishers_;

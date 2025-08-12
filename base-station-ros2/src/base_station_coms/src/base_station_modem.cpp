@@ -188,6 +188,9 @@ public:
         status_msg.dvl_pos.roll = status->roll;
         status_msg.dvl_pos.pitch = status->pitch;
         status_msg.dvl_pos.yaw = status->yaw;
+        status_msg.dvl_vel.velocity.x = status->x_vel;
+        status_msg.dvl_vel.velocity.y = status->y_vel;
+        status_msg.dvl_vel.velocity.z = status->z_vel;
         status_msg.battery_state.voltage = status->battery_voltage;
         status_msg.battery_state.percentage = status->battery_percentage;
         status_msg.depth_data.pose.pose.position.z = status->depth;
