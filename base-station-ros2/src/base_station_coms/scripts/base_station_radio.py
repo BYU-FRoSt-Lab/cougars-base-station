@@ -272,17 +272,17 @@ class RFBridge(Node):
 
             init_msg = {
                 "message" : "INIT",
-                "start" : request.start,
-                "rosbag_flag" : request.rosbag_flag,
+                "start" : request.start.data,
+                "rosbag_flag" : request.rosbag_flag.data,
                 "rosbag_prefix" : request.rosbag_prefix,
-                "thruster_arm" : request.thruster_arm,
-                "dvl_acoustic" : request.dvl_acoustic,
+                "thruster_arm" : request.thruster_arm.data,
+                "dvl_acoustics" : request.dvl_acoustics.data,
                 }
 
             self.send_message(json.dumps(init_msg), self.radio_addresses.get(target_vehicle_id, None))
             response.success = True
         except Exception as e:
-            self.get_logger().error(f"Error processing emergency kill request: {e}")
+            self.get_logger().error(f"Error processing init request: {e}")
             response.success = False
 
         return response
