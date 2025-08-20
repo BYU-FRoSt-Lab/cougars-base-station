@@ -1195,18 +1195,30 @@ class MainWindow(QMainWindow):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(ip_address, username=remote_user)
             return ssh
-        except paramiko.AuthenticationException:
+        except (paramiko.AuthenticationException, paramiko.SSHException):
             # Run ssh-copy-id to add the key
-            self.recieve_console_update(f"SSH Authentication failed for {ip_address}. Attempting to copy SSH key.", 0)
+            self.recieve_console_update(f"SSH Authentication failed for {ip_address}. Attempting to copy SSH key. Enter password in the terminal", 0)
             try:
-                subprocess.run(["ssh-copy-id", f"{remote_user}@{ip_address}"], check=True)
-                self.recieve_console_update(f"SSH key copied successfully to {ip_address}.", 0)
-                return self.get_ssh_connection(ip_address, remote_user)
+                if self.ensure_ssh_key():
+                    subprocess.run(["ssh-copy-id", f"{remote_user}@{ip_address}"], check=True)
+                    self.recieve_console_update(f"SSH key copied successfully to {ip_address}.", 0)
+                    return self.get_ssh_connection(ip_address, remote_user)
             except subprocess.CalledProcessError as e:
                 self.recieve_console_update(f"Failed to copy SSH key to {ip_address}: {e}", 0)
         except Exception as e:
             self.recieve_console_update(f"Failed to connect to {ip_address}: {e}", 0)
             return None
+
+    def ensure_ssh_key(self, key_path="~/.ssh/id_rsa"):
+        key_path = os.path.expanduser(key_path)
+        pub_key_path = key_path + ".pub"
+        # Check if both private and public key exist
+        if os.path.exists(key_path) and os.path.exists(pub_key_path):
+            return True  # SSH key exists
+        else:
+            # Generate a new SSH key with ssh-keygen
+            subprocess.run(["ssh-keygen", "-t", "rsa", "-b", "4096", "-f", key_path, "-N", ""], check=True)
+            return os.path.exists(key_path) and os.path.exists(pub_key_path)
 
     def load_vehicle_kinematics_params(self, vehicle_num):
         """
