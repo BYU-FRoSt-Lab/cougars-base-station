@@ -1,14 +1,15 @@
 # Created by Seth Ricks, July 2025
 
 # Standard library imports
-import sys, random, time, os, re
+import sys, random, os, re
 import yaml, json
 import base64, math, functools
 from functools import partial
-import subprocess, multiprocessing, threading, paramiko
-from ping3 import ping
+import multiprocessing, threading, paramiko
+from base_station_interfaces.srv import Init
 import tkinter
-from transforms3d.euler import quat2euler
+import rclpy
+from std_msgs.msg import Header, Bool
 
 # PyQt6 imports for GUI components
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
@@ -24,7 +25,7 @@ from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEv
 
 from pathlib import Path
 # ROS 2 service imports
-from base_station_interfaces.srv import BeaconId, ModemControl
+from base_station_interfaces.srv import BeaconId
 
 # Import custom modules for mission control, calibration, startup, and waypoint planner
 from base_station_gui import deploy
@@ -168,7 +169,9 @@ class MainWindow(QMainWindow):
             "Modem_seconds": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},    
 
             #Vehicles 1-3 seconds since last radio connection, list of ints
-            "Radio_seconds": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},     
+            "Radio_seconds": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
+
+            "Wifi_seconds": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
 
             #Vehicles 1-3 X Position in the DVL frame
             "XPos": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},        
@@ -307,10 +310,7 @@ class MainWindow(QMainWindow):
         self.recieve_console_update(f"These are the Vehicle IP Addresses that were both selected and in the config.json: {self.Vehicle_IP_addresses}", 0) #declared in get_IP_addresses
 
 
-        # Timer for pinging vehicles via wifi
-        self.ping_timer = QTimer(self)
-        self.ping_timer.timeout.connect(self.ping_vehicles_via_wifi)
-        self.ping_timer.start(3000) #try to ping the vehicles every 3 seconds 
+
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.KeyPress:
@@ -403,26 +403,6 @@ class MainWindow(QMainWindow):
                 err_msg = f"❌ Vehicle {num} not found in config, consider adding to config.json"
                 self.recieve_console_update(err_msg, num)
 
-    def ping_vehicles_via_wifi(self):
-        """
-        Pings each vehicle's IP address in a background thread to check connectivity.
-        Emits the update_wifi_signal with a dictionary of IPs and their reachability status.
-        """
-        def do_ping():
-            try:
-                IPs_reachable = {}
-                # Ping each IP address in the list
-                for ip in self.Vehicle_IP_addresses:
-                    # Use ping3 to ping the IP once, with a 1 second timeout
-                    result = ping(ip, timeout=1)
-                    reachable = 1 if result is not None else 0
-                    IPs_reachable[ip] = reachable
-                # Emit the results to update the GUI
-                self.update_wifi_signal.emit(IPs_reachable)
-            except Exception as e:
-                print("Exception in do_ping:", e)
-        # Run the ping operation in a background thread so the GUI stays responsive
-        threading.Thread(target=do_ping, daemon=True).start()
 
     def update_wifi_widgets(self, IPs_dict):
         """
@@ -969,8 +949,28 @@ class MainWindow(QMainWindow):
         def deploy_in_thread(start_config):
             try:
                 # Publish system control message to start missions
-                startup_call.publish_system_control(self.ros_node, self.selected_vehicles, start_config, self.feedback_dict["Wifi"])
-                self.replace_confirm_reject_label("Starting Mission Command Complete")
+                # startup_call.publish_system_control(self.ros_node, self.selected_vehicles, start_config, self.feedback_dict["Wifi"])
+                # self.replace_confirm_reject_label("Starting Mission Command Complete")
+                for vehicle in self.selected_vehicles:
+                    msg = Init.Request()
+                    msg.header = Header()
+                    msg.header.stamp = self.ros_node.get_clock().now().to_msg()
+                    msg.header.frame_id = 'system_status_input'
+                    msg.vehicle_id = vehicle
+                    msg.start = Bool(data=start_config["start_node"])
+                    msg.rosbag_flag = Bool(data=start_config["record_rosbag"])
+                    msg.rosbag_prefix = start_config["rosbag_prefix"]
+                    msg.thruster_arm = Bool(data=start_config["arm_thruster"])
+                    msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
+                    if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
+                        future = self.ros_node.init_client.call_async(msg)
+                        rclpy.spin_until_future_complete(self.ros_node, future)
+                        if future.result() is not None:
+                            self.ros_node.get_logger().debug("Init command initiated successfully.")
+                        else:
+                            self.ros_node.get_logger().error("Failed to send init command.")
+                    else:
+                        self.ros_node.get_logger().error(f"Init service for vehicle {vehicle} not available.")
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 print(err_msg)
@@ -1034,7 +1034,25 @@ class MainWindow(QMainWindow):
         def deploy_in_thread(start_config):
             try:
                 # Publish system control message to start mission for the specific vehicle
-                startup_call.publish_system_control(self.ros_node, [vehicle_number], start_config, self.feedback_dict["Wifi"])
+                msg = Init.Request()
+                msg.header = Header()
+                msg.header.stamp = self.ros_node.get_clock().now().to_msg()
+                msg.header.frame_id = 'system_status_input'
+                msg.vehicle_id = vehicle_number
+                msg.start = Bool(data=start_config["start_node"])
+                msg.rosbag_flag = Bool(data=start_config["record_rosbag"])
+                msg.rosbag_prefix = start_config["rosbag_prefix"]
+                msg.thruster_arm = Bool(data=start_config["arm_thruster"])
+                msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
+                if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
+                    future = self.ros_node.init_client.call_async(msg)
+                    rclpy.spin_until_future_complete(self.ros_node, future)
+                    if future.result() is not None:
+                        self.ros_node.get_logger().debug("Init command initiated successfully.")
+                    else:
+                        self.ros_node.get_logger().error("Failed to send init command.")
+                else:
+                    self.ros_node.get_logger().error(f"Init service for vehicle {vehicle_number} not available.")
                 self.replace_confirm_reject_label(f"Starting Mission Vehicle{vehicle_number} Command Complete")
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
@@ -1423,28 +1441,28 @@ class MainWindow(QMainWindow):
             self.recieve_console_update(f"Canceling Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
 
     #Connected to the "ModemControl" service in base_station_interfaces
-    def modem_shut_off_service(self, shutoff:bool, vehicle_id:int):
-        """
-        Handler for modem shut off/on service.
-        Sends a request to the ROS service to shut off or turn on the modem for the specified vehicle.
-        Updates the GUI and console log with status messages.
-        Parameters:
-            shutoff (bool): True to shut off modem, False to turn on.
-            vehicle_id (int): Vehicle number.
-        """
-        message = ModemControl.Request()
-        message.modem_shut_off = shutoff
-        message.vehicle_id = vehicle_id
-        if shutoff: self.replace_confirm_reject_label("Wifi Connected, Shutting Off Modem")
-        else: self.replace_confirm_reject_label("Wifi Disconnected, Turning On Modem")
+    # def modem_shut_off_service(self, shutoff:bool, vehicle_id:int):
+    #     """
+    #     Handler for modem shut off/on service.
+    #     Sends a request to the ROS service to shut off or turn on the modem for the specified vehicle.
+    #     Updates the GUI and console log with status messages.
+    #     Parameters:
+    #         shutoff (bool): True to shut off modem, False to turn on.
+    #         vehicle_id (int): Vehicle number.
+    #     """
+    #     message = ModemControl.Request()
+    #     message.modem_shut_off = shutoff
+    #     message.vehicle_id = vehicle_id
+    #     if shutoff: self.replace_confirm_reject_label("Wifi Connected, Shutting Off Modem")
+    #     else: self.replace_confirm_reject_label("Wifi Disconnected, Turning On Modem")
         
-        if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", vehicle_id)
-        else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", vehicle_id)
+    #     if shutoff: self.recieve_console_update(f"Wifi Connected, Shutting Off Modem", vehicle_id)
+    #     else: self.recieve_console_update(f"Wifi Disconnected, Turning On Modem", vehicle_id)
 
-        future = self.ros_node.cli3.call_async(message)
-        # Add callback to handle response
-        future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_number=vehicle_id)) #0->for all vehicles
-        return future
+    #     future = self.ros_node.cli3.call_async(message)
+    #     # Add callback to handle response
+    #     future.add_done_callback(partial(self.handle_service_response, action="Modem Shut off Service", vehicle_number=vehicle_id)) #0->for all vehicles
+    #     return future
 
     #used by various buttons to handle services dynamically
     def handle_service_response(self, future, action, vehicle_number):
@@ -1977,8 +1995,10 @@ class MainWindow(QMainWindow):
 
         # Add a title label and connection time labels to the vertical layout
         temp_V_layout.addWidget(self.create_title_label("Seconds since last connected"))
+        self.insert_label(temp_V_layout, "Wifi: xxx", vehicle_number, 2)
         self.insert_label(temp_V_layout, "Radio: xxx", vehicle_number, 1)
         self.insert_label(temp_V_layout, "Acoustics: xxx", vehicle_number, 0)
+
         temp_V_layout.addWidget(self.make_hline())
         temp_V_layout.addWidget(temp_container)
         
@@ -1991,9 +2011,11 @@ class MainWindow(QMainWindow):
         for either radio or modem, and stores it as an attribute for later access.
         """
         text_label = QLabel(text)
-        if conn_type:
+        if conn_type == 1:
             name = f"vehicle{vehicle_number}_radio_seconds_widget"
-        else:
+        elif conn_type == 2:
+            name = f"vehicle{vehicle_number}_wifi_seconds_widget"
+        elif conn_type == 0:
             name = f"vehicle{vehicle_number}_modem_seconds_widget"
         setattr(self, name, text_label)
         text_label.setObjectName(name)
@@ -2181,7 +2203,6 @@ class MainWindow(QMainWindow):
             vehicle_number: The vehicle number (index) for which to update the status.
             safety_message: The safety status message object containing various status fields.
         """
-        #NOTE: wifi is updated by pinging directly. (ping_vehicles_via_wifi)
 
         #logic is opposite, switch 0 and 1
         if safety_message.gps_status.data: gps_data = 0
@@ -2382,14 +2403,18 @@ class MainWindow(QMainWindow):
             conn_message: The Connections message object containing connection_type, connections, and last_ping.
         """
         try:
-            if conn_message.connection_type:
+            if conn_message.connection_type == 1:
                 feedback_key = "Radio"
                 feedback_key_seconds = "Radio_seconds"
                 conn_type = 1
-            else:
+            elif conn_message.connection_type == 0:
                 feedback_key = "Modem"
                 feedback_key_seconds = "Modem_seconds"
                 conn_type = 0
+            elif conn_message.connection_type == 2:
+                feedback_key = "Wifi"
+                feedback_key_seconds = "Wifi_seconds"
+                conn_type = 2
 
             # Update connection status icons for each Vehicle
             for i, vehicle_number in enumerate(conn_message.vehicle_ids):
@@ -2400,7 +2425,7 @@ class MainWindow(QMainWindow):
                     # Use the index i instead of vehicle_number-1
                     status = 1 if conn_message.connections[i] else 0
                     self.feedback_dict[feedback_key][vehicle_number] = status
-                    prefix = feedback_key.split("_")[0]
+                    # prefix = feedback_key.split("_")[0]
                     
                     # Update general page
                     layout = self.general_page_vehicle_layouts.get(vehicle_number)
@@ -2431,10 +2456,16 @@ class MainWindow(QMainWindow):
                     widget = getattr(self, f"vehicle{vehicle_number}_buttons_column_widget", None)
                     
                     if layout and widget:
-                        if conn_type:
+                        if conn_type == 1:
                             old_label = f"vehicle{vehicle_number}_radio_seconds_widget"
                             existing_label = widget.findChild(QLabel, old_label)
                             new_text = f"Radio: {ping}"
+                            if existing_label:
+                                existing_label.setText(new_text)
+                        elif conn_type == 2:
+                            old_label = f"vehicle{vehicle_number}_wifi_seconds_widget"
+                            existing_label = widget.findChild(QLabel, old_label)
+                            new_text = f"Wifi: {ping}"
                             if existing_label:
                                 existing_label.setText(new_text)
                         else:

@@ -89,8 +89,8 @@ public:
         );
 
         for (int vehicle : vehicles_in_mission_) {
-            this->modem_connection[vehicle] = false;
-            this->messages_missed_[vehicle] = 3;
+            this->modem_connection[vehicle] = true;
+            this->messages_missed_[vehicle] = this->max_missed_messages-1;
             this->last_message_time_[vehicle] = this->now();
         }
 
@@ -143,7 +143,7 @@ public:
     void status_request_callback(const std::shared_ptr<base_station_interfaces::srv::BeaconId::Request> request,
                                     std::shared_ptr<base_station_interfaces::srv::BeaconId::Response> response)
     {
-        RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
+        RCLCPP_DEBUG(rclcpp::get_logger("rclcpp"), "Requesting Status of Coug %i", request->beacon_id);
         this->messages_missed_[request->beacon_id]++;
 
         RequestStatus request_status_msg;
@@ -250,9 +250,9 @@ public:
         base_station_interfaces::msg::Connections msg;
         msg.connection_type = 0; // 0 for acoustic modem
         for (auto id : this->vehicles_in_mission_) {
-            if (this->messages_missed_[id] > 2) {
+            if (this->messages_missed_[id] >= this->max_missed_messages) {
                 if (this->modem_connection[id]) {
-                    RCLCPP_WARN(this->get_logger(), "Coug %i has missed 3 or more messages, marking as disconnected", id);
+                    RCLCPP_WARN(this->get_logger(), "Coug %i has missed %i or more messages, marking as disconnected", id, this->max_missed_messages);
                     this->modem_connection[id] = false;
                 }
                 msg.connections.push_back(false);
@@ -318,6 +318,8 @@ private:
 
 
     int base_station_beacon_id_;
+
+    int max_missed_messages = 2;
 
     std::unordered_map<int,bool> modem_connection;
 

@@ -22,7 +22,7 @@ from nav_msgs.msg import Path #used to publish the map viz path
 from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState #NavSatFix used to publish the origin
 from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
 
-from base_station_interfaces.srv import BeaconId, ModemControl, Init
+from base_station_interfaces.srv import BeaconId, Init
 from base_station_interfaces.msg import Connections, ConsoleLog
 from frost_interfaces.msg import SystemStatus, SystemControl, UCommand
 from dvl_msgs.msg import DVLDR, DVL
@@ -175,7 +175,7 @@ class GuiNode(Node):
         # Service clients for emergency kill, surface, and modem shut off services
         self.cli = self.create_client(BeaconId, 'e_kill_service')
         self.cli2 = self.create_client(BeaconId, 'e_surface_service')
-        self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
+        # self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
     def publish_console_log(self, msg_text, msg_num):
         """
