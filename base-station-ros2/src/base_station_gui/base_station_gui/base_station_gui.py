@@ -35,7 +35,6 @@ from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
 
 media_directory = str(Path.home()) + "/base_station/base-station-ros2/src/base_station_gui/base_station_gui/images/FRoSt_Lab.png"
-ssh_key_path = str(Path.home()) + "/.ssh/id_ed25519_cougs"
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -1159,10 +1158,7 @@ class MainWindow(QMainWindow):
             os.makedirs(local_folder, exist_ok=True)
 
             # Set up SSH client
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
-            ssh.connect(ip_address, username=remote_user, pkey=private_key)
+            ssh = self.get_ssh_connection(ip_address, remote_user)
             self.recieve_console_update(f"Connected to Vehicle {vehicle_number} via SSH", vehicle_number)
             # Set up SFTP client
             sftp = ssh.open_sftp()
@@ -1192,8 +1188,25 @@ class MainWindow(QMainWindow):
             error_msg = f"Failed to sync bags via SSH: {str(e)}"
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
-        
 
+    def get_ssh_connection(self, ip_address, remote_user):
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(ip_address, username=remote_user)
+            return ssh
+        except paramiko.AuthenticationException:
+            # Run ssh-copy-id to add the key
+            self.recieve_console_update(f"SSH Authentication failed for {ip_address}. Attempting to copy SSH key.", 0)
+            try:
+                subprocess.run(["ssh-copy-id", f"{remote_user}@{ip_address}"], check=True)
+                self.recieve_console_update(f"SSH key copied successfully to {ip_address}.", 0)
+                return self.get_ssh_connection(ip_address, remote_user)
+            except subprocess.CalledProcessError as e:
+                self.recieve_console_update(f"Failed to copy SSH key to {ip_address}: {e}", 0)
+        except Exception as e:
+            self.recieve_console_update(f"Failed to connect to {ip_address}: {e}", 0)
+            return None
 
     def load_vehicle_kinematics_params(self, vehicle_num):
         """
@@ -1216,13 +1229,9 @@ class MainWindow(QMainWindow):
             remote_param_path = os.path.join(
                 vehicle_info["remote_path"], vehicle_info["param_file"]
             )
-            private_key = paramiko.Ed25519Key.from_private_key_file(ssh_key_path)
-
             try:
                 # Connect via SSH and SFTP
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=5)
+                ssh = self.get_ssh_connection(remote_host, remote_user)
                 sftp = ssh.open_sftp()
                 with sftp.open(remote_param_path, "r") as remote_file:
                     file_content = remote_file.read().decode()
