@@ -201,7 +201,7 @@ class RFBridge(Node):
                 response.success = False
                 return response
 
-            self.get_logger().debug(f"Received status request for Coug {target_vehicle_id}")
+            self.get_logger().debug(f"Requesting for Coug {target_vehicle_id}")
 
             status_request_msg = "STATUS"
 
@@ -220,8 +220,8 @@ class RFBridge(Node):
 
     # Function to handle received status messages
     def recieve_status(self, data):
-        self.get_logger().info(f"Coug {data.get('src_id', 'unknown')}'s Status:")
-        self.get_logger().info(f"    Data: {data}")
+        self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
+        self.get_logger().debug(f"    Data: {data}")
         safety_status = data.get('safety_status', {})
         dvl_pos = data.get('dvl_pos', {})
         battery_state = data.get('battery_state', {})
