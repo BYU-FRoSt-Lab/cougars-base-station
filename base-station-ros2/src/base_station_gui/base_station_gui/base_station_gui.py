@@ -189,9 +189,6 @@ class MainWindow(QMainWindow):
             #Vehicles 1-3 Linear Velocities, list of ints
             "DVL_vel": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
 
-            #Vehicles 1-3 Angular Velocities, list of ints
-            "Angular_vel": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
-
             #Vehicles 1-3 Pressures, list of ints
             "Pressure": {vehicle_num: 2 for vehicle_num in self.selected_vehicles}
         }
@@ -206,7 +203,6 @@ class MainWindow(QMainWindow):
             "DVL_vel": "DVL Velocity <br>(m/s): ",
             "Battery": "Battery (V): ",
             "Pressure": "Pressure (Pa): ",
-            "Angular_vel": "Angular Velocity <br>(rad/s): "
         }
 
         # Option map for mission start dialog
@@ -946,9 +942,6 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread(start_config):
             try:
-                # Publish system control message to start missions
-                # startup_call.publish_system_control(self.ros_node, self.selected_vehicles, start_config, self.feedback_dict["Wifi"])
-                # self.replace_confirm_reject_label("Starting Mission Command Complete")
                 for vehicle in self.selected_vehicles:
                     msg = Init.Request()
                     msg.header = Header()
@@ -962,16 +955,17 @@ class MainWindow(QMainWindow):
                     msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
                     if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
                         future = self.ros_node.init_client.call_async(msg)
-                        rclpy.spin_until_future_complete(self.ros_node, future)
-                        if future.result() is not None:
-                            self.ros_node.get_logger().debug("Init command initiated successfully.")
-                        else:
-                            self.ros_node.get_logger().error("Failed to send init command.")
+                        def on_result(fut):
+                            if fut.result() is not None:
+                                self.update_console_signal.emit("Init command initiated successfully.", vehicle)
+                            else:
+                                self.update_console_signal.emit("Failed to send init command.", vehicle)
+                        future.add_done_callback(on_result)
                     else:
-                        self.ros_node.get_logger().error(f"Init service for vehicle {vehicle} not available.")
+                        self.update_console_signal.emit(f"Init service for vehicle {vehicle} not available.", vehicle)
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
-                print(err_msg)
+                self.update_console_signal.emit(err_msg, 0)
                 self.replace_confirm_reject_label(err_msg)
                 for i in self.selected_vehicles:
                     self.recieve_console_update(err_msg, i)
@@ -1044,14 +1038,14 @@ class MainWindow(QMainWindow):
                 msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
                 if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
                     future = self.ros_node.init_client.call_async(msg)
-                    rclpy.spin_until_future_complete(self.ros_node, future)
-                    if future.result() is not None:
-                        self.ros_node.get_logger().debug("Init command initiated successfully.")
-                    else:
-                        self.ros_node.get_logger().error("Failed to send init command.")
+                    def on_result(fut):
+                        if fut.result() is not None:
+                            self.update_console_signal.emit("Init command initiated successfully.", vehicle_number)
+                        else:
+                            self.update_console_signal.emit("Failed to send init command.", vehicle_number)
+                    future.add_done_callback(on_result)
                 else:
-                    self.ros_node.get_logger().error(f"Init service for vehicle {vehicle_number} not available.")
-                self.replace_confirm_reject_label(f"Starting Mission Vehicle{vehicle_number} Command Complete")
+                    self.update_console_signal.emit(f"Init service for vehicle {vehicle_number} not available.", vehicle_number)
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 print(err_msg)
@@ -2175,8 +2169,7 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("DVL Velocity <br>(m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
-        temp_layout.addWidget(self.create_normal_label("Angular Velocity <br>(rad/s): a", f"Angular_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(status_spacing)
+
         temp_layout.addWidget(self.create_normal_label("Battery (V): b", f"Battery{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Pressure (Pa):<br>p", f"Pressure{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -2270,7 +2263,7 @@ class MainWindow(QMainWindow):
         Updates the DVL velocity widget for the specified vehicle based on the received message.
         """
         #gets linear velocity from the x,y,and z components of the velocity vector
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.velocity.x**2 + msg.velocity.y**2 + msg.velocity.z**2), 2)
+        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.beams[0].velocity.x**2 + msg.beams[0].velocity.y**2 + msg.beams[0].velocity.z**2), 2)
         #replace specific page status widget
         self.recieve_console_update(f"DVL Velocity: {self.feedback_dict['DVL_vel'][vehicle_number]}", vehicle_number)
         self.replace_specific_status_widget(vehicle_number, "DVL_vel")
@@ -2278,13 +2271,13 @@ class MainWindow(QMainWindow):
     def recieve_smoothed_output_message(self, vehicle_number, msg):
         """
         Receives a smoothed output message from ROS and emits a signal to update the GUI.
-        Used to update position, heading, velocity, and angular velocity widgets.
+        Used to update position, heading, velocity widgets.
         """
         self.smoothed_output_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
         """
-        Updates the GUI widgets for position, heading, velocity, and angular velocity
+        Updates the GUI widgets for position, heading, velocity
         based on the received smoothed output message.
         """
         position = msg.position
