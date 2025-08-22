@@ -68,7 +68,7 @@ class Base_Station_Wifi(Node):
             return vehicle, False
 
     def send_e_kill_callback(self, request, response):
-        vehicle_id = request.vehicle_id
+        vehicle_id = request.beacon_id
         
         # Get the correct thruster client for this vehicle
         if vehicle_id not in self.thruster_clients:

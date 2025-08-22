@@ -57,6 +57,10 @@ public:
             "modem_e_kill"
         );
 
+        wifi_e_kill_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
+            "wifi_e_kill"
+        );
+
         // client for the base_station_modem node. Requests that the modem sends an emergency surface command to a specific coug
         modem_e_surface_client_ = this->create_client<base_station_interfaces::srv::BeaconId>(
             "modem_e_surface"
