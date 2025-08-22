@@ -2263,9 +2263,8 @@ class MainWindow(QMainWindow):
         Updates the DVL velocity widget for the specified vehicle based on the received message.
         """
         #gets linear velocity from the x,y,and z components of the velocity vector
-        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.beams[0].velocity.x**2 + msg.beams[0].velocity.y**2 + msg.beams[0].velocity.z**2), 2)
+        self.feedback_dict["DVL_vel"][vehicle_number] = round(math.sqrt(msg.velocity.x**2 + msg.velocity.y**2 + msg.velocity.z**2), 2)
         #replace specific page status widget
-        self.recieve_console_update(f"DVL Velocity: {self.feedback_dict['DVL_vel'][vehicle_number]}", vehicle_number)
         self.replace_specific_status_widget(vehicle_number, "DVL_vel")
 
     def recieve_smoothed_output_message(self, vehicle_number, msg):
