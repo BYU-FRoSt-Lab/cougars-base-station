@@ -803,7 +803,7 @@ class MainWindow(QMainWindow):
                 column0_widget.setMaximumWidth(int(self.width() * 0.16))  # 16% of window width
             column01_widget = getattr(self, f"vehicle{i}_column01_widget", None)
             if column01_widget:
-                column01_widget.setMaximumWidth(int(self.width() * 0.16))
+                column01_widget.setMaximumWidth(int(self.width() * 0.24))
         # Call the base class resizeEvent to ensure default behavior
         super().resizeEvent(event)
 
