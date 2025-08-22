@@ -29,7 +29,6 @@ from base_station_interfaces.srv import BeaconId
 
 # Import custom modules for mission control, calibration, startup, and waypoint planner
 from base_station_gui import deploy
-from base_station_gui import startup_call
 from base_station_gui import calibrate
 
 from base_station_gui.waypoint_planner import App as WaypointPlannerApp

@@ -6,12 +6,11 @@ import rclpy
 from rclpy.node import Node
 from pathlib import Path
 import paramiko
+import subprocess
 
 global ros_node
 
 # SSH configuration
-SSH_KEY_PATH = str(Path.home()) + "/.ssh/id_ed25519_cougs"
-
 PARAM_DIR = os.environ.get(
     "BASE_STATION_PARAM_DIR",
     os.path.expanduser("~/base_station/mission_control/params")
@@ -37,21 +36,15 @@ def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename,
     """Deletes existing file then copies a new one via SFTP using SSH key authentication."""
     try:
         ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh = get_ssh_connection(remote_host, remote_user)
+
+        if ssh is None:
+            ros_node.publish_console_log(f"❌ Failed to establish SSH connection to {remote_host}", vehicle_num)
+            return False
+
+        sftp = ssh.open_sftp()
+        remote_full_path = os.path.join(remote_path, remote_filename)
         
-        # Load SSH private key
-        try:
-            private_key = paramiko.RSAKey.from_private_key_file(SSH_KEY_PATH)
-        except paramiko.SSHException:
-            # Try Ed25519 key if RSA fails
-            try:
-                private_key = paramiko.Ed25519Key.from_private_key_file(SSH_KEY_PATH)
-            except paramiko.SSHException:
-                ros_node.publish_console_log(f"❌ Failed to load SSH key from {SSH_KEY_PATH}", vehicle_num)
-                return False
-        
-        ssh.connect(remote_host, username=remote_user, pkey=private_key, timeout=10)
         sftp = ssh.open_sftp()
         remote_full_path = os.path.join(remote_path, remote_filename)
         # Try to delete the remote file if it exists
@@ -67,6 +60,37 @@ def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename,
     except Exception as e:
         ros_node.publish_console_log(f"❌ SFTP error: {e}", vehicle_num)
         return False
+
+def get_ssh_connection(ip_address, remote_user):
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(ip_address, username=remote_user)
+            return ssh
+        except (paramiko.AuthenticationException, paramiko.SSHException):
+            # Run ssh-copy-id to add the key
+            ros_node.publish_console_log(f"SSH Authentication failed for {ip_address}. Attempting to copy SSH key. Enter password in the terminal", 0)
+            try:
+                if ensure_ssh_key():
+                    subprocess.run(["ssh-copy-id", f"{remote_user}@{ip_address}"], check=True)
+                    ros_node.publish_console_log(f"SSH key copied successfully to {ip_address}.", 0)
+                    return get_ssh_connection(ip_address, remote_user)
+            except subprocess.CalledProcessError as e:
+                ros_node.publish_console_log(f"Failed to copy SSH key to {ip_address}: {e}", 0)
+        except Exception as e:
+            ros_node.publish_console_log(f"Failed to connect to {ip_address}: {e}", 0)
+            return None
+
+def ensure_ssh_key(key_path="~/.ssh/id_rsa"):
+    key_path = os.path.expanduser(key_path)
+    pub_key_path = key_path + ".pub"
+    # Check if both private and public key exist
+    if os.path.exists(key_path) and os.path.exists(pub_key_path):
+        return True  # SSH key exists
+    else:
+        # Generate a new SSH key with ssh-keygen
+        subprocess.run(["ssh-keygen", "-t", "rsa", "-b", "4096", "-f", key_path, "-N", ""], check=True)
+        return os.path.exists(key_path) and os.path.exists(pub_key_path)
 
 def log_deployment(vehicle, files_sent, vehicle_num):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

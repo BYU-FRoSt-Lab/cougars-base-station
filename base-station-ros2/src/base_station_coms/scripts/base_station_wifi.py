@@ -2,8 +2,8 @@
 
 import rclpy
 from rclpy.node import Node
-from ping3 import ping
-from base_station_interfaces.msg import Connections, ConsoleLog, Status
+import subprocess
+from base_station_interfaces.msg import Connections, ConsoleLog
 from base_station_interfaces.srv import BeaconId
 from frost_interfaces.msg import SystemControl
 from base_station_interfaces.srv import Init
@@ -32,7 +32,7 @@ class Base_Station_Wifi(Node):
         self.init_publishers = {}
         self.thruster_clients = {}
         for vehicle in self.vehicles_in_mission:
-            self.init_publishers[vehicle] = self.create_publisher(SystemControl, f'coug{vehicle}/system/status', 10)
+            self.init_publishers[vehicle] = self.create_publisher(SystemControl, f'coug{vehicle}/system_status', 10)
             self.thruster_clients[vehicle] = self.create_client(SetBool, f'coug{vehicle}/arm_thruster')
 
         self.ping_timestamp = {}
@@ -52,11 +52,14 @@ class Base_Station_Wifi(Node):
         self.create_timer(self.ping_rate_seconds, self.check_connections)
 
     def ping_single_ip(self, vehicle, ip):
-        """Ping a single IP address"""
+        """Ping a single IP address using system ping command"""
         try:
-            result = ping(ip, timeout=1)
+            # Use system ping command, 1 packet, 1 second timeout
+            result = subprocess.run([
+                "ping", "-c", "1", "-W", "1", ip
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             current_time = self.get_clock().now()
-            if result is not None:
+            if result.returncode == 0:
                 self.ping_timestamp[vehicle] = current_time
                 return vehicle, True
             return vehicle, False
