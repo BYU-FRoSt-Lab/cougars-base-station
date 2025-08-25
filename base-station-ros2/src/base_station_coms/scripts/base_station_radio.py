@@ -6,7 +6,6 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoS
 from base_station_interfaces.msg import Connections, ConsoleLog, Status
 from base_station_interfaces.srv import BeaconId, Init
 from std_msgs.msg import String
-from std_msgs.msg import Bool
 from std_msgs.msg import Int8
 import time
 
@@ -156,6 +155,8 @@ class RFBridge(Node):
                 self.confirm_e_kill(data)
             elif message_type == "PING":
                 self.recieve_ping(data.get("src_id"), sender_address)
+            elif message_type == "INIT":
+                self.print_to_gui_publisher.publish(ConsoleLog(message="Start mission command was successful", vehicle_number=data.get("src_id")))
             else:
                 self.get_logger().warn(f"Unknown message type: {message_type}")
         except Exception as e:
@@ -222,29 +223,28 @@ class RFBridge(Node):
     def recieve_status(self, data):
         self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
         self.get_logger().debug(f"    Data: {data}")
-        safety_status = data.get('safety_status', {})
-        dvl_pos = data.get('dvl_pos', {})
-        battery_state = data.get('battery_state', {})
-        depth_data = data.get('depth_data', {})
-        pressure_data = data.get('pressure_data', {})
+        safety_status = data.get('safety', {})
+        dvl_pos = data.get('dvl', {})
+        battery_state = data.get('bat', {})
+        depth_data = data.get('dep', {})
+        pressure_data = data.get('pres', {})
 
         status = Status()
         status.vehicle_id = data.get('src_id', 0)
-        status.safety_status.depth_status = self.make_int8(safety_status.get('depth_status', 0))
-        status.safety_status.gps_status = self.make_int8(safety_status.get('gps_status', 0))
-        status.safety_status.modem_status = self.make_int8(safety_status.get('modem_status', 0))
-        status.safety_status.dvl_status = self.make_int8(safety_status.get('dvl_status', 0))
-        status.safety_status.emergency_status = self.make_int8(safety_status.get('emergency_status', 0))
+        status.safety_status.depth_status = self.make_int8(safety_status.get('d_s', 0))
+        status.safety_status.gps_status = self.make_int8(safety_status.get('g_s', 0))
+        status.safety_status.modem_status = self.make_int8(safety_status.get('m_s', 0))
+        status.safety_status.dvl_status = self.make_int8(safety_status.get('d_s', 0))
+        status.safety_status.emergency_status = self.make_int8(safety_status.get('e_s', 0))
         status.dvl_pos.position.x = dvl_pos.get('x', 0.0)
         status.dvl_pos.position.y = dvl_pos.get('y', 0.0)
-        status.dvl_pos.position.z = dvl_pos.get('depth', 0.0)
-        status.dvl_pos.roll = dvl_pos.get('roll', 0.0)
-        status.dvl_pos.pitch = dvl_pos.get('pitch', 0.0)
-        status.dvl_pos.yaw = dvl_pos.get('yaw', 0.0)
-        status.battery_state.voltage = battery_state.get('voltage', 0.0)
-        status.battery_state.percentage = battery_state.get('percentage', 0.0)
-        status.depth_data.pose.pose.position.z = -depth_data.get('depth', 0.0)
-        status.pressure.fluid_pressure = pressure_data.get('pressure', 0.0)
+        status.dvl_pos.position.z = dvl_pos.get('z', 0.0)
+        status.dvl_pos.roll = dvl_pos.get('r', 0.0)
+        status.dvl_pos.pitch = dvl_pos.get('p', 0.0)
+        status.dvl_pos.yaw = dvl_pos.get('y', 0.0)
+        status.battery_state.voltage = battery_state.get('volt', 0.0)
+        status.depth_data.pose.pose.position.z = -depth_data.get('de', 0.0)
+        status.pressure.fluid_pressure = pressure_data.get('pres', 0.0)
         self.status_publisher.publish(status)
 
 
@@ -315,14 +315,14 @@ class RFBridge(Node):
             self.print_to_gui_publisher.publish(
                 ConsoleLog(
                     message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
-                    coug_number=data.get('src_id', 0),
+                    vehicle_number=data.get('src_id', 0),
                 )
             )
         else:
             self.print_to_gui_publisher.publish(
                 ConsoleLog(
                     message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
-                    coug_number=data.get('src_id', 0),
+                    vehicle_number=data.get('src_id', 0),
                 )
             )
 
