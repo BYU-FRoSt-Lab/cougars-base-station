@@ -223,11 +223,11 @@ class RFBridge(Node):
     def recieve_status(self, data):
         self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
         self.get_logger().debug(f"    Data: {data}")
-        safety_status = data.get('safety', {})
-        dvl_pos = data.get('dvl', {})
-        battery_state = data.get('bat', {})
-        depth_data = data.get('dep', {})
-        pressure_data = data.get('pres', {})
+        safety_status = data.get('s', {})
+        dvl_pos = data.get('dv', {})
+        battery_state = data.get('b', {})
+        depth_data = data.get('d', {})
+        pressure_data = data.get('p', {})
 
         status = Status()
         status.vehicle_id = data.get('src_id', 0)
