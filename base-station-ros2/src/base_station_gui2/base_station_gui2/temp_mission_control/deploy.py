@@ -14,7 +14,108 @@ PARAM_DIR = os.path.expanduser("~/base_station/base-station-ros2/src/base_statio
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "deploy_config.json")
 
+# New: path to store SSH setup state
+SSH_SETUP_FILE = os.path.expanduser("~/.config/base_station/ssh_setup.json")
+
 os.makedirs(DEPLOY_HISTORY_DIR, exist_ok=True)
+
+# New helper functions for SSH key setup and persistence
+
+def _load_ssh_setup():
+    try:
+        with open(SSH_SETUP_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_ssh_setup(d):
+    os.makedirs(os.path.dirname(SSH_SETUP_FILE), exist_ok=True)
+    with open(SSH_SETUP_FILE, 'w') as f:
+        json.dump(d, f)
+
+
+def _ensure_ssh_key():
+    """Ensure an SSH keypair exists locally; generate one with no passphrase if needed."""
+    key_path = os.path.expanduser('~/.ssh/id_rsa')
+    pub_path = key_path + '.pub'
+    if not os.path.exists(pub_path):
+        try:
+            subprocess.run(['ssh-keygen', '-t', 'rsa', '-b', '4096', '-N', '', '-f', key_path], check=True)
+            ros_node.publish_console_log('✅ Generated new SSH keypair at ~/.ssh/id_rsa', 0)
+        except Exception as e:
+            ros_node.publish_console_log(f'❌ Failed to generate SSH key: {e}', 0)
+            return None
+    return pub_path
+
+
+def _copy_key_to_remote(remote_user, remote_host, remote_port, vehicle_num):
+    """Try to copy the local public key to the remote authorized_keys. Returns True on success."""
+    pub = _ensure_ssh_key()
+    if not pub:
+        return False
+
+    # Prefer ssh-copy-id if available
+    try:
+        sshcopy_check = subprocess.run(['which', 'ssh-copy-id'], capture_output=True)
+        if sshcopy_check.returncode == 0:
+            try:
+                cmd = ['ssh-copy-id', '-p', str(remote_port), '-i', pub, f'{remote_user}@{remote_host}']
+                ros_node.publish_console_log(f'DEBUG: Running: {" ".join(cmd)}', vehicle_num)
+                res = subprocess.run(cmd, timeout=60, capture_output=True, text=True)
+                if res.returncode == 0:
+                    return True
+                else:
+                    ros_node.publish_console_log(f'❌ ssh-copy-id failed: {res.stderr}', vehicle_num)
+            except Exception as e:
+                ros_node.publish_console_log(f'❌ ssh-copy-id exception: {e}', vehicle_num)
+
+        # Fallback to sshpass+ssh-copy-id if ssh-copy-id exists but requires password non-interactively
+        sshpass_check = subprocess.run(['which', 'sshpass'], capture_output=True)
+        if sshpass_check.returncode == 0:
+            # Prompt for password once to copy the key
+            try:
+                pwd = getpass.getpass(f"Enter SSH password for {remote_user}@{remote_host}: ")
+            except Exception:
+                ros_node.publish_console_log('❌ Password entry cancelled by user', vehicle_num)
+                return False
+            if not pwd:
+                ros_node.publish_console_log('❌ No password entered', vehicle_num)
+                return False
+            try:
+                cmd = ['sshpass', '-p', pwd, 'ssh-copy-id', '-p', str(remote_port), '-i', pub, f'{remote_user}@{remote_host}']
+                ros_node.publish_console_log(f'DEBUG: Running: sshpass -p [HIDDEN] ssh-copy-id -p {remote_port} -i {pub} {remote_user}@{remote_host}', vehicle_num)
+                res = subprocess.run(cmd, timeout=60, capture_output=True, text=True)
+                if res.returncode == 0:
+                    return True
+                else:
+                    ros_node.publish_console_log(f'❌ sshpass+ssh-copy-id failed: {res.stderr}', vehicle_num)
+            except Exception as e:
+                ros_node.publish_console_log(f'❌ sshpass+ssh-copy-id exception: {e}', vehicle_num)
+
+        # If neither method worked, instruct user to run ssh-copy-id manually
+        ros_node.publish_console_log(f"⚠️ Unable to automatically copy SSH key to {remote_user}@{remote_host}.\nPlease run on your workstation: ssh-copy-id -p {remote_port} -i ~/.ssh/id_rsa.pub {remote_user}@{remote_host}", vehicle_num)
+        return False
+
+    except Exception as e:
+        ros_node.publish_console_log(f'❌ Unexpected error during key copy: {e}', vehicle_num)
+        return False
+
+
+def _ensure_key_on_remote(remote_user, remote_host, remote_port, vehicle_num):
+    """Ensure the remote has our public key installed. Returns True if key-based auth should work."""
+    setup = _load_ssh_setup()
+    host_key = f"{remote_user}@{remote_host}:{remote_port}"
+    if setup.get(host_key):
+        return True
+
+    success = _copy_key_to_remote(remote_user, remote_host, remote_port, vehicle_num)
+    if success:
+        setup[host_key] = True
+        _save_ssh_setup(setup)
+        ros_node.publish_console_log(f'✅ SSH key installed on {remote_host}', vehicle_num)
+        return True
+    return False
 
 def load_config(sel_vehicles):
     with open(CONFIG_FILE, "r") as f:
@@ -33,12 +134,26 @@ def scp_file(file_path, remote_user, remote_host, remote_port, remote_path, remo
     delete_cmd = f"rm -f {os.path.join(remote_path, remote_filename)}"
     print(f"🗑️ Deleting {remote_filename} on {remote_host}...")
     ros_node.publish_console_log(f"🗑️ Deleting {remote_filename} on {remote_host}...", vehicle_num)
-    
-    # Check if this is Vehicle 0 (simulator) - use password authentication
-    use_password_auth = (vehicle_num == 0)
-    
+
+    # Decide authentication method. Prefer key-based auth by ensuring key is installed once.
+    use_password_auth = False
+
+    if vehicle_num == 0:
+        # For vehicle 0, try to ensure key-based authentication is set up (one-time).
+        try:
+            key_ok = _ensure_key_on_remote(remote_user, remote_host, remote_port, vehicle_num)
+            if not key_ok:
+                # If key installation failed, fall back to password prompt for this session
+                use_password_auth = True
+        except Exception as e:
+            ros_node.publish_console_log(f'❌ Error ensuring SSH key on remote: {e}', vehicle_num)
+            use_password_auth = True
+    else:
+        # For other vehicles assume key auth is configured
+        use_password_auth = False
+
     if use_password_auth:
-        # For Vehicle 0, prompt for password and use sshpass
+        # For systems where key setup failed, prompt for password and use sshpass for this session
         global cached_password
         try:
             # Check if sshpass is available
@@ -46,32 +161,25 @@ def scp_file(file_path, remote_user, remote_host, remote_port, remote_path, remo
             if sshpass_check.returncode != 0:
                 ros_node.publish_console_log("❌ sshpass not found. Install with: sudo apt-get install sshpass", vehicle_num)
                 return False
-            
-            # Use cached password or prompt for new one
+
             if cached_password is None:
-                print(f"\n🔐 PASSWORD REQUIRED for Vehicle 0 🔐")
-                print(f"Please enter SSH password for {remote_user}@{remote_host} in the terminal where you started the GUI")
-                print("=" * 60)
                 ros_node.publish_console_log(f"🔐 Password prompt displayed in terminal for {remote_user}@{remote_host}", vehicle_num)
-                
-                # Prompt for password (this will appear in the terminal where the GUI was launched)
                 try:
                     cached_password = getpass.getpass(f"Enter SSH password for {remote_user}@{remote_host}: ")
                     if not cached_password:
                         ros_node.publish_console_log("❌ No password entered", vehicle_num)
                         return False
-                    print("✅ Password received, continuing deployment...")
                     ros_node.publish_console_log("✅ Password received, continuing deployment...", vehicle_num)
                 except (KeyboardInterrupt, EOFError):
                     ros_node.publish_console_log("❌ Password entry cancelled by user", vehicle_num)
                     return False
-            
+
             password = cached_password
-            
+
             # SSH command with password
             ssh_cmd = ["sshpass", "-p", password, "ssh", "-p", str(remote_port), f"{remote_user}@{remote_host}", delete_cmd]
             ros_node.publish_console_log(f"DEBUG: Executing SSH command with password auth: sshpass -p [HIDDEN] ssh -p {remote_port} {remote_user}@{remote_host} {delete_cmd}", vehicle_num)
-            
+
             try:
                 ssh_result = subprocess.run(ssh_cmd, timeout=30, capture_output=True, text=True)
                 if ssh_result.returncode != 0:
@@ -90,11 +198,10 @@ def scp_file(file_path, remote_user, remote_host, remote_port, remote_path, remo
             destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
             print(f"📤 Copying {file_path} to {destination}...")
             ros_node.publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
-            
-            # SCP command with password
+
             scp_cmd = ["sshpass", "-p", password, "scp", "-P", str(remote_port), file_path, destination]
             ros_node.publish_console_log(f"DEBUG: Executing SCP command with password auth: sshpass -p [HIDDEN] scp -P {remote_port} {file_path} {destination}", vehicle_num)
-            
+
             try:
                 scp_result = subprocess.run(scp_cmd, timeout=60, capture_output=True, text=True)
                 if scp_result.returncode != 0:
@@ -111,56 +218,60 @@ def scp_file(file_path, remote_user, remote_host, remote_port, remote_path, remo
             except Exception as e:
                 ros_node.publish_console_log(f"❌ SCP command failed with exception: {e}", vehicle_num)
                 return False
-                
+
         except KeyboardInterrupt:
             ros_node.publish_console_log("❌ Password entry cancelled by user", vehicle_num)
             return False
         except Exception as e:
             ros_node.publish_console_log(f"❌ Password authentication failed: {e}", vehicle_num)
             return False
-    
-    else:
-        # For other vehicles, use key-based authentication (existing logic)
-        ssh_cmd = ["ssh", "-p", str(remote_port), f"{remote_user}@{remote_host}", delete_cmd]
-        ros_node.publish_console_log(f"DEBUG: Executing SSH command: {' '.join(ssh_cmd)}", vehicle_num)
-        
-        try:
-            ssh_result = subprocess.run(ssh_cmd, timeout=30, capture_output=True, text=True)
-            if ssh_result.returncode != 0:
-                ros_node.publish_console_log(f"DEBUG: SSH delete command failed with return code {ssh_result.returncode}", vehicle_num)
-                ros_node.publish_console_log(f"DEBUG: SSH stderr: {ssh_result.stderr}", vehicle_num)
-                ros_node.publish_console_log(f"DEBUG: SSH stdout: {ssh_result.stdout}", vehicle_num)
-            else:
-                ros_node.publish_console_log(f"DEBUG: SSH delete command succeeded", vehicle_num)
-        except subprocess.TimeoutExpired:
-            ros_node.publish_console_log(f"❌ SSH command timed out after 30 seconds", vehicle_num)
-            return False
-        except Exception as e:
-            ros_node.publish_console_log(f"❌ SSH command failed with exception: {e}", vehicle_num)
-            return False
 
-        destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
-        print(f"📤 Copying {file_path} to {destination}...")
-        ros_node.publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
-        
-        scp_cmd = ["scp", "-P", str(remote_port), file_path, destination]
-        ros_node.publish_console_log(f"DEBUG: Executing SCP command: {' '.join(scp_cmd)}", vehicle_num)
-        
+    else:
+        # Use key-based SSH/SCP (no password)
         try:
-            scp_result = subprocess.run(scp_cmd, timeout=60, capture_output=True, text=True)
-            if scp_result.returncode != 0:
-                ros_node.publish_console_log(f"DEBUG: SCP command failed with return code {scp_result.returncode}", vehicle_num)
-                ros_node.publish_console_log(f"DEBUG: SCP stderr: {scp_result.stderr}", vehicle_num)
-                ros_node.publish_console_log(f"DEBUG: SCP stdout: {scp_result.stdout}", vehicle_num)
+            ssh_cmd = ["ssh", "-p", str(remote_port), f"{remote_user}@{remote_host}", delete_cmd]
+            ros_node.publish_console_log(f"DEBUG: Executing SSH command: {' '.join(ssh_cmd)}", vehicle_num)
+            try:
+                ssh_result = subprocess.run(ssh_cmd, timeout=30, capture_output=True, text=True)
+                if ssh_result.returncode != 0:
+                    ros_node.publish_console_log(f"DEBUG: SSH delete command failed with return code {ssh_result.returncode}", vehicle_num)
+                    ros_node.publish_console_log(f"DEBUG: SSH stderr: {ssh_result.stderr}", vehicle_num)
+                    ros_node.publish_console_log(f"DEBUG: SSH stdout: {ssh_result.stdout}", vehicle_num)
+                else:
+                    ros_node.publish_console_log(f"DEBUG: SSH delete command succeeded", vehicle_num)
+            except subprocess.TimeoutExpired:
+                ros_node.publish_console_log(f"❌ SSH command timed out after 30 seconds", vehicle_num)
                 return False
-            else:
-                ros_node.publish_console_log(f"DEBUG: SCP command succeeded", vehicle_num)
-                return True
-        except subprocess.TimeoutExpired:
-            ros_node.publish_console_log(f"❌ SCP command timed out after 60 seconds", vehicle_num)
-            return False
+            except Exception as e:
+                ros_node.publish_console_log(f"❌ SSH command failed with exception: {e}", vehicle_num)
+                return False
+
+            destination = f"{remote_user}@{remote_host}:{os.path.join(remote_path, remote_filename)}"
+            print(f"📤 Copying {file_path} to {destination}...")
+            ros_node.publish_console_log(f"📤 Copying {file_path} to {destination}...", vehicle_num)
+
+            scp_cmd = ["scp", "-P", str(remote_port), file_path, destination]
+            ros_node.publish_console_log(f"DEBUG: Executing SCP command: {' '.join(scp_cmd)}", vehicle_num)
+
+            try:
+                scp_result = subprocess.run(scp_cmd, timeout=60, capture_output=True, text=True)
+                if scp_result.returncode != 0:
+                    ros_node.publish_console_log(f"DEBUG: SCP command failed with return code {scp_result.returncode}", vehicle_num)
+                    ros_node.publish_console_log(f"DEBUG: SCP stderr: {scp_result.stderr}", vehicle_num)
+                    ros_node.publish_console_log(f"DEBUG: SCP stdout: {scp_result.stdout}", vehicle_num)
+                    return False
+                else:
+                    ros_node.publish_console_log(f"DEBUG: SCP command succeeded", vehicle_num)
+                    return True
+            except subprocess.TimeoutExpired:
+                ros_node.publish_console_log(f"❌ SCP command timed out after 60 seconds", vehicle_num)
+                return False
+            except Exception as e:
+                ros_node.publish_console_log(f"❌ SCP command failed with exception: {e}", vehicle_num)
+                return False
+
         except Exception as e:
-            ros_node.publish_console_log(f"❌ SCP command failed with exception: {e}", vehicle_num)
+            ros_node.publish_console_log(f"❌ Unexpected error during key-based SCP: {e}", vehicle_num)
             return False
 
 def log_deployment(vehicle, files_sent, vehicle_num):
