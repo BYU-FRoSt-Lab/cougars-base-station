@@ -42,8 +42,6 @@ def sftp_file(file_path, remote_user, remote_host, remote_path, remote_filename,
             ros_node.publish_console_log(f"❌ Failed to establish SSH connection to {remote_host}", vehicle_num)
             return False
 
-        sftp = ssh.open_sftp()
-        remote_full_path = os.path.join(remote_path, remote_filename)
         
         sftp = ssh.open_sftp()
         remote_full_path = os.path.join(remote_path, remote_filename)
