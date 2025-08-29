@@ -14,6 +14,7 @@ import time
 
 from digi.xbee.devices import XBeeDevice, RemoteXBeeDevice, XBee64BitAddress
 from digi.xbee.exception import TransmitException
+from digi.xbee.filesystem import LocalXBeeFileSystemManager
 
 import json
 import threading
@@ -96,6 +97,7 @@ class RFBridge(Node):
 
         self.e_kill_service = self.create_service(BeaconId, 'radio_e_kill', self.send_e_kill_callback)
         self.status_service = self.create_service(BeaconId, 'radio_status_request', self.request_status_callback)
+        self.load_mission_service = self.create_service(TBD, 'radio_load_mission', self.load_mission_callback)
 
         self.subscription = self.create_subscription(
             String,
@@ -228,6 +230,29 @@ class RFBridge(Node):
         except Exception as e:
             self.get_logger().error(f"Error processing status request: {e}")
             response.success = False
+
+        return response
+    
+    def load_mission_callback(self, request, response):
+        try:
+            fs_manager = LocalXBeeFileSystemManager(self.device)
+            fs_manager.connect()
+
+            def progress_callback(percent, dest_path, src_path):
+                self.print_to_gui_publisher.publish(ConsoleLog(message=f"Upload progress: {percent:.1f}% - {src_path} -> {dest_path}"), vehicle_number=request.vehicle_number)
+
+            load_mission = fs_manager.put_file(src=request.mission, dest=self.remote_mission_path, progress_cb=progress_callback)
+            load_param = fs_manager.put_file(src=request.param, dest=self.remote_param_path, progress_cb=progress_callback)
+            load_fleet_params = fs_manager.put_file(src=request.fleet_params, dest=self.remote_fleet_params_path, progress_cb=progress_callback)
+            self.print_to_gui_publisher.publish(ConsoleLog(message="Upload through radio completed"), vehicle_number=request.vehicle_number)
+            self.print_to_gui_publisher.publish(ConsoleLog(message=f"Files transfered: {load_mission}, {load_param}, {load_fleet_params}"), vehicle_number=request.vehicle_number)
+
+        except Exception as e:
+            self.get_logger().error(f"Error loading mission through radio: {e}")
+            response.success = False
+        finally:
+            if 'fs_manager' in locals():
+                fs_manager.disconnect()
 
         return response
 
