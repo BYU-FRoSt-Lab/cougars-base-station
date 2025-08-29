@@ -379,9 +379,9 @@ class MainWindow(QMainWindow):
         Populates self.Vehicle_IP_addresses and self.ip_to_vehicle for later use.
         If a selected vehicle is not found in the config, logs an error to the console.
         """
-        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
+        config_path = Path.home().joinpath("base_station", "mission_control", "deploy_config.json")
         # Open and parse the config file
-        with open(config_path, "r") as f:
+        with open(str(config_path), "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
         self.Vehicle_IP_addresses = []
