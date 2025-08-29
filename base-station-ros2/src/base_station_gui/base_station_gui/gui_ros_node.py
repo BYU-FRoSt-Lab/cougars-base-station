@@ -19,7 +19,7 @@ from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
 
 from nav_msgs.msg import Path #used to publish the map viz path
-from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState #NavSatFix used to publish the origin
+from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState, Imu #NavSatFix used to publish the origin
 from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
 
 from base_station_interfaces.srv import BeaconId, Init
@@ -63,6 +63,14 @@ class GuiNode(Node):
                 10
             )
             setattr(self, f'dvl_vel_subscription{coug_number}', sub)
+
+            sub = self.create_subscription(
+                Imu,
+                f'coug{coug_number}/modem_imu',
+                lambda msg, n=coug_number: window.recieve_imu_data_message(n, msg),
+                10
+            )
+            setattr(self, f'imu_data_subscription{coug_number}', sub)
 
             # Subscribe to depth data messages for each vehicle
             sub = self.create_subscription(

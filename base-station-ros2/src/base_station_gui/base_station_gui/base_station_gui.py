@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
     smoothed_output_signal = pyqtSignal(int, object)
     dvl_velocity_signal = pyqtSignal(int, object)
     depth_data_signal = pyqtSignal(int, object)
+    imu_data_signal = pyqtSignal(int, object)
     pressure_data_signal = pyqtSignal(int, object)
     battery_data_signal = pyqtSignal(int, object)
     surface_confirm_signal = pyqtSignal(object)
@@ -195,12 +196,12 @@ class MainWindow(QMainWindow):
 
         # Dictionary mapping feedback_dict keys to display text for status widgets
         self.key_to_text_dict = {
+            "Heading": "Heading (deg): ",
             "XPos": "x (m): ",
             "YPos": "y (m): ",
             "Depth": "Depth (m): ",
-            "Heading": "Heading (deg): ",
-            "Waypoint": "Current Waypoint: ",
             "DVL_vel": "DVL Velocity <br>(m/s): ",
+            "Waypoint": "Current Waypoint: ",
             "Battery": "Battery (V): ",
             "Pressure": "Pressure (Pa): ",
         }
@@ -295,6 +296,7 @@ class MainWindow(QMainWindow):
         self.smoothed_output_signal.connect(self._update_gui_smoothed_output)
         self.dvl_velocity_signal.connect(self._update_dvl_velocity)
         self.depth_data_signal.connect(self.update_depth_data)
+        self.imu_data_signal.connect(self.update_imu_data)
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
         self.update_wifi_signal.connect(self.update_wifi_widgets)
@@ -2157,19 +2159,18 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_title_label(f"Status"), alignment=Qt.AlignmentFlag.AlignTop)
         temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("x (m): x", f"XPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("y (m): y", f"YPos{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Depth (m): d", f"Depth{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
-        temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addWidget(self.create_normal_label("DVL Velocity <br>(m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
-        temp_layout.addWidget(self.create_normal_label("DVL Velocity <br>(m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(status_spacing)
-
         temp_layout.addWidget(self.create_normal_label("Battery (V): b", f"Battery{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Pressure (Pa):<br>p", f"Pressure{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -2283,18 +2284,53 @@ class MainWindow(QMainWindow):
         x = position.x
         y = position.y
 
-        roll = msg.roll
-        pitch = msg.pitch
-        heading = msg.yaw
 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
+
+    def recieve_imu_data_message(self, vehicle_number, msg):
+        """
+        Receives an IMU data message from ROS and emits a signal to update the GUI.
+        Used to update the IMU widget for the vehicle.
+        """
+        self.imu_data_signal.emit(vehicle_number, msg)
+    
+    def update_imu_data(self, vehicle_number, msg):
+        """
+        Updates the IMU data for the specified vehicle.
+        Extracts yaw from the quaternion orientation and updates the heading in feedback_dict.
+        Coordinate system: East = 0°, counterclockwise positive
+        """
+        self.recieve_console_update("IMU Data Received", vehicle_number)
+        # Extract quaternion components
+        q_x = msg.orientation.x
+        q_y = msg.orientation.y
+        q_z = msg.orientation.z
+        q_w = msg.orientation.w
+        
+        # Convert quaternion to yaw (heading) in radians
+        # Yaw (z-axis rotation)
+        siny_cosp = 2 * (q_w * q_z + q_x * q_y)
+        cosy_cosp = 1 - 2 * (q_y * q_y + q_z * q_z)
+        yaw_radians = math.atan2(siny_cosp, cosy_cosp)
+        
+        # Convert to degrees
+        yaw_degrees = math.degrees(yaw_radians)
+        
+        # Adjust for coordinate system: East = 0°, counterclockwise positive
+        # Standard atan2 gives: East = 0°, North = 90°, West = 180°/-180°, South = -90°
+        # We want to keep this convention, so no rotation needed
+        # Just normalize to 0-360 range
+        if yaw_degrees < 0:
+            yaw_degrees += 360
+        
+        self.feedback_dict["Heading"][vehicle_number] = round(yaw_degrees, 2)
         self.replace_specific_status_widget(vehicle_number, "Heading")
+
 
     def recieve_depth_data_message(self, vehicle_number, msg):
         """
