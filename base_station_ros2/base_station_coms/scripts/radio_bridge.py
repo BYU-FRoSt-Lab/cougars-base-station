@@ -23,9 +23,10 @@ from rosidl_runtime_py.utilities import get_message
 
 import yaml
 import os
+import struct
+import json
 from typing import Any, Optional
 
-# Thoughts:
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,7 +41,7 @@ def load_config(path: str) -> dict:
         raise ValueError("Config must have a top-level 'topics' list.")
 
     for entry in cfg["topics"]:
-        for required in ("input", "output", "type"):
+        for required in ("input", "output", "type", "id"):
             if required not in entry:
                 raise ValueError(
                     f"Each topic entry must have '{required}'. Got: {entry}"
@@ -89,7 +90,7 @@ def _apply_field_tree(src_msg: Any, dst_msg: Any, tree: dict) -> None:
     try:
         valid_fields = set(src_msg.get_fields_and_field_types().keys())
     except AttributeError:
-        # Primitive value – nothing to recurse into
+        # Primitive value  nothing to recurse into
         return
 
     for field_name, subtree in tree.items():
@@ -108,22 +109,19 @@ def _apply_field_tree(src_msg: Any, dst_msg: Any, tree: dict) -> None:
             setattr(dst_msg, field_name, dst_value)
 
 
-def filter_message(src_msg: Any, allowed_fields: Optional[list]) -> Any:
+def filter_message(src_msg: Any, field_tree: Optional[dict]) -> Any:
     """
-    Return a new message of the same type, copying only allowed_fields.
+    Return a new message of the same type, copying only fields in field_tree.
 
-    If allowed_fields is None or empty, the entire message is forwarded as-is.
-    Supports arbitrary-depth dot-notation, e.g. "header.stamp.sec".
+    If field_tree is None, the entire message is forwarded as-is.
+    Accepts a pre-built tree (from build_field_tree) rather than rebuilding
+    it on every call.
     """
-    if not allowed_fields:
+    if not field_tree:
         return src_msg  # pass-through, no copy needed
-    
-    # We are building the tree every time here and it is not changing mid run ever
-    # Should just need to apply the tree every time. 
 
-    tree = build_field_tree(allowed_fields)
     dst_msg = type(src_msg)()
-    _apply_field_tree(src_msg, dst_msg, tree)
+    _apply_field_tree(src_msg, dst_msg, field_tree)
     return dst_msg
 
 
@@ -152,6 +150,96 @@ def build_qos(qos_cfg: Optional[dict]) -> QoSProfile:
 
 
 # ---------------------------------------------------------------------------
+# Radio packet layer (stub  replace internals without changing the interface)
+# ---------------------------------------------------------------------------
+
+def extract_fields_to_dict(msg: Any, field_tree: Optional[dict]) -> dict:
+    """
+    Walk a (possibly filtered) message and return a plain Python dict of
+    only the selected leaf values.  This is what gets packed into the
+    radio frame.
+
+    field_tree=None means extract everything.
+    """
+    def _recurse(src, tree):
+        try:
+            valid = set(src.get_fields_and_field_types().keys())
+        except AttributeError:
+            return src  # primitive leaf
+
+        keys = valid if tree is None else {k for k in tree if k in valid}
+        out = {}
+        for k in keys:
+            subtree = None if tree is None else tree[k]
+            val = getattr(src, k)
+            out[k] = _recurse(val, subtree)
+        return out
+
+    return _recurse(msg, field_tree)
+
+
+def pack_radio_packet(bridge_id: str, payload: dict) -> bytes:
+    """
+    Serialize a bridge packet for transmission over the radio link.
+
+    Packet layout (little-endian):
+        [2 bytes] id length
+        [N bytes] id string (UTF-8)
+        [4 bytes] payload length
+        [M bytes] payload (JSON-encoded UTF-8)
+
+    TODO: swap JSON for a tighter encoding (msgpack, CDR, custom struct)
+          once field schema is locked down.
+    """
+    id_bytes      = bridge_id.encode("utf-8")
+    payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    return (
+        struct.pack("<H", len(id_bytes))
+        + id_bytes
+        + struct.pack("<I", len(payload_bytes))
+        + payload_bytes
+    )
+
+
+def unpack_radio_packet(raw: bytes) -> tuple[str, dict]:
+    """
+    Deserialize a packet produced by pack_radio_packet.
+
+    Returns (bridge_id, payload_dict).
+    Mirror image of pack_radio_packet  keep them in sync.
+    """
+    offset = 0
+    id_len    = struct.unpack_from("<H", raw, offset)[0];  offset += 2
+    bridge_id = raw[offset : offset + id_len].decode("utf-8"); offset += id_len
+    pay_len   = struct.unpack_from("<I", raw, offset)[0];  offset += 4
+    payload   = json.loads(raw[offset : offset + pay_len].decode("utf-8"))
+    return bridge_id, payload
+
+
+def apply_dict_to_message(data: dict, dst_msg: Any) -> None:
+    """
+    Recursively write a plain dict (from unpack_radio_packet) back into a
+    ROS 2 message object.  Used on the receiving end to reconstruct the
+    message before republishing.
+    """
+    try:
+        valid = set(dst_msg.get_fields_and_field_types().keys())
+    except AttributeError:
+        return
+
+    for k, v in data.items():
+        if k not in valid:
+            continue
+        if isinstance(v, dict):
+            nested = getattr(dst_msg, k)
+            apply_dict_to_message(v, nested)
+            setattr(dst_msg, k, nested)
+        else:
+            setattr(dst_msg, k, v)
+
+
+# ---------------------------------------------------------------------------
 # Bridge Node
 # ---------------------------------------------------------------------------
 
@@ -159,12 +247,14 @@ class BridgeNode(Node):
     """
     Dynamically creates subscriber/publisher pairs for every topic
     defined in the YAML config.
+
+    Publishers are stored in a dict keyed by bridge id for fast O(1) lookup,
+    which also supports the radio receive path (id → publisher → republish).
     """
 
     def __init__(self):
         super().__init__("ros2_bridge_node")
 
-        # Declare the config_file parameter so it can be set via CLI
         self.declare_parameter("config_file", "")
         config_path = (
             self.get_parameter("config_file").get_parameter_value().string_value
@@ -184,9 +274,11 @@ class BridgeNode(Node):
         cfg = load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
-        # Keep references so they aren't garbage-collected
-        self._subscribers = []
-        self._publishers = []
+        # Keyed by bridge id → publisher.  Fast O(1) lookup on radio receive.
+        self.publish_dict: dict[str, Any] = {}
+
+        # Keep subscriber refs so they aren't garbage-collected.
+        self.subscribers: list = []
 
         for entry in cfg["topics"]:
             self._setup_bridge(entry)
@@ -195,12 +287,15 @@ class BridgeNode(Node):
 
     def _setup_bridge(self, entry: dict) -> None:
         """Wire up one sub→pub pair from a config entry."""
-        input_topic: str = entry["input"]
+        input_topic:  str = entry["input"]
         output_topic: str = entry["output"]
-        type_string: str = entry["type"]
-        id_string: str = entry["id"]
-        allowed_fields: Optional[list] = entry.get("fields")
-        qos_cfg: Optional[dict] = entry.get("qos")
+        type_string:  str = entry["type"]
+        bridge_id:    str = entry["id"]
+        allowed_fields    = entry.get("fields")
+        qos_cfg           = entry.get("qos")
+        # mode: "local" | "radio_tx"
+        # "radio_rx" is handled by receive_radio_packet(), not a subscription.
+        mode: str         = entry.get("mode", "local")
 
         try:
             msg_type = get_message(type_string)
@@ -211,36 +306,108 @@ class BridgeNode(Node):
             )
             return
 
+        if bridge_id in self.publish_dict:
+            self.get_logger().warn(
+                f"Duplicate bridge id '{bridge_id}'  overwriting previous entry."
+            )
+
         qos = build_qos(qos_cfg)
 
         pub = self.create_publisher(msg_type, output_topic, qos)
-        self._publishers.append(pub) # Maybe instead of a list of publisher you do a dict of publishers based on id string
+        self.publish_dict[bridge_id] = pub
 
-        # I want this to expand to support more than just publishing the message back out to ros2
-        # this is a good proof of concept but the end goal is to create a minimal data packet with the id as the header that
-        # Can be sent over the radio and then unpacked on the other side and republished as the full message.
-        
-        # Close over the variables for this specific bridge
-        def make_callback(_pub, _allowed_fields):
-            def callback(msg):
-                out_msg = filter_message(msg, _allowed_fields)
-                _pub.publish(out_msg)
-            return callback
+        # Pre-build the field tree once so the hot callback path never rebuilds it.
+        field_tree = build_field_tree(allowed_fields) if allowed_fields else None
 
         sub = self.create_subscription(
             msg_type,
             input_topic,
-            make_callback(pub, allowed_fields),
+            self._make_callback(bridge_id, pub, field_tree, mode),
             qos,
         )
-        self._subscribers.append(sub)
+        self.subscribers.append(sub)
 
-        field_info = (
-            f" (fields: {allowed_fields})" if allowed_fields else " (all fields)"
-        )
+        field_info = f" (fields: {allowed_fields})" if allowed_fields else " (all fields)"
         self.get_logger().info(
-            f"Bridge {id_string}: {input_topic} → {output_topic} [{type_string}]{field_info}"
+            f"Bridge [{bridge_id}] mode={mode}: {input_topic} → {output_topic} "
+            f"[{type_string}]{field_info}"
         )
+
+    def _make_callback(
+        self,
+        bridge_id: str,
+        pub,
+        field_tree: Optional[dict],
+        mode: str,
+    ):
+        """
+        Return the appropriate callback for the given mode.
+
+        Modes
+        -----
+        local      filter and republish directly on this ROS graph (default)
+        radio_tx   filter, serialize to a minimal packet, hand off to the
+                    radio transmit layer.  The receiver calls
+                    receive_radio_packet() to reconstruct and republish.
+        """
+        if mode == "local":
+            def callback(msg):
+                pub.publish(filter_message(msg, field_tree))
+            return callback
+
+        elif mode == "radio_tx":
+            def callback(msg):
+                payload = extract_fields_to_dict(msg, field_tree)
+                packet  = pack_radio_packet(bridge_id, payload)
+                # TODO: hand `packet` to the radio transmit interface, e.g.:
+                # Tell the radio the bridge the id and the quality. 
+                #   self._radio.send(packet)
+                self.get_logger().debug(
+                    f"[{bridge_id}] radio_tx {len(packet)} bytes"
+                )
+            return callback
+
+        else:
+            self.get_logger().warn(
+                f"Unknown mode '{mode}' for bridge '{bridge_id}', defaulting to local."
+            )
+            def callback(msg):
+                pub.publish(filter_message(msg, field_tree))
+            return callback
+
+    # ------------------------------------------------------------------
+    # Radio receive path
+    # ------------------------------------------------------------------
+
+    def receive_radio_packet(self, raw: bytes) -> None:
+        """
+        Entry point for data arriving from the radio on the receiving robot.
+
+        1. Unpack frame → bridge_id + payload dict
+        2. Look up bridge_id → publisher
+        3. Reconstruct the ROS message from the dict
+        4. Publish on the output topic
+
+        Wire this to whatever delivers bytes from your radio driver
+        a serial read callback, UDP socket listener, etc.
+        """
+        try:
+            bridge_id, payload = unpack_radio_packet(raw)
+        except Exception as exc:
+            self.get_logger().error(f"Failed to unpack radio packet: {exc}")
+            return
+
+        pub = self.publish_dict.get(bridge_id)
+        if pub is None:
+            self.get_logger().warn(
+                f"Radio packet for unknown bridge id '{bridge_id}'. "
+                "Is this entry missing from the receiver's config?"
+            )
+            return
+
+        msg = pub.msg_type()
+        apply_dict_to_message(payload, msg)
+        pub.publish(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +420,6 @@ def main(args=None):
         node = BridgeNode()
         rclpy.spin(node)
     except (RuntimeError, FileNotFoundError) as exc:
-        # Already logged inside __init__; exit cleanly
         print(f"[ros2_bridge_node] Fatal: {exc}")
     except KeyboardInterrupt:
         pass

@@ -50,5 +50,13 @@ def generate_launch_description():
         namespace_arg,
         param_file_arg,
         debug_arg,
-        rf_bridge_node
+        rf_bridge_node,
+        Node(
+            package='base_station_coms',
+            executable='dummy_publisher.py',
+            name='dummy_publisher',
+            namespace=namespace,
+            output='screen',
+            emulate_tty=True
+        )
     ])
