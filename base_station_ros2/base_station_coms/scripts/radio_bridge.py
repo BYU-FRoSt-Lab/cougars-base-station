@@ -184,9 +184,11 @@ def pack_radio_packet(bridge_id: str, payload: dict) -> bytes:
 
     Packet layout (little-endian):
         [2 bytes] id length
-        [N bytes] id string (UTF-8)
+        [N bytes] id string (UTF-8)  # Does this need to be a string how bout a numeric id?
         [4 bytes] payload length
         [M bytes] payload (JSON-encoded UTF-8)
+
+        # Do i want a check some here. I want a the tighter encodig. probably a custom struct for each topic. in the list.
 
     TODO: swap JSON for a tighter encoding (msgpack, CDR, custom struct)
           once field schema is locked down.
