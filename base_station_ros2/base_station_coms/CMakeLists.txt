@@ -38,8 +38,12 @@ DESTINATION include/${PROJECT_NAME})
 install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
+  scripts/radio_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
+
+#Install Launch file
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 find_package(rosidl_default_generators REQUIRED)
 
