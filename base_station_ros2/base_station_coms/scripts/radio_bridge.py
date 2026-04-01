@@ -24,6 +24,7 @@ from rosidl_runtime_py.utilities import get_message
 from bridge_core import BridgeCore, TxManager
 from comms_device import CommsDevice
 from radio_manager import XBeeRadioDevice
+from ros_topic_device import RosTopicDevice
 
 
 # QoS helper (ROS 2 specific)
@@ -71,15 +72,21 @@ class BridgeNode(Node):
         self.declare_parameter("config_file", "")
         self.declare_parameter("xbee_port", "/dev/ttyUSB0")
         self.declare_parameter("xbee_baud", 9600)
-        self.declare_parameter("device_id", 0)
+        self.declare_parameter("device_id", 1)
+        self.declare_parameter("sim_mode", False)
+        self.declare_parameter("sim_tx_topic", "/radio_sim/tx")
+        self.declare_parameter("sim_rx_topic", "/radio_sim/rx")
 
         config_path = self.get_parameter("config_file").get_parameter_value().string_value
         xbee_port   = self.get_parameter("xbee_port").get_parameter_value().string_value
         xbee_baud   = self.get_parameter("xbee_baud").get_parameter_value().integer_value
         device_id   = self.get_parameter("device_id").get_parameter_value().integer_value
+        sim_mode    = self.get_parameter("sim_mode").get_parameter_value().bool_value
+        sim_tx      = self.get_parameter("sim_tx_topic").get_parameter_value().string_value
+        sim_rx      = self.get_parameter("sim_rx_topic").get_parameter_value().string_value
 
-        if not (0 <= device_id <= 255):
-            raise ValueError(f"device_id {device_id} out of range (must be 0-255).")
+        if not (1 <= device_id <= 255):
+            raise ValueError(f"device_id {device_id} out of range (must be 1-255).")
 
         if not config_path:
             self.get_logger().fatal(
@@ -91,9 +98,15 @@ class BridgeNode(Node):
         cfg = BridgeCore.load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
-        self._radio_device: CommsDevice = XBeeRadioDevice(
-            xbee_port, xbee_baud, logger=self.get_logger(), device_id=device_id
-        )
+        if sim_mode:
+            self._radio_device: CommsDevice = RosTopicDevice(
+                self, sim_tx, sim_rx, device_id=device_id, logger=self.get_logger()
+            )
+            self.get_logger().info(f"sim_mode: TX={sim_tx}  RX={sim_rx}")
+        else:
+            self._radio_device: CommsDevice = XBeeRadioDevice(
+                xbee_port, xbee_baud, logger=self.get_logger(), device_id=device_id
+            )
         self._radio_device.open()
         self._radio_manager = TxManager(device=self._radio_device, logger=self.get_logger())
 

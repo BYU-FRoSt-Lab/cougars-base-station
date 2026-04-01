@@ -11,5 +11,19 @@
 
     # Source address of this device, prepended to every outbound packet
     # so the receiver can identify who sent it.  Must be a unique unsigned
-    # int 0-255 across all devices on the same link.
-    device_id: 0
+    # int 1-255 across all devices on the same link.
+    device_id: 1
+
+    # Simulation mode: publish/subscribe raw packet bytes over ROS topics
+    # instead of using XBee hardware.  Useful for testing without a radio.
+    #
+    # Single-node loopback (TX feeds back into RX):
+    #   sim_tx_topic: /radio_sim
+    #   sim_rx_topic: /radio_sim
+    #
+    # Two-node cross-wired (node A device_id=1, node B device_id=2):
+    #   Node A: sim_tx_topic=/a_to_b  sim_rx_topic=/b_to_a
+    #   Node B: sim_tx_topic=/b_to_a  sim_rx_topic=/a_to_b
+    sim_mode: false
+    sim_tx_topic: /radio_sim/tx
+    sim_rx_topic: /radio_sim/rx
