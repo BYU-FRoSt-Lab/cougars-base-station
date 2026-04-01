@@ -129,14 +129,25 @@ class BridgeNode(Node):
     # ------------------------------------------------------------------
 
     def _setup_bridge(self, entry: dict) -> None:
-        """Wire up one bridge from a config entry."""
+        """
+        Wire up one bridge from a config entry.
+
+        Modes
+        -----
+        tx      Subscribe to input_topic, encode, transmit over radio.
+                Inbound packets for this bridge_id are ignored.
+        rx      Receive from radio, decode, publish on output_topic.
+                No subscription; driven entirely by _on_radio_receive.
+        duplex  Both: subscribe → transmit AND receive → publish.
+                Use when both sides exchange data on the same bridge_id.
+        """
         input_topic:  str = entry["input"]
         output_topic: str = entry["output"]
         type_string:  str = entry["type"]
         bridge_id:    int = int(entry["id"])
         allowed_fields    = entry.get("fields")
         qos_cfg           = entry.get("qos")
-        mode: str         = entry.get("mode", "local")
+        mode: str         = entry.get("mode", "duplex")
 
         try:
             msg_type = get_message(type_string)
@@ -146,6 +157,8 @@ class BridgeNode(Node):
                 f"Skipping bridge {input_topic} → {output_topic}."
             )
             return
+        # TODO could do a warning if there is input or output when it
+        # Does not match the rx tx mode. 
 
         if bridge_id in self.publish_dict:
             self.get_logger().warn(f"Duplicate bridge id '{bridge_id}' — overwriting.")
@@ -153,50 +166,33 @@ class BridgeNode(Node):
         qos        = build_qos(qos_cfg)
         field_tree = BridgeCore.build_field_tree(allowed_fields) if allowed_fields else None
 
-        # Build binary codec for radio modes
-        if mode in ("radio_tx", "radio_rx"):
-            encode_fn, decode_fn = BridgeCore.build_codec(msg_type, field_tree, get_message)
+        encode_fn, decode_fn = BridgeCore.build_codec(msg_type, field_tree, get_message)
+
+        if mode in ("rx", "duplex"):
             self._decoders[bridge_id] = decode_fn
-        else:
-            encode_fn = None
+            pub = self.create_publisher(msg_type, output_topic, qos)
+            self.publish_dict[bridge_id] = pub
 
-        pub = self.create_publisher(msg_type, output_topic, qos)
-        self.publish_dict[bridge_id] = pub
-
-        if mode == "radio_tx":
+        if mode in ("tx", "duplex"):
             self._radio_manager.register_bridge(
                 bridge_id   = bridge_id,
-                address     = entry.get("address"),         # Destination addres or none for broadcast
-                priority    = entry.get("priority", 5),     # Lower the higher priority
-                reliability = entry.get("reliability", "best_effort"),    # Whether to retry failed transmissions
-                queue_depth = entry.get("queue_depth", 10),   # How many packets to hold on to and keep trying.
+                address     = entry.get("address"),
+                priority    = entry.get("priority", 5),
+                reliability = entry.get("reliability", "best_effort"),
+                queue_depth = entry.get("queue_depth", 10),
             )
             sub = self.create_subscription(
                 msg_type, input_topic,
-                self._make_radio_tx_callback(bridge_id, encode_fn),
+                self._make_tx_callback(bridge_id, encode_fn),
                 qos,
             )
             self.subs.append(sub)
 
-        elif mode == "local":
-            sub = self.create_subscription(
-                msg_type, input_topic,
-                self._make_local_callback(pub, field_tree),
-                qos,
+        if mode not in ("tx", "rx", "duplex"):
+            self.get_logger().warn(
+                f"Unknown mode '{mode}' for bridge {bridge_id} — expected tx, rx, or duplex. Skipping."
             )
-            self.subs.append(sub)
-
-        elif mode == "radio_rx":
-            pass  # driven entirely by _on_radio_receive; no subscription needed
-
-        else:
-            self.get_logger().warn(f"Unknown mode '{mode}' for bridge {bridge_id}, defaulting to local.")
-            sub = self.create_subscription(
-                msg_type, input_topic,
-                self._make_local_callback(pub, field_tree),
-                qos,
-            )
-            self.subs.append(sub)
+            return
 
         field_info = f" fields={allowed_fields}" if allowed_fields else ""
         self.get_logger().info(
@@ -204,13 +200,7 @@ class BridgeNode(Node):
             f"[{type_string}]{field_info}"
         )
 
-    @staticmethod
-    def _make_local_callback(pub, field_tree: Optional[dict]):
-        def callback(msg):
-            pub.publish(BridgeCore.filter_message(msg, field_tree))
-        return callback
-
-    def _make_radio_tx_callback(self, bridge_id: int, encode_fn: Callable):
+    def _make_tx_callback(self, bridge_id: int, encode_fn: Callable):
         def callback(msg):
             payload = encode_fn(msg)
             packet  = BridgeCore.pack_packet(bridge_id, payload)

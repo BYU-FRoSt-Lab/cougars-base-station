@@ -28,16 +28,17 @@
 
 topics:
 
-  # ── Local pass-through (no radio, useful for testing) ────────────────────
+  # ── TX: send vector to node B ────────────────────────────────────────────
   - input:   /vector/a
     output:  /vector/forwarded/a
     type:    geometry_msgs/msg/Vector3Stamped
     id:      0
-    mode:    radio_tx
+    mode:    tx
     reliability: best_effort
     fields:
       - header.stamp.sec
       - header.stamp.nanosec
+      - header.frame_id
       - vector.x
       - vector.y
       - vector.z
