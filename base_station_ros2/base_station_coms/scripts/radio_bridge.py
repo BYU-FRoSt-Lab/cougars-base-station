@@ -22,6 +22,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rosidl_runtime_py.utilities import get_message
 
 from bridge_core import BridgeCore, TxManager
+from comms_device import CommsDevice
 from radio_manager import XBeeRadioDevice
 
 
@@ -89,7 +90,7 @@ class BridgeNode(Node):
         cfg = BridgeCore.load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
-        self._radio_device  = XBeeRadioDevice(xbee_port, xbee_baud, logger=self.get_logger())
+        self._radio_device: CommsDevice = XBeeRadioDevice(xbee_port, xbee_baud, logger=self.get_logger())
         self._radio_device.open()
         # TODO do I want to pass the device to the TX manager? I need to specify
         # What methods it needs to have in it like a parent class or something

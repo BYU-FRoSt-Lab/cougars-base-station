@@ -41,6 +41,7 @@ install(PROGRAMS
   scripts/radio_bridge.py
   scripts/radio_manager.py
   scripts/bridge_core.py
+  scripts/comms_device.py
   scripts/dummy_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )

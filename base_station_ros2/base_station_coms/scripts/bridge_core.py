@@ -8,9 +8,8 @@ codec, and the transmit queue/manager.  No ROS 2 imports and no hardware
 imports — usable standalone or in tests without a device.
 
 Packet envelope (little-endian):
-    [2 bytes] sequence number  (added by TxManager / stripped by XBeeRadioDevice)
+    [2 bytes] sequence number  (added by TxManager / stripped by CommsDevice._process_received)
     [1 byte]  bridge_id (unsigned int, 0-255)
-    # TODO:Do i want a checksum here? Make it optional
     [4 bytes] payload length
     [N bytes] payload  (binary-packed field values, schema known from bridge.yaml)
 
