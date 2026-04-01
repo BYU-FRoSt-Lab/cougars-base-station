@@ -39,6 +39,8 @@ install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
   scripts/radio_bridge.py
+  scripts/radio_manager.py
+  scripts/bridge_core.py
   scripts/dummy_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
