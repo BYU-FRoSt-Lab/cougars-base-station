@@ -241,6 +241,11 @@ class TxManager:
         """
         if not (0 <= bridge_id <= 255):
             raise ValueError(f"bridge_id {bridge_id} out of range (must be 0-255).")
+        if reliability == "reliable" and address is None:
+            raise ValueError(
+                f"Bridge {bridge_id}: reliability='reliable' requires a unicast address. "
+                "Broadcast cannot receive ACKs — use reliability='best_effort' or set an address."
+            )
         if bridge_id in self._queues:
             self._log.warning(f"TxManager: re-registering bridge '{bridge_id}'.")
         self._queues[bridge_id] = TxQueue(
@@ -288,18 +293,6 @@ class TxManager:
         q = self._queues.get(bridge_id)
         if q:
             q.acknowledge(seq)
-
-    def on_receive(self, bridge_id: int, seq: int, payload: bytes) -> None:
-        """
-        Called by the device for every inbound packet.
-        Handles ACK logic for reliable bridges.
-        The caller reconstructs the ROS message from payload.
-
-        TODO: transmit an ACK packet back to the sender.
-        """
-        q = self._queues.get(bridge_id)
-        if q and q.reliability == "reliable":
-            self._log.debug(f"[{bridge_id}] would ACK seq={seq}")
 
     def log_stats(self) -> None:
         """Dump per-bridge queue statistics to the logger."""

@@ -26,9 +26,7 @@ from comms_device import CommsDevice
 from radio_manager import XBeeRadioDevice
 
 
-# ---------------------------------------------------------------------------
 # QoS helper (ROS 2 specific)
-# ---------------------------------------------------------------------------
 
 def build_qos(qos_cfg: Optional[dict]) -> QoSProfile:
     """Build a QoSProfile from an optional dict, falling back to sensible defaults."""
@@ -52,9 +50,7 @@ def build_qos(qos_cfg: Optional[dict]) -> QoSProfile:
     )
 
 
-# ---------------------------------------------------------------------------
 # Bridge Node
-# ---------------------------------------------------------------------------
 
 class BridgeNode(Node):
     """
@@ -75,10 +71,15 @@ class BridgeNode(Node):
         self.declare_parameter("config_file", "")
         self.declare_parameter("xbee_port", "/dev/ttyUSB0")
         self.declare_parameter("xbee_baud", 9600)
+        self.declare_parameter("device_id", 0)
 
         config_path = self.get_parameter("config_file").get_parameter_value().string_value
         xbee_port   = self.get_parameter("xbee_port").get_parameter_value().string_value
         xbee_baud   = self.get_parameter("xbee_baud").get_parameter_value().integer_value
+        device_id   = self.get_parameter("device_id").get_parameter_value().integer_value
+
+        if not (0 <= device_id <= 255):
+            raise ValueError(f"device_id {device_id} out of range (must be 0-255).")
 
         if not config_path:
             self.get_logger().fatal(
@@ -90,10 +91,10 @@ class BridgeNode(Node):
         cfg = BridgeCore.load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
-        self._radio_device: CommsDevice = XBeeRadioDevice(xbee_port, xbee_baud, logger=self.get_logger())
+        self._radio_device: CommsDevice = XBeeRadioDevice(
+            xbee_port, xbee_baud, logger=self.get_logger(), device_id=device_id
+        )
         self._radio_device.open()
-        # TODO do I want to pass the device to the TX manager? I need to specify
-        # What methods it needs to have in it like a parent class or something
         self._radio_manager = TxManager(device=self._radio_device, logger=self.get_logger())
 
         # bridge_id → publisher  (used by radio_rx receive path)
@@ -108,8 +109,9 @@ class BridgeNode(Node):
         for entry in cfg["topics"]:
             self._setup_bridge(entry)
 
-        # Wire receive path after manager so we own the callback
+        # Wire receive path after manager so we own the callbacks
         self._radio_device.set_receive_callback(self._on_radio_receive)
+        self._radio_device.set_ack_callback(self._on_ack_receive)
         self._radio_manager.start()
 
     # ------------------------------------------------------------------
@@ -152,10 +154,10 @@ class BridgeNode(Node):
         if mode == "radio_tx":
             self._radio_manager.register_bridge(
                 bridge_id   = bridge_id,
-                address     = entry.get("address"),  # TODO get this from the device address same for all topics in this node.
-                priority    = entry.get("priority", 5),
-                reliability = entry.get("reliability", "best_effort"),
-                queue_depth = entry.get("queue_depth", 10),
+                address     = entry.get("address"),         # Destination addres or none for broadcast
+                priority    = entry.get("priority", 5),     # Lower the higher priority
+                reliability = entry.get("reliability", "best_effort"),    # Whether to retry failed transmissions
+                queue_depth = entry.get("queue_depth", 10),   # How many packets to hold on to and keep trying.
             )
             sub = self.create_subscription(
                 msg_type, input_topic,
@@ -207,11 +209,15 @@ class BridgeNode(Node):
     # Radio receive path
     # ------------------------------------------------------------------
 
-    def _on_radio_receive(self, bridge_id: int, seq: int, payload: bytes) -> None:
-        """Callback wired to XBeeRadioDevice for every inbound packet."""
-        # TODO: keep per-device ACK seq numbers separate for multi-device setups
-        self._radio_manager.ack_received(bridge_id, seq)
+    def _on_radio_receive(self, bridge_id: int, seq: int, payload: bytes, src_id: int) -> None:
+        """Callback wired to the CommsDevice for every inbound DATA packet."""
+        self.get_logger().debug(f"RX from device {src_id}: bridge={bridge_id} seq={seq}")
         self.receive_radio_packet(payload)
+
+    def _on_ack_receive(self, bridge_id: int, seq: int, src_id: int) -> None:
+        """Callback wired to the CommsDevice for every inbound ACK packet."""
+        self.get_logger().debug(f"ACK from device {src_id}: bridge={bridge_id} seq={seq}")
+        self._radio_manager.ack_received(bridge_id, seq)
 
     def destroy_node(self) -> None:
         self._radio_manager.stop()
@@ -257,9 +263,7 @@ class BridgeNode(Node):
         pub.publish(msg)
 
 
-# ---------------------------------------------------------------------------
 # Entry point
-# ---------------------------------------------------------------------------
 
 def main(args=None):
     rclpy.init(args=args)

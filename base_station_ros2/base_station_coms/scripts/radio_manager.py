@@ -34,8 +34,8 @@ class XBeeRadioDevice(CommsDevice):
     and addressed to this device.
     """
 
-    def __init__(self, port: str, baud: int, logger=None):
-        super().__init__(logger=logger)
+    def __init__(self, port: str, baud: int, logger=None, device_id: int = 0):
+        super().__init__(logger=logger, device_id=device_id)
         self._port   = port
         self._baud   = baud
         self._device = None
@@ -98,4 +98,8 @@ class XBeeRadioDevice(CommsDevice):
 
     def _hw_rx_callback(self, xbee_message) -> None:
         """digi.xbee callback — forward raw bytes into the base-class pipeline."""
-        self._process_received(xbee_message.data)
+        try:
+            src_hw_addr = str(xbee_message.remote_device.get_64bit_addr())
+        except Exception:
+            src_hw_addr = None
+        self._process_received(xbee_message.data, src_hw_addr)

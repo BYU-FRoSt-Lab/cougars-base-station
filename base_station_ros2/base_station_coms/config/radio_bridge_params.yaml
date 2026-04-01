@@ -8,3 +8,8 @@
     # Common baud rates: 9600 (default), 57600, 115200
     xbee_port: /dev/ttyUSB0
     xbee_baud: 9600
+
+    # Source address of this device, prepended to every outbound packet
+    # so the receiver can identify who sent it.  Must be a unique unsigned
+    # int 0-255 across all devices on the same link.
+    device_id: 0
