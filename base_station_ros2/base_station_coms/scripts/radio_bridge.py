@@ -102,7 +102,6 @@ class BridgeNode(Node):
             self._radio_device: CommsDevice = RosTopicDevice(
                 self, sim_tx, sim_rx, device_id=device_id, logger=self.get_logger()
             )
-            self.get_logger().info(f"sim_mode: TX={sim_tx}  RX={sim_rx}")
         else:
             self._radio_device: CommsDevice = XBeeRadioDevice(
                 xbee_port, xbee_baud, logger=self.get_logger(), device_id=device_id

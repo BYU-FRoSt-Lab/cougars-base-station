@@ -263,7 +263,7 @@ class TxManager:
         self._running = True
         self._thread  = threading.Thread(target=self._drain_loop, name="radio_tx_drain", daemon=True)
         self._thread.start()
-        self._log.info("TxManager drain thread started.")
+        self._log.debug("TxManager drain thread started.")
 
     def stop(self) -> None:
         """Signal the drain thread to stop and wait for it."""

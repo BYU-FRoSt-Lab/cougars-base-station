@@ -50,6 +50,9 @@ install(PROGRAMS
 #Install Launch file
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
+#Install Config dir
+install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+
 find_package(rosidl_default_generators REQUIRED)
 
 
