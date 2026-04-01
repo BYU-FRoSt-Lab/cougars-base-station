@@ -1,0 +1,60 @@
+# bridge.yaml
+#
+# Configure one or more topic bridges.
+# Each entry must have: input, output, type
+# Optional: fields (whitelist), qos overrides
+#
+# Message type format:  "<package>/msg/<MessageName>"
+# e.g.  sensor_msgs/msg/Imu
+#       geometry_msgs/msg/Twist
+#       nav_msgs/msg/Odometry
+
+topics:
+
+  # ── Example 1: Full pass-through (no filtering) ──────────────────────────
+  - input:  /vector
+    output: /vector/forwarded
+    type:   geometry_msgs/msg/Vector3Stamped
+    id: 0
+    mode:   local
+    # fields:
+    #   # - header.stamp.frame_id   # copies the entire header (stamp + frame_id)
+    #   # - header
+    #   - vector
+
+
+  # ── Example 2: Field whitelist (top-level fields only) ───────────────────
+  # - input:  /imu/raw
+  #   output: /imu/filtered
+  #   type:   sensor_msgs/msg/Imu
+  #   fields:
+  #     - linear_acceleration   # copies the entire Vector3
+  #     - angular_velocity      # copies the entire Vector3
+  #     # header and covariance arrays are dropped (left as zero/default)
+
+  # # ── Example 3: Dot-notation for nested sub-fields ────────────────────────
+  # - input:  /imu/raw
+  #   output: /imu/accel_only
+  #   type:   sensor_msgs/msg/Imu
+  #   fields:
+  #     - linear_acceleration.x
+  #     - linear_acceleration.y
+  #     - linear_acceleration.z
+
+  # # ── Example 4: Different message type with QoS overrides ─────────────────
+  # - input:  /cmd_vel_raw
+  #   output: /cmd_vel_safe
+  #   type:   geometry_msgs/msg/Twist
+  #   qos:
+  #     reliability: reliable   # or best_effort
+  #     durability:  volatile   # or transient_local
+  #     depth:       5
+
+  # # ── Example 5: Odometry – forward only pose, drop twist & covariances ────
+  # - input:  /odom/raw
+  #   output: /odom/pose_only
+  #   type:   nav_msgs/msg/Odometry
+  #   fields:
+  #     - header
+  #     - child_frame_id
+  #     - pose            # copies pose.pose but also pose.covariance (whole field)

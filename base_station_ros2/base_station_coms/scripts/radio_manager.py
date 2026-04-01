@@ -23,6 +23,9 @@ except ImportError:
     _XBEE_AVAILABLE = False
 
 
+# TODO handle the Sequence Numbers here if the lower level does not
+# TODO handle checksum in here unless the lower level already does.
+
 class XBeeRadioDevice:
     """
     Thin, policy-free wrapper around digi.xbee.
