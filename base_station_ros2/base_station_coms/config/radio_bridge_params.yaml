@@ -55,7 +55,7 @@
     # Two-node cross-wired (node A device_id=1, node B device_id=2):
     #   Node A: sim_tx_topic=/a_to_b  sim_rx_topic=/b_to_a
     #   Node B: sim_tx_topic=/b_to_a  sim_rx_topic=/a_to_b
-    sim_mode: true
+    sim_mode: false
     sim_tx_topic: /radio_sim/a_to_b
     sim_rx_topic: /radio_sim/b_to_a
 
@@ -85,6 +85,6 @@
     # Two-node cross-wired (node A device_id=1, node B device_id=2):
     #   Node A: sim_tx_topic=/a_to_b  sim_rx_topic=/b_to_a
     #   Node B: sim_tx_topic=/b_to_a  sim_rx_topic=/a_to_b
-    sim_mode: true
+    sim_mode: false
     sim_tx_topic: /radio_sim/b_to_a
     sim_rx_topic: /radio_sim/a_to_b

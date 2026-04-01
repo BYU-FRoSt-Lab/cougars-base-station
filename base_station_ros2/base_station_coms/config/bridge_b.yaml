@@ -29,7 +29,7 @@
 topics:
 
   # ── RX: receive vector from node A ───────────────────────────────────────
-  - input:   /vector/b
+  - input:   /vector
     output:  /vector/forwarded/b
     type:    geometry_msgs/msg/Vector3Stamped
     id:      0

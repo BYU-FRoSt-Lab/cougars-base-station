@@ -29,7 +29,7 @@
 topics:
 
   # ── TX: send vector to node B ────────────────────────────────────────────
-  - input:   /vector/a
+  - input:   /vector
     output:  /vector/forwarded/a
     type:    geometry_msgs/msg/Vector3Stamped
     id:      0
