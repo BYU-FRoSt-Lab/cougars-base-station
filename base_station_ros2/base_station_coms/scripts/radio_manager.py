@@ -17,7 +17,7 @@ Usage (from BridgeNode):
     device  = XBeeRadioDevice(port="/dev/ttyUSB0", baud=9600, logger=...)
     manager = RadioTxManager(device=device, logger=...)
     manager.register_bridge(
-        bridge_id="imu_radio",
+        bridge_id=1,                  # unsigned int 0-255
         address="0013A20041234567",   # 64-bit XBee address string, or None = broadcast
         priority=1,                   # lower number = higher priority
         reliability="best_effort",    # or "reliable"
@@ -59,11 +59,10 @@ except ImportError:
 #
 # Packet wire format (little-endian):
 #   [2 bytes] sequence number
-#   [2 bytes] bridge_id length
-#   [N bytes] bridge_id (UTF-8)
+#   [1 byte]  bridge_id (unsigned int, 0-255)
+# TODO Maybe remove payload length and switch for a checksum. 
 #   [4 bytes] payload length
 #   [M bytes] payload bytes  (as produced by pack_radio_packet in bridge node) 
-# TODO fix this to my desired header format. 
 #
 # The sequence number lives outside the existing pack_radio_packet envelope
 # so that the packet layer doesn't need to know about message contents.
@@ -118,7 +117,7 @@ class TxQueue:
 
     def __init__(
         self,
-        bridge_id: str,
+        bridge_id: int,
         address: Optional[str],        # XBee 64-bit address string, or None = broadcast
         priority: int,                 # lower = higher priority
         reliability: str,              # "best_effort" | "reliable"
@@ -126,7 +125,7 @@ class TxQueue:
         max_retries: int = 3,          # Put these as ros params
         ack_timeout: float = 0.5,      # Put as ros params
     ):
-        self.bridge_id   = bridge_id
+        self.bridge_id: int = bridge_id
         self.address     = address
         self.priority    = priority
         self.reliability = reliability
@@ -280,11 +279,11 @@ class XBeeRadioDevice:
             self._device.close()
             self._log.info("XBee device closed.")
 
-    def set_receive_callback(self, fn: Callable[[str, int, bytes], None]) -> None:
+    def set_receive_callback(self, fn: Callable[[int, int, bytes], None]) -> None:
         """
         Register a callback invoked on every received packet.
 
-        fn(bridge_id: str, seq: int, payload: bytes)
+        fn(bridge_id: int, seq: int, payload: bytes)
         """
         self._rx_callback = fn
 
@@ -328,8 +327,7 @@ class XBeeRadioDevice:
 
             # The payload still has the bridge_id envelope from pack_radio_packet.
             # Decode bridge_id so we can route it.
-            id_len   = struct.unpack_from("<H", payload, 0)[0]
-            bridge_id = payload[2 : 2 + id_len].decode("utf-8")
+            bridge_id = struct.unpack_from("<B", payload, 0)[0]
 
             if self._rx_callback:
                 self._rx_callback(bridge_id, seq, payload)
@@ -374,7 +372,7 @@ class TxManager:
         self._log            = logger or logging.getLogger(__name__) # TODO what is this?
         self._drain_interval = drain_interval
 
-        self._queues: dict[str, TxQueue] = {}   # bridge_id → queue
+        self._queues: dict[int, TxQueue] = {}   # bridge_id → queue
         self._lock   = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -386,7 +384,7 @@ class TxManager:
 
     def register_bridge(
         self,
-        bridge_id: str,
+        bridge_id: int,
         address: Optional[str]  = None,  
         priority: int           = 5,
         reliability: str        = "best_effort",
@@ -406,6 +404,8 @@ class TxManager:
         reliability - "best_effort" or "reliable".
         queue_depth - max queued packets; oldest dropped when exceeded.
         """
+        if not (0 <= bridge_id <= 255):
+            raise ValueError(f"bridge_id {bridge_id} out of range (must be 0-255).")
         if bridge_id in self._queues:
             self._log.warning(f"RadioTxManager: re-registering bridge '{bridge_id}'.")
 
@@ -443,7 +443,7 @@ class TxManager:
 
     # Public transmit API (called from ROS callbacks / BridgeNode)
 
-    def enqueue(self, bridge_id: str, raw_packet: bytes) -> None:
+    def enqueue(self, bridge_id: int, raw_packet: bytes) -> None:
         """
         Add raw_packet to the named bridge's queue.
 
@@ -459,7 +459,7 @@ class TxManager:
             return
         q.enqueue(raw_packet)
 
-    def ack_received(self, bridge_id: str, seq: int) -> None:
+    def ack_received(self, bridge_id: int, seq: int) -> None:
         """
         Notify the manager that the receiver ACKed sequence number seq
         for the given bridge.  Call this from the radio receive callback.
@@ -521,15 +521,13 @@ class TxManager:
 
     # Receive path
 
-    def _on_receive(self, bridge_id: str, seq: int, payload: bytes) -> None:
+    def _on_receive(self, bridge_id: int, seq: int, payload: bytes) -> None:
         """
         Called by XBeeRadioDevice for every inbound packet.
 
         For reliable bridges, automatically sends an ACK back.
         The BridgeNode's receive_radio_packet() is responsible for
         reconstructing the ROS message; this layer only handles ACKs.
-
-        # TODO change bridge id to 1 byte unsigned int
         """
         q = self._queues.get(bridge_id)
         if q and q.reliability == "reliable":

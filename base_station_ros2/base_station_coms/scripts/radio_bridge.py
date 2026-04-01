@@ -27,6 +27,9 @@ import struct
 import json
 from typing import Any, Optional
 
+# TODO seperate these into distinct files. not called radio manager.
+from radio_manager import XBeeRadioDevice, TxManager
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -178,35 +181,32 @@ def extract_fields_to_dict(msg: Any, field_tree: Optional[dict]) -> dict:
     return _recurse(msg, field_tree)
 
 
-def pack_radio_packet(bridge_id: str, payload: dict) -> bytes:
+def pack_radio_packet(bridge_id: int, payload: dict) -> bytes:
     """
     Serialize a bridge packet for transmission over the radio link.
 
     Packet layout (little-endian):
-        [2 bytes] id length
-        [N bytes] id string (UTF-8)  # TODO Does this need to be a string how about a numeric id?
+        [1 byte]  bridge_id (unsigned int, 0-255)
+        # TODO:Do i want a checksum here? Make it optional
         [4 bytes] payload length
         [M bytes] payload (JSON-encoded UTF-8)
 
-        # TODO:Do i want a checksum here? Make it optional
         # I want a the tighter encodig. Both sides of the bridge should know how to reconstruct
         # the raw bytes into a msg because they share the same bridge.yaml.
 
     TODO: swap JSON for a tighter encoding (msgpack, CDR, custom struct)
           once field schema is locked down.
     """
-    id_bytes      = bridge_id.encode("utf-8")
     payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     return (
-        struct.pack("<H", len(id_bytes))
-        + id_bytes
+        struct.pack("<B", bridge_id)
         + struct.pack("<I", len(payload_bytes))
         + payload_bytes
     )
 
 
-def unpack_radio_packet(raw: bytes) -> tuple[str, dict]:
+def unpack_radio_packet(raw: bytes) -> tuple[int, dict]:
     """
     Deserialize a packet produced by pack_radio_packet.
 
@@ -214,8 +214,7 @@ def unpack_radio_packet(raw: bytes) -> tuple[str, dict]:
     Mirror image of pack_radio_packet  keep them in sync.
     """
     offset = 0
-    id_len    = struct.unpack_from("<H", raw, offset)[0];  offset += 2
-    bridge_id = raw[offset : offset + id_len].decode("utf-8"); offset += id_len
+    bridge_id = struct.unpack_from("<B", raw, offset)[0];  offset += 1
     pay_len   = struct.unpack_from("<I", raw, offset)[0];  offset += 4
     payload   = json.loads(raw[offset : offset + pay_len].decode("utf-8"))
     return bridge_id, payload
@@ -263,6 +262,14 @@ class BridgeNode(Node):
         config_path = (
             self.get_parameter("config_file").get_parameter_value().string_value
         )
+        self.declare_parameter("xbee_port", "/dev/ttyUSB0")
+        xbee_port = (
+            self.get_parameter("xbee_port").get_parameter_value().string_value
+        )
+        self.declare_parameter("xbee_baud", 9600)
+        xbee_baud = (
+            self.get_parameter("xbee_baud").get_parameter_value().integer_value
+        )
 
         if not config_path:
             self.get_logger().fatal(
@@ -271,6 +278,7 @@ class BridgeNode(Node):
             )
             raise RuntimeError("Missing config_file parameter.")
 
+        # TODO move this checking to load config?
         if not os.path.isfile(config_path):
             self.get_logger().fatal(f"Config file not found: {config_path}")
             raise FileNotFoundError(config_path)
@@ -278,17 +286,12 @@ class BridgeNode(Node):
         cfg = load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
-        from radio_manager import XBeeRadioDevice, TxManager
-         
-        # TODO these should be ROS params from the yaml not the bridge config. 
-        xbee_port = cfg.get("xbee_port", "/dev/ttyUSB0")
-        xbee_baud = cfg.get("xbee_baud", 9600)
         self._radio_device  = XBeeRadioDevice(xbee_port, xbee_baud, logger=self.get_logger())
         self._radio_device.open()
         self._radio_manager = TxManager(device=self._radio_device, logger=self.get_logger())
 
         # Keyed by bridge id → publisher.  Fast O(1) lookup on radio receive.
-        self.publish_dict: dict[str, Any] = {}
+        self.publish_dict: dict[int, Any] = {}
 
         # Keep subscriber refs so they aren't garbage-collected.
         self.subs: list = []
@@ -308,7 +311,12 @@ class BridgeNode(Node):
         input_topic:  str = entry["input"]
         output_topic: str = entry["output"]
         type_string:  str = entry["type"]
-        bridge_id:    str = entry["id"]
+        bridge_id:    int = int(entry["id"])
+        if not (0 <= bridge_id <= 255):
+            self.get_logger().error(
+                f"bridge_id {bridge_id} out of range (0-255). Skipping bridge."
+            )
+            return
         allowed_fields    = entry.get("fields")
         qos_cfg           = entry.get("qos")
         # mode: "local" | "radio_tx"
@@ -362,7 +370,7 @@ class BridgeNode(Node):
 
     def _make_callback(
         self,
-        bridge_id: str,
+        bridge_id: int,
         pub,
         field_tree: Optional[dict],
         mode: str,
@@ -401,7 +409,7 @@ class BridgeNode(Node):
     # Radio receive path
     # ------------------------------------------------------------------
 
-    def _on_radio_receive(self, bridge_id: str, seq: int, payload: bytes) -> None:
+    def _on_radio_receive(self, bridge_id: int, seq: int, payload: bytes) -> None:
         """Callback wired to XBeeRadioDevice for every inbound packet."""
         # TODO GOTTA MAKE SURE I AM KEEPING ACK seq number from other devices seperate. 
         self._radio_manager.ack_received(bridge_id, seq)
