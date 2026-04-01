@@ -294,6 +294,17 @@ class TxManager:
         if q:
             q.acknowledge(seq)
 
+    def on_receive(
+        self, bridge_id: int, seq: int, src_hw_addr: Optional[str] = None
+    ) -> None:
+        """
+        Called for every inbound DATA packet.  Sends an ACK only for
+        reliable bridges — best_effort bridges do not ACK.
+        """
+        q = self._queues.get(bridge_id)
+        if q and q.reliability == "reliable":
+            self._device._send_ack(src_hw_addr, bridge_id, seq)
+
     def log_stats(self) -> None:
         """Dump per-bridge queue statistics to the logger."""
         for bridge_id, q in self._queues.items():

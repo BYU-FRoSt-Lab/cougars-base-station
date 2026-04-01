@@ -221,9 +221,12 @@ class BridgeNode(Node):
     # Radio receive path
     # ------------------------------------------------------------------
 
-    def _on_radio_receive(self, bridge_id: int, seq: int, payload: bytes, src_id: int) -> None:
+    def _on_radio_receive(
+        self, bridge_id: int, seq: int, payload: bytes, src_id: int, src_hw_addr: Optional[str] = None
+    ) -> None:
         """Callback wired to the CommsDevice for every inbound DATA packet."""
         self.get_logger().debug(f"RX from device {src_id}: bridge={bridge_id} seq={seq}")
+        self._radio_manager.on_receive(bridge_id, seq, src_hw_addr)
         self.receive_radio_packet(payload)
 
     def _on_ack_receive(self, bridge_id: int, seq: int, src_id: int) -> None:

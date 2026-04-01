@@ -185,13 +185,15 @@ class CommsDevice(ABC):
         framed = self._add_framing(address, packet)
         return self._send_raw(address, framed)
 
-    def set_receive_callback(self, fn: Callable[[int, int, bytes, int], None]) -> None:
+    def set_receive_callback(self, fn: Callable[[int, int, bytes, int, Optional[str]], None]) -> None:
         """
         Register the callback invoked for every valid inbound DATA packet.
 
-            fn(bridge_id: int, seq: int, payload: bytes, src_id: int)
+            fn(bridge_id: int, seq: int, payload: bytes, src_id: int, src_hw_addr: Optional[str])
 
         src_id is the device_id of the sender, extracted from the framing.
+        src_hw_addr is the hardware address of the sender (e.g. XBee 64-bit address),
+        forwarded so the callback can decide whether to send an ACK.
         """
         self._rx_callback = fn
 
@@ -264,9 +266,8 @@ class CommsDevice(ABC):
         try:
             seq, after_seq = strip_seq(packet)
             bridge_id = struct.unpack_from("<B", after_seq, 0)[0]
-            self._send_ack(src_hw_addr, bridge_id, seq)
             if self._rx_callback:
-                self._rx_callback(bridge_id, seq, after_seq, src_id)
+                self._rx_callback(bridge_id, seq, after_seq, src_id, src_hw_addr)
         except Exception as exc:
             self._log.error(f"RX DATA parse error: {exc}")
 
