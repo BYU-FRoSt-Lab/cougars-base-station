@@ -184,11 +184,13 @@ def pack_radio_packet(bridge_id: str, payload: dict) -> bytes:
 
     Packet layout (little-endian):
         [2 bytes] id length
-        [N bytes] id string (UTF-8)  # Does this need to be a string how bout a numeric id?
+        [N bytes] id string (UTF-8)  # TODO Does this need to be a string how about a numeric id?
         [4 bytes] payload length
         [M bytes] payload (JSON-encoded UTF-8)
 
-        # Do i want a check some here. I want a the tighter encodig. probably a custom struct for each topic. in the list.
+        # TODO:Do i want a checksum here? Make it optional
+        # I want a the tighter encodig. Both sides of the bridge should know how to reconstruct
+        # the raw bytes into a msg because they share the same bridge.yaml.
 
     TODO: swap JSON for a tighter encoding (msgpack, CDR, custom struct)
           once field schema is locked down.
@@ -276,14 +278,28 @@ class BridgeNode(Node):
         cfg = load_config(config_path)
         self.get_logger().info(f"Loaded bridge config: {config_path}")
 
+        from radio_manager import XBeeRadioDevice, TxManager
+         
+        # TODO these should be ROS params from the yaml not the bridge config. 
+        xbee_port = cfg.get("xbee_port", "/dev/ttyUSB0")
+        xbee_baud = cfg.get("xbee_baud", 9600)
+        self._radio_device  = XBeeRadioDevice(xbee_port, xbee_baud, logger=self.get_logger())
+        self._radio_device.open()
+        self._radio_manager = TxManager(device=self._radio_device, logger=self.get_logger())
+
         # Keyed by bridge id → publisher.  Fast O(1) lookup on radio receive.
         self.publish_dict: dict[str, Any] = {}
 
         # Keep subscriber refs so they aren't garbage-collected.
-        self.subscribers: list = []
+        self.subs: list = []
 
         for entry in cfg["topics"]:
             self._setup_bridge(entry)
+
+        # Wire the radio receive path into this node (after manager so we override its callback)
+        self._radio_device.set_receive_callback(self._on_radio_receive)
+
+        self._radio_manager.start()
 
     # ------------------------------------------------------------------
 
@@ -321,13 +337,22 @@ class BridgeNode(Node):
         # Pre-build the field tree once so the hot callback path never rebuilds it.
         field_tree = build_field_tree(allowed_fields) if allowed_fields else None
 
+        if mode == "radio_tx":
+            self._radio_manager.register_bridge(
+                bridge_id   = bridge_id,
+                address     = entry.get("address"),  # TODO get this from the device address same for all topics in this node.
+                priority    = entry.get("priority", 5),
+                reliability = entry.get("reliability", "best_effort"),
+                queue_depth = entry.get("queue_depth", 10),
+            )
+
         sub = self.create_subscription(
             msg_type,
             input_topic,
             self._make_callback(bridge_id, pub, field_tree, mode),
             qos,
         )
-        self.subscribers.append(sub)
+        self.subs.append(sub)
 
         field_info = f" (fields: {allowed_fields})" if allowed_fields else " (all fields)"
         self.get_logger().info(
@@ -361,12 +386,7 @@ class BridgeNode(Node):
             def callback(msg):
                 payload = extract_fields_to_dict(msg, field_tree)
                 packet  = pack_radio_packet(bridge_id, payload)
-                # TODO: hand `packet` to the radio transmit interface, e.g.:
-                # Tell the radio the bridge the id and the quality. 
-                #   self._radio.send(packet)
-                self.get_logger().debug(
-                    f"[{bridge_id}] radio_tx {len(packet)} bytes"
-                )
+                self._radio_manager.enqueue(bridge_id, packet)
             return callback
 
         else:
@@ -380,6 +400,17 @@ class BridgeNode(Node):
     # ------------------------------------------------------------------
     # Radio receive path
     # ------------------------------------------------------------------
+
+    def _on_radio_receive(self, bridge_id: str, seq: int, payload: bytes) -> None:
+        """Callback wired to XBeeRadioDevice for every inbound packet."""
+        # TODO GOTTA MAKE SURE I AM KEEPING ACK seq number from other devices seperate. 
+        self._radio_manager.ack_received(bridge_id, seq)
+        self.receive_radio_packet(payload)
+
+    def destroy_node(self) -> None:
+        self._radio_manager.stop()
+        self._radio_device.close()
+        super().destroy_node()
 
     def receive_radio_packet(self, raw: bytes) -> None:
         """
