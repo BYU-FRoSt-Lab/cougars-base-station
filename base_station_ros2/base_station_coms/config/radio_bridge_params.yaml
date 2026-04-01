@@ -1,3 +1,10 @@
 /rf_bridge:
   ros__parameters:
+
+    # Path to the bridge.yaml topic configuration file.
     config_file: /home/frostlab/config/bridge.yaml
+
+    # XBee serial port and baud rate.
+    # Common baud rates: 9600 (default), 57600, 115200
+    xbee_port: /dev/ttyUSB0
+    xbee_baud: 9600

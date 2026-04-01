@@ -3,24 +3,34 @@
 """
 bridge_core.py
 
-Transport-agnostic bridge logic: config loading, field filtering, packet
-packing/unpacking, and the transmit queue/manager.  No ROS 2 imports and
-no hardware imports — usable standalone or in tests without a device.
+Transport-agnostic bridge logic: config loading, field filtering, binary
+codec, and the transmit queue/manager.  No ROS 2 imports and no hardware
+imports — usable standalone or in tests without a device.
 
-Packet layout (little-endian):
-    [2 bytes] sequence number
+Packet envelope (little-endian):
+    [2 bytes] sequence number  (added by TxManager / stripped by XBeeRadioDevice)
     [1 byte]  bridge_id (unsigned int, 0-255)
     # TODO:Do i want a checksum here? Make it optional
     [4 bytes] payload length
-    [M bytes] payload (JSON-encoded UTF-8)
+    [N bytes] payload  (binary-packed field values, schema known from bridge.yaml)
 
-TODO: swap JSON for a tighter encoding (msgpack, CDR, custom struct)
-      once field schema is locked down.
+Payload encoding — field values are packed in the order they appear in the
+bridge.yaml 'fields' list (or message-definition order if 'fields' is omitted).
+No field names are transmitted; both sides reconstruct them from the shared
+config.  Per-field wire format:
+
+    primitive scalar    struct.pack('<fmt', value)          fixed size
+    string              uint16 length + UTF-8 bytes         variable
+    fixed array [N]     struct.pack('<N*fmt', *values)      fixed size
+    dynamic array []    uint16 count + count*fmt bytes      variable
+
+TODO: evaluate msgpack or CDR once field schema is fully locked down.
 """
 
 import json
 import logging
 import os
+import re
 import struct
 import threading
 import time
@@ -122,10 +132,7 @@ class TxQueue:
         """Add a packet to the queue, dropping the oldest if full."""
         with self._lock:
             self._seq = seq_next(self._seq)
-            pkt = _QueuedPacket(
-                seq=self._seq,
-                data=wrap_with_seq(self._seq, raw_packet),
-            )
+            pkt = _QueuedPacket(seq=self._seq, data=wrap_with_seq(self._seq, raw_packet))
             if len(self._queue) >= self.queue_depth:
                 self._queue.popleft()
                 self.stat_dropped += 1
@@ -177,12 +184,10 @@ class TxQueue:
         with self._lock:
             if self._queue and self._queue[0].seq == pkt.seq:
                 self._queue.popleft()
-
             if self.reliability == "reliable" and self._pending_ack is None:
                 self._pending_ack = pkt
                 self._pending_ack.attempts = 1
                 self._pending_ack_time = time.monotonic()
-
             self.stat_sent += 1
 
     def has_pending(self) -> bool:
@@ -198,40 +203,21 @@ class TxManager:
     """
     Manages per-bridge queues and drives the transmit loop.
 
-    Priority scheduling
-    -------------------
-    Bridges are grouped into priority tiers (lower number = higher priority).
-    On each drain cycle the manager:
-
-      1. Processes *all* packets in the highest-priority non-empty tier.
-      2. Only then moves to the next tier.
-
-    Within a tier (same priority number) queues are served round-robin.
-
-    Reliability
-    -----------
-    Bridges marked reliable=True get sequence numbers and the manager waits
-    for an ACK (via ack_received()) before sending the next packet.  Packets
-    that aren't ACKed within ack_timeout are retried up to max_retries times
-    before being dropped with a warning.
+    Priority scheduling: bridges are grouped into priority tiers (lower number
+    = higher priority).  The highest-priority non-empty tier is fully drained
+    before lower tiers are touched.  Within a tier, queues are round-robined.
 
     The device passed in must implement:
         device.send(address: Optional[str], framed_data: bytes) -> bool
         device.set_receive_callback(fn: Callable[[int, int, bytes], None]) -> None
     """
 
-    def __init__(
-        self,
-        device,
-        logger=None,
-        drain_interval: float = 0.01,
-    ):
+    def __init__(self, device, logger=None, drain_interval: float = 0.01):
         self._device         = device
         self._log            = logger or logging.getLogger(__name__)
         self._drain_interval = drain_interval
 
         self._queues: dict[int, TxQueue] = {}
-        self._lock   = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._running = False
 
@@ -258,15 +244,10 @@ class TxManager:
             raise ValueError(f"bridge_id {bridge_id} out of range (must be 0-255).")
         if bridge_id in self._queues:
             self._log.warning(f"TxManager: re-registering bridge '{bridge_id}'.")
-
         self._queues[bridge_id] = TxQueue(
-            bridge_id   = bridge_id,
-            address     = address,
-            priority    = priority,
-            reliability = reliability,
-            queue_depth = queue_depth,
-            max_retries = max_retries,
-            ack_timeout = ack_timeout,
+            bridge_id=bridge_id, address=address, priority=priority,
+            reliability=reliability, queue_depth=queue_depth,
+            max_retries=max_retries, ack_timeout=ack_timeout,
         )
         self._log.info(
             f"Registered bridge {bridge_id} priority={priority} "
@@ -276,9 +257,7 @@ class TxManager:
     def start(self) -> None:
         """Start the background drain thread."""
         self._running = True
-        self._thread  = threading.Thread(
-            target=self._drain_loop, name="radio_tx_drain", daemon=True
-        )
+        self._thread  = threading.Thread(target=self._drain_loop, name="radio_tx_drain", daemon=True)
         self._thread.start()
         self._log.info("TxManager drain thread started.")
 
@@ -298,10 +277,7 @@ class TxManager:
         """
         q = self._queues.get(bridge_id)
         if q is None:
-            self._log.warning(
-                f"enqueue: unknown bridge_id '{bridge_id}'. "
-                "Was register_bridge() called?"
-            )
+            self._log.warning(f"enqueue: unknown bridge_id {bridge_id}. Was register_bridge() called?")
             return
         q.enqueue(raw_packet)
 
@@ -317,9 +293,8 @@ class TxManager:
     def on_receive(self, bridge_id: int, seq: int, payload: bytes) -> None:
         """
         Called by the device for every inbound packet.
-
-        For reliable bridges, automatically handles ACK logic.
-        The caller is responsible for reconstructing the ROS message from payload.
+        Handles ACK logic for reliable bridges.
+        The caller reconstructs the ROS message from payload.
 
         TODO: transmit an ACK packet back to the sender.
         """
@@ -367,22 +342,57 @@ class TxManager:
                             f"({len(pkt.data)} bytes) priority={q.priority}"
                         )
                     else:
-                        self._log.warning(
-                            f"[{q.bridge_id}] hardware send failed for seq={pkt.seq}"
-                        )
-
+                        self._log.warning(f"[{q.bridge_id}] hardware send failed seq={pkt.seq}")
             if any(q.has_pending() for q in tier_queues):
                 break
 
 
 # ---------------------------------------------------------------------------
-# BridgeCore — config, field filtering, packet packing/unpacking
+# Binary codec helpers
+# ---------------------------------------------------------------------------
+
+_PRIM_FMT: dict[str, str] = {
+    'boolean': '?', 'bool':  '?',
+    'octet':   'B', 'byte':  'B', 'char': 'B',
+    'float':   'f', 'float32': 'f',
+    'double':  'd', 'float64': 'd',
+    'int8':    'b', 'uint8':   'B',
+    'int16':   'h', 'uint16':  'H',
+    'int32':   'i', 'uint32':  'I',
+    'int64':   'q', 'uint64':  'Q',
+}
+
+_ARRAY_FIXED_RE = re.compile(r'^(.+)\[(\d+)\]$')       # "double[9]"  → elem, count
+_ARRAY_DYN_RE   = re.compile(r'^(.+)\[(?:<=\d+)?\]$')  # "uint8[]" or "uint8[<=256]"
+
+
+@dataclass
+class _FieldSpec:
+    path:  tuple          # attribute path from root, e.g. ('header', 'stamp', 'sec')
+    kind:  str            # 'prim' | 'string' | 'fixed_array' | 'dyn_array'
+    fmt:   str            # struct format char for prim/array elements; '' for string
+    count: int            # element count for fixed_array; 0 otherwise
+
+
+# ---------------------------------------------------------------------------
+# BridgeCore
 # ---------------------------------------------------------------------------
 
 class BridgeCore:
     """
     Stateless utilities for config loading, ROS message field filtering,
-    and radio packet serialization.  All methods are static.
+    and binary packet serialization.  All methods are static.
+
+    Binary codec
+    ------------
+    Call build_codec(msg_type, field_tree, type_resolver) once at startup to
+    get (encode_fn, decode_fn).
+
+        encode_fn(msg)       -> bytes  (payload only, no envelope)
+        decode_fn(raw_bytes) -> dict   (pass to apply_dict_to_message)
+
+    Pass the result of rosidl_runtime_py.utilities.get_message as type_resolver
+    so nested message types can be resolved.
     """
 
     # ------------------------------------------------------------------
@@ -394,47 +404,31 @@ class BridgeCore:
         """Load and validate the YAML bridge configuration."""
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Config file not found: {path}")
-
         with open(path, "r") as f:
             cfg = yaml.safe_load(f)
-
         if "topics" not in cfg or not isinstance(cfg["topics"], list):
             raise ValueError("Config must have a top-level 'topics' list.")
-
         for entry in cfg["topics"]:
             for required in ("input", "output", "type", "id"):
                 if required not in entry:
-                    raise ValueError(
-                        f"Each topic entry must have '{required}'. Got: {entry}"
-                    )
+                    raise ValueError(f"Each topic entry must have '{required}'. Got: {entry}")
             bridge_id = int(entry["id"])
             if not (0 <= bridge_id <= 255):
-                raise ValueError(
-                    f"bridge_id {bridge_id} out of range (must be 0-255)."
-                )
-
+                raise ValueError(f"bridge_id {bridge_id} out of range (must be 0-255).")
         return cfg
 
     # ------------------------------------------------------------------
-    # Field filtering
+    # Field filtering  (used for 'local' mode)
     # ------------------------------------------------------------------
 
     @staticmethod
     def build_field_tree(allowed_fields: list) -> dict:
         """
         Convert a flat list of dot-notation field specs into a nested dict tree.
-
         None as a value means "copy this whole field, no further filtering".
 
-        Examples:
-            ["linear_acceleration", "header.stamp.sec", "header.frame_id"]
-            ->  {
-                  "linear_acceleration": None,
-                  "header": {
-                      "stamp": {"sec": None},
-                      "frame_id": None,
-                  }
-                }
+        ["vector.x", "header.stamp.sec"] →
+            {"vector": {"x": None}, "header": {"stamp": {"sec": None}}}
         """
         tree = {}
         for spec in allowed_fields:
@@ -456,7 +450,6 @@ class BridgeCore:
             valid_fields = set(src_msg.get_fields_and_field_types().keys())
         except AttributeError:
             return
-
         for field_name, subtree in tree.items():
             if field_name not in valid_fields:
                 continue
@@ -470,83 +463,214 @@ class BridgeCore:
 
     @staticmethod
     def filter_message(src_msg: Any, field_tree: Optional[dict]) -> Any:
-        """
-        Return a new message of the same type, copying only fields in field_tree.
-        If field_tree is None, the entire message is forwarded as-is.
-        """
+        """Return a copy of src_msg with only the fields in field_tree."""
         if not field_tree:
             return src_msg
-
         dst_msg = type(src_msg)()
         BridgeCore._apply_field_tree(src_msg, dst_msg, field_tree)
         return dst_msg
 
-    @staticmethod
-    def extract_fields_to_dict(msg: Any, field_tree: Optional[dict]) -> dict:
-        """
-        Walk a message and return a plain Python dict of only the selected
-        leaf values.  This is what gets packed into the radio frame.
-        field_tree=None means extract everything.
-        """
-        def _recurse(src, tree):
-            try:
-                valid = set(src.get_fields_and_field_types().keys())
-            except AttributeError:
-                return src  # primitive leaf
-
-            keys = valid if tree is None else {k for k in tree if k in valid}
-            out = {}
-            for k in keys:
-                subtree = None if tree is None else tree[k]
-                out[k] = _recurse(getattr(src, k), subtree)
-            return out
-
-        return _recurse(msg, field_tree)
-
     # ------------------------------------------------------------------
-    # Packet packing / unpacking
+    # Binary codec
     # ------------------------------------------------------------------
 
     @staticmethod
-    def pack_packet(bridge_id: int, payload: dict) -> bytes:
+    def build_codec(
+        msg_type,
+        field_tree: Optional[dict],
+        type_resolver: Optional[Callable] = None,
+    ) -> tuple[Callable, Callable]:
         """
-        Serialize a bridge packet for transmission over the radio link.
+        Build (encode_fn, decode_fn) for msg_type with optional field filtering.
 
-        Packet layout (little-endian):
-            [1 byte]  bridge_id (unsigned int, 0-255)
+            encode_fn(msg: ROS2Message) -> bytes
+            decode_fn(raw: bytes)       -> dict   (for apply_dict_to_message)
+
+        type_resolver: callable(type_str) -> msg_class
+            Pass rosidl_runtime_py.utilities.get_message so that nested types
+            like 'geometry_msgs/msg/Vector3' can be resolved and recursed into.
+            Without it, only flat messages with no nested types are supported.
+
+        Field order is determined by the bridge.yaml 'fields' list (or the ROS2
+        message definition order when fields is omitted).  Both sides MUST use
+        the same config for the codec to be symmetric.
+        """
+        specs = BridgeCore._collect_specs(msg_type, field_tree, (), type_resolver)
+
+        def encode(msg) -> bytes:
+            parts = []
+            for spec in specs:
+                val = msg
+                for attr in spec.path:
+                    val = getattr(val, attr)
+                parts.append(BridgeCore._pack_field(val, spec))
+            return b''.join(parts)
+
+        def decode(raw: bytes) -> dict:
+            result: dict = {}
+            offset = 0
+            for spec in specs:
+                val, offset = BridgeCore._unpack_field(raw, offset, spec)
+                node = result
+                for attr in spec.path[:-1]:
+                    node = node.setdefault(attr, {})
+                node[spec.path[-1]] = val
+            return result
+
+        return encode, decode
+
+    @staticmethod
+    def _collect_specs(
+        msg_type,
+        field_tree: Optional[dict],
+        path: tuple,
+        type_resolver: Optional[Callable],
+    ) -> list:
+        """Recursively walk msg_type and build a flat ordered list of _FieldSpec."""
+        try:
+            fields_and_types: dict = msg_type().get_fields_and_field_types()
+        except Exception:
+            return []
+
+        if field_tree is None:
+            keys = list(fields_and_types.keys())
+        else:
+            keys = [k for k in field_tree if k in fields_and_types]
+
+        specs = []
+        for field_name in keys:
+            type_str = fields_and_types[field_name]
+            subtree  = None if field_tree is None else field_tree.get(field_name)
+            cur_path = path + (field_name,)
+
+            spec = BridgeCore._classify_leaf(type_str, cur_path)
+            if spec is not None:
+                # Leaf field — subtree is ignored (field_tree selected the whole leaf)
+                specs.append(spec)
+            else:
+                # Nested message type — recurse
+                if type_resolver is None:
+                    continue  # can't resolve without ROS2
+                try:
+                    nested_type = type_resolver(type_str)
+                    specs.extend(
+                        BridgeCore._collect_specs(nested_type, subtree, cur_path, type_resolver)
+                    )
+                except Exception:
+                    pass  # unknown or unresolvable type, skip
+
+        return specs
+
+    @staticmethod
+    def _classify_leaf(type_str: str, path: tuple) -> Optional[_FieldSpec]:
+        """
+        Return a _FieldSpec if type_str is a leaf (primitive, string, array of
+        primitives).  Return None if it's a nested message type that needs recursion.
+        """
+        # Scalar primitive
+        if type_str in _PRIM_FMT:
+            return _FieldSpec(path=path, kind='prim', fmt=_PRIM_FMT[type_str], count=0)
+
+        # String
+        if type_str in ('string', 'wstring'):
+            return _FieldSpec(path=path, kind='string', fmt='', count=0)
+
+        # Fixed array: "double[9]", "float32[3]"
+        m = _ARRAY_FIXED_RE.match(type_str)
+        if m:
+            elem, count = m.group(1).strip(), int(m.group(2))
+            if elem in _PRIM_FMT:
+                return _FieldSpec(path=path, kind='fixed_array', fmt=_PRIM_FMT[elem], count=count)
+            return None  # array of nested types — not supported
+
+        # Dynamic array: "uint8[]" or "uint8[<=256]"
+        m = _ARRAY_DYN_RE.match(type_str)
+        if m:
+            elem = m.group(1).strip()
+            if elem in _PRIM_FMT:
+                return _FieldSpec(path=path, kind='dyn_array', fmt=_PRIM_FMT[elem], count=0)
+            return None
+
+        # Not a leaf — caller should recurse
+        return None
+
+    @staticmethod
+    def _pack_field(val: Any, spec: _FieldSpec) -> bytes:
+        if spec.kind == 'prim':
+            return struct.pack('<' + spec.fmt, val)
+        elif spec.kind == 'string':
+            b = (val or '').encode('utf-8')
+            return struct.pack('<H', len(b)) + b
+        elif spec.kind == 'fixed_array':
+            return struct.pack(f'<{spec.count}{spec.fmt}', *val)
+        elif spec.kind == 'dyn_array':
+            n = len(val)
+            return struct.pack('<H', n) + (struct.pack(f'<{n}{spec.fmt}', *val) if n else b'')
+        return b''
+
+    @staticmethod
+    def _unpack_field(raw: bytes, offset: int, spec: _FieldSpec) -> tuple:
+        if spec.kind == 'prim':
+            fmt = '<' + spec.fmt
+            val = struct.unpack_from(fmt, raw, offset)[0]
+            return val, offset + struct.calcsize(fmt)
+        elif spec.kind == 'string':
+            length = struct.unpack_from('<H', raw, offset)[0];  offset += 2
+            val = raw[offset : offset + length].decode('utf-8')
+            return val, offset + length
+        elif spec.kind == 'fixed_array':
+            fmt = f'<{spec.count}{spec.fmt}'
+            vals = list(struct.unpack_from(fmt, raw, offset))
+            return vals, offset + struct.calcsize(fmt)
+        elif spec.kind == 'dyn_array':
+            n = struct.unpack_from('<H', raw, offset)[0];  offset += 2
+            if n:
+                fmt = f'<{n}{spec.fmt}'
+                vals = list(struct.unpack_from(fmt, raw, offset))
+                return vals, offset + struct.calcsize(fmt)
+            return [], offset
+        return None, offset
+
+    # ------------------------------------------------------------------
+    # Packet envelope  (bridge_id + length prefix only — no field names)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def pack_packet(bridge_id: int, payload: bytes) -> bytes:
+        """
+        Wrap a binary payload in the bridge envelope.
+
+        Layout (little-endian):
+            [1 byte]  bridge_id
             [4 bytes] payload length
-            [M bytes] payload (JSON-encoded UTF-8)
+            [N bytes] payload  (from encode_fn)
         """
-        payload_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        return (
-            struct.pack("<B", bridge_id)
-            + struct.pack("<I", len(payload_bytes))
-            + payload_bytes
-        )
+        return struct.pack("<B", bridge_id) + struct.pack("<I", len(payload)) + payload
 
     @staticmethod
-    def unpack_packet(raw: bytes) -> tuple[int, dict]:
+    def unpack_packet(raw: bytes) -> tuple[int, bytes]:
         """
-        Deserialize a packet produced by pack_packet.
-        Returns (bridge_id, payload_dict).
+        Strip the bridge envelope.  Returns (bridge_id, payload_bytes).
+        Pass payload_bytes to the bridge's decode_fn.
         """
-        offset = 0
-        bridge_id = struct.unpack_from("<B", raw, offset)[0];  offset += 1
-        pay_len   = struct.unpack_from("<I", raw, offset)[0];  offset += 4
-        payload   = json.loads(raw[offset : offset + pay_len].decode("utf-8"))
-        return bridge_id, payload
+        bridge_id = struct.unpack_from("<B", raw, 0)[0]
+        pay_len   = struct.unpack_from("<I", raw, 1)[0]
+        return bridge_id, raw[5 : 5 + pay_len]
+
+    # ------------------------------------------------------------------
+    # Message reconstruction  (used on the RX side after decode_fn)
+    # ------------------------------------------------------------------
 
     @staticmethod
     def apply_dict_to_message(data: dict, dst_msg: Any) -> None:
         """
-        Recursively write a plain dict (from unpack_packet) back into a
-        message object.  Used on the receiving end to reconstruct the message.
+        Recursively write a plain dict (from decode_fn) back into a ROS 2
+        message object.
         """
         try:
             valid = set(dst_msg.get_fields_and_field_types().keys())
         except AttributeError:
             return
-
         for k, v in data.items():
             if k not in valid:
                 continue
