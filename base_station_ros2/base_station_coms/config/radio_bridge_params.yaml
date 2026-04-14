@@ -65,10 +65,10 @@
     # Path to the bridge.yaml topic configuration file.
     config_file: /home/frostlab/ros2_ws/install/base_station_coms/share/base_station_coms/config/bridge_b.yaml
 
-    # # XBee serial port and baud rate.
-    # # Common baud rates: 9600 (default), 57600, 115200
-    # xbee_port: /dev/ttyUSB0
-    # xbee_baud: 9600
+    # XBee serial port and baud rate.
+    # Common baud rates: 9600 (default), 57600, 115200
+    xbee_port: /dev/frost/rs232_connector_seatrac
+    xbee_baud: 9600
 
     # Source address of this device, prepended to every outbound packet
     # so the receiver can identify who sent it.  Must be a unique unsigned

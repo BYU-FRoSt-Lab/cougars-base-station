@@ -29,14 +29,14 @@ def generate_launch_description():
 
     param_file = LaunchConfiguration("param_file")
 
-    node_a = Node(
-        package="base_station_coms",
-        executable="radio_bridge.py",
-        name="rf_bridge_a",
-        parameters=[param_file],
-        output="screen",
-        emulate_tty=True,
-    )
+    # node_a = Node(
+    #     package="base_station_coms",
+    #     executable="radio_bridge.py",
+    #     name="rf_bridge_a",
+    #     parameters=[param_file],
+    #     output="screen",
+    #     emulate_tty=True,
+    # )
 
     node_b = Node(
         package="base_station_coms",
@@ -49,6 +49,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         param_file_arg,
-        node_a,
+        # node_a,
         node_b,
     ])

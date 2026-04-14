@@ -60,7 +60,7 @@ class XBeeRadioDevice(CommsDevice):
             self._log.info(f"XBee opened on {self._port} @ {self._baud} baud.")
             return True
         except Exception as exc:
-            self._log.error(f"XBee open failed: {exc}")
+            self._log.error(f"XBee open failed on {self._port} @ {self._baud} baud with exception: {exc}")
             return False
 
     def close(self) -> None:
@@ -86,10 +86,10 @@ class XBeeRadioDevice(CommsDevice):
                 self._device.send_data_broadcast(data)
             return True
         except TransmitException as exc:
-            self._log.error(f"XBee TransmitException: {exc}")
+            self._log.error(f"XBee TransmitException on {self._port} @ {self._baud} baud: {exc}")
             return False
         except Exception as exc:
-            self._log.error(f"XBee send error: {exc}")
+            self._log.error(f"XBee send error on {self._port} @ {self._baud} baud: {exc}")
             return False
 
     # ------------------------------------------------------------------
