@@ -93,7 +93,7 @@
           <property name="decimals"><number>2</number></property>
           <property name="minimum"><double>0.0</double></property>
           <property name="maximum"><double>9999.99</double></property>
-          <property name="value"><double>2.0</double></property>
+          <property name="value"><double>10.0</double></property>
           <property name="buttonSymbols"><enum>QAbstractSpinBox::PlusMinus</enum></property>
         </widget>
       </item>
@@ -110,7 +110,7 @@
           <property name="decimals"><number>2</number></property>
           <property name="minimum"><double>0.0</double></property>
           <property name="maximum"><double>9999.99</double></property>
-          <property name="value"><double>10.0</double></property>
+          <property name="value"><double>4.0</double></property>
           <property name="buttonSymbols"><enum>QAbstractSpinBox::PlusMinus</enum></property>
         </widget>
       </item>
@@ -223,7 +223,7 @@
               <property name="decimals"><number>2</number></property>
               <property name="minimum"><double>0.0</double></property>
               <property name="maximum"><double>9999.99</double></property>
-              <property name="value"><double>2.0</double></property>
+              <property name="value"><double>10.0</double></property>
               <property name="buttonSymbols"><enum>QAbstractSpinBox::PlusMinus</enum></property>
             </widget>
           </item>
@@ -251,7 +251,7 @@
               <property name="decimals"><number>2</number></property>
               <property name="minimum"><double>0.0</double></property>
               <property name="maximum"><double>9999.99</double></property>
-              <property name="value"><double>10.0</double></property>
+              <property name="value"><double>4.0</double></property>
               <property name="buttonSymbols"><enum>QAbstractSpinBox::PlusMinus</enum></property>
             </widget>
           </item>

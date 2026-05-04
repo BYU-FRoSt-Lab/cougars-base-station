@@ -425,13 +425,13 @@ void CougarsWaypointsPlugin::DrawWaypointCircles(const std::vector<CougarsWaypoi
     double cap_r = wp.capture_radius.has_value() ? *wp.capture_radius : defaults.capture_radius;
     double slip_r = wp.slip_radius.has_value() ? *wp.slip_radius : defaults.slip_radius;
 
-    // Capture radius — light blue, very transparent fill + solid outline
-    DrawFilledCircle(cx, cy, cap_r, 0.2f, 0.6f, 1.0f, 0.12f);
-    DrawCircleOutline(cx, cy, cap_r, 0.2f, 0.6f, 1.0f, 0.65f);
-
-    // Slip radius — orange, slightly more opaque fill + solid outline
-    DrawFilledCircle(cx, cy, slip_r, 1.0f, 0.55f, 0.0f, 0.18f);
-    DrawCircleOutline(cx, cy, slip_r, 1.0f, 0.55f, 0.0f, 0.75f);
+    // Capture radius — orange, slightly more opaque fill + solid outline
+    DrawFilledCircle(cx, cy, cap_r, 1.0f, 0.55f, 0.0f, 0.18f);
+    DrawCircleOutline(cx, cy, cap_r, 1.0f, 0.55f, 0.0f, 0.75f);
+    
+    // Slip radius — light blue, very transparent fill + solid outline
+    DrawFilledCircle(cx, cy, slip_r, 0.2f, 0.6f, 1.0f, 0.12f);
+    DrawCircleOutline(cx, cy, slip_r, 0.2f, 0.6f, 1.0f, 0.65f);
   }
 }
 
