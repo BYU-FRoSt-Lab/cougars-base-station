@@ -1,8 +1,0 @@
-__pycache__
-*.pkl
-*empty_map.png
-*bhv
-*.yaml
-*.db3
-output.png
-.env
