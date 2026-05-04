@@ -1,9 +1,0 @@
-**/build
-**/install
-**/log
-**/__pycache__
-**/.vscode
-/postprocessing/converted_bags
-**/mapproxy/mapcache
-*.csv
-*.pdf
