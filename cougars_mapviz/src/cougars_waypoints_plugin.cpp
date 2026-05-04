@@ -31,7 +31,7 @@
 #include <string>
 #include <vector>
 
-PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougWaypointsPlugin, mapviz::MapvizPlugin)
+PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougarsWaypointsPlugin, mapviz::MapvizPlugin)
 
 namespace cougars_mapviz {
 
@@ -68,7 +68,7 @@ static void DrawCircleOutline(double cx, double cy, double r, float red, float g
 // Constructor / destructor
 // ---------------------------------------------------------------------------
 
-CougWaypointsPlugin::CougWaypointsPlugin()
+CougarsWaypointsPlugin::CougarsWaypointsPlugin()
     : MapvizPlugin(),
       ui_(),
       config_widget_(new QWidget()),
@@ -128,13 +128,13 @@ CougWaypointsPlugin::CougWaypointsPlugin()
                    SLOT(CaptureRadiusChanged(double)));
 }
 
-CougWaypointsPlugin::~CougWaypointsPlugin() {
+CougarsWaypointsPlugin::~CougarsWaypointsPlugin() {
   if (map_canvas_) {
     map_canvas_->removeEventFilter(this);
   }
 }
 
-bool CougWaypointsPlugin::Initialize(QGLWidget* canvas) {
+bool CougarsWaypointsPlugin::Initialize(QGLWidget* canvas) {
   map_canvas_ = dynamic_cast<mapviz::MapCanvas*>(canvas);
   map_canvas_->installEventFilter(this);
 
@@ -145,7 +145,7 @@ bool CougWaypointsPlugin::Initialize(QGLWidget* canvas) {
   return true;
 }
 
-void CougWaypointsPlugin::VisibilityChanged(bool visible) {
+void CougarsWaypointsPlugin::VisibilityChanged(bool visible) {
   if (visible) {
     map_canvas_->installEventFilter(this);
   } else {
@@ -157,7 +157,7 @@ void CougWaypointsPlugin::VisibilityChanged(bool visible) {
 // Topic discovery
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::DiscoverTopics() {
+void CougarsWaypointsPlugin::DiscoverTopics() {
   auto topics_and_types = node_->get_topic_names_and_types();
   for (const auto& [topic, types] : topics_and_types) {
     for (const auto& type : types) {
@@ -171,7 +171,7 @@ void CougWaypointsPlugin::DiscoverTopics() {
   }
 }
 
-void CougWaypointsPlugin::TopicChanged(const QString& text) {
+void CougarsWaypointsPlugin::TopicChanged(const QString& text) {
   current_topic_ = text.toStdString();
   selected_point_ = -1;
   SetWaypointEditorsEnabled(false);
@@ -191,7 +191,7 @@ void CougWaypointsPlugin::TopicChanged(const QString& text) {
 // Publishing
 // ---------------------------------------------------------------------------
 
-static geographic_msgs::msg::WayPoint makeGeoWaypoint(uint32_t index, const CougWaypoint& wp) {
+static geographic_msgs::msg::WayPoint makeGeoWaypoint(uint32_t index, const CougarsWaypoint& wp) {
   geographic_msgs::msg::WayPoint gp;
   gp.id.uuid.fill(0);
   gp.id.uuid[12] = (index >> 24) & 0xFF;
@@ -232,8 +232,8 @@ static geographic_msgs::msg::WayPoint makeGeoWaypoint(uint32_t index, const Coug
   return gp;
 }
 
-void CougWaypointsPlugin::PublishTopic(const std::string& topic,
-                                       const std::vector<CougWaypoint>& wps) {
+void CougarsWaypointsPlugin::PublishTopic(const std::string& topic,
+                                       const std::vector<CougarsWaypoint>& wps) {
   if (publishers_.find(topic) == publishers_.end()) {
     publishers_[topic] = node_->create_publisher<geographic_msgs::msg::RouteNetwork>(
         topic, rclcpp::SystemDefaultsQoS());
@@ -270,7 +270,7 @@ void CougWaypointsPlugin::PublishTopic(const std::string& topic,
   publishers_[topic]->publish(*msg);
 }
 
-void CougWaypointsPlugin::PublishWaypoints() {
+void CougarsWaypointsPlugin::PublishWaypoints() {
   if (ui_.apply_all->isChecked()) {
     PublishAll();
   } else if (!current_topic_.empty()) {
@@ -286,7 +286,7 @@ void CougWaypointsPlugin::PublishWaypoints() {
   }
 }
 
-void CougWaypointsPlugin::Stop() {
+void CougarsWaypointsPlugin::Stop() {
   if (ui_.apply_all->isChecked()) {
     StopAll();
   } else if (!current_topic_.empty()) {
@@ -295,7 +295,7 @@ void CougWaypointsPlugin::Stop() {
   }
 }
 
-void CougWaypointsPlugin::PublishAll() {
+void CougarsWaypointsPlugin::PublishAll() {
   int count = 0;
   for (const auto& [topic, wps] : manager_.getAllWaypoints()) {
     PublishTopic(topic, wps);
@@ -304,7 +304,7 @@ void CougWaypointsPlugin::PublishAll() {
   PrintInfo("Published all (" + std::to_string(count) + " topics)");
 }
 
-void CougWaypointsPlugin::StopAll() {
+void CougarsWaypointsPlugin::StopAll() {
   for (const auto& [topic, wps] : manager_.getAllWaypoints()) {
     (void)wps;
     PublishTopic(topic, {});
@@ -312,7 +312,7 @@ void CougWaypointsPlugin::StopAll() {
   PrintWarning("Stopped all (" + std::to_string(manager_.getAllWaypoints().size()) + " topics)");
 }
 
-bool CougWaypointsPlugin::IsTopicAvailable(const std::string& topic) {
+bool CougarsWaypointsPlugin::IsTopicAvailable(const std::string& topic) {
   return ui_.topic_selector->findText(QString::fromStdString(topic)) != -1;
 }
 
@@ -320,7 +320,7 @@ bool CougWaypointsPlugin::IsTopicAvailable(const std::string& topic) {
 // File I/O
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::SaveWaypoints() {
+void CougarsWaypointsPlugin::SaveWaypoints() {
   const char* overlay_ws = std::getenv("OVERLAY_WS");
   QString path = QString::fromUtf8(overlay_ws) + "/src/cougars_mapviz/missions";
   QDir dir(path);
@@ -348,7 +348,7 @@ void CougWaypointsPlugin::SaveWaypoints() {
   }
 }
 
-void CougWaypointsPlugin::LoadWaypoints() {
+void CougarsWaypointsPlugin::LoadWaypoints() {
   const char* overlay_ws = std::getenv("OVERLAY_WS");
   QString path = QString::fromUtf8(overlay_ws) + "/src/cougars_mapviz/missions";
   QString filename =
@@ -386,7 +386,7 @@ void CougWaypointsPlugin::LoadWaypoints() {
 // Clear
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::Clear() {
+void CougarsWaypointsPlugin::Clear() {
   if (ui_.apply_all->isChecked()) {
     manager_.clearAllWaypoints();
   } else {
@@ -414,7 +414,7 @@ void CougWaypointsPlugin::Clear() {
 // Drawing — OpenGL (Draw) and QPainter (Paint)
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::DrawWaypointCircles(const std::vector<CougWaypoint>& wps,
+void CougarsWaypointsPlugin::DrawWaypointCircles(const std::vector<CougarsWaypoint>& wps,
                                               const swri_transform_util::Transform& transform,
                                               const MissionDefaults& defaults) {
   for (const auto& wp : wps) {
@@ -435,7 +435,7 @@ void CougWaypointsPlugin::DrawWaypointCircles(const std::vector<CougWaypoint>& w
   }
 }
 
-void CougWaypointsPlugin::Draw(double x, double y, double scale) {
+void CougarsWaypointsPlugin::Draw(double x, double y, double scale) {
   (void)x;
   (void)y;
   (void)scale;
@@ -462,7 +462,7 @@ void CougWaypointsPlugin::Draw(double x, double y, double scale) {
   }
 }
 
-void CougWaypointsPlugin::DrawPath(const std::vector<CougWaypoint>& wps, const QColor& color,
+void CougarsWaypointsPlugin::DrawPath(const std::vector<CougarsWaypoint>& wps, const QColor& color,
                                    const swri_transform_util::Transform& transform,
                                    int selected_index) {
   if (color == Qt::blue) {
@@ -496,7 +496,7 @@ void CougWaypointsPlugin::DrawPath(const std::vector<CougWaypoint>& wps, const Q
   glEnd();
 }
 
-void CougWaypointsPlugin::Paint(QPainter* painter, double x, double y, double scale) {
+void CougarsWaypointsPlugin::Paint(QPainter* painter, double x, double y, double scale) {
   (void)x;
   (void)y;
   (void)scale;
@@ -527,7 +527,7 @@ void CougWaypointsPlugin::Paint(QPainter* painter, double x, double y, double sc
   painter->restore();
 }
 
-void CougWaypointsPlugin::PaintPath(QPainter* painter, const std::vector<CougWaypoint>& wps,
+void CougarsWaypointsPlugin::PaintPath(QPainter* painter, const std::vector<CougarsWaypoint>& wps,
                                     const QColor& color,
                                     const swri_transform_util::Transform& transform,
                                     int selected_index) {
@@ -553,7 +553,7 @@ void CougWaypointsPlugin::PaintPath(QPainter* painter, const std::vector<CougWay
   }
 }
 
-void CougWaypointsPlugin::PaintLabels(QPainter* painter, const std::vector<CougWaypoint>& wps,
+void CougarsWaypointsPlugin::PaintLabels(QPainter* painter, const std::vector<CougarsWaypoint>& wps,
                                       const swri_transform_util::Transform& transform,
                                       const QColor& color) {
   for (size_t i = 0; i < wps.size(); i++) {
@@ -581,7 +581,7 @@ void CougWaypointsPlugin::PaintLabels(QPainter* painter, const std::vector<CougW
 // UI sync helpers
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::SetWaypointEditorsEnabled(bool enabled) {
+void CougarsWaypointsPlugin::SetWaypointEditorsEnabled(bool enabled) {
   ui_.depth_editor->setEnabled(enabled);
   ui_.depth_ref_selector->setEnabled(enabled);
   ui_.park_checkbox->setEnabled(enabled);
@@ -594,7 +594,7 @@ void CougWaypointsPlugin::SetWaypointEditorsEnabled(bool enabled) {
                                         ui_.capture_radius_override_checkbox->isChecked());
 }
 
-void CougWaypointsPlugin::UpdateEditorsFromWaypoint(const CougWaypoint& wp) {
+void CougarsWaypointsPlugin::UpdateEditorsFromWaypoint(const CougarsWaypoint& wp) {
   ui_.depth_editor->blockSignals(true);
   ui_.depth_editor->setValue(wp.pose.position.z);
   ui_.depth_editor->blockSignals(false);
@@ -641,7 +641,7 @@ void CougWaypointsPlugin::UpdateEditorsFromWaypoint(const CougWaypoint& wp) {
   }
 }
 
-void CougWaypointsPlugin::UpdateMissionDefaultsUI(const MissionDefaults& d) {
+void CougarsWaypointsPlugin::UpdateMissionDefaultsUI(const MissionDefaults& d) {
   ui_.mission_id_editor->blockSignals(true);
   ui_.mission_id_editor->setValue(d.mission_id);
   ui_.mission_id_editor->blockSignals(false);
@@ -663,25 +663,25 @@ void CougWaypointsPlugin::UpdateMissionDefaultsUI(const MissionDefaults& d) {
 // Mission-level default slots
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::DefaultMissionIdChanged(int value) {
+void CougarsWaypointsPlugin::DefaultMissionIdChanged(int value) {
   auto d = manager_.getDefaults(current_topic_);
   d.mission_id = value;
   manager_.setDefaults(current_topic_, d);
 }
 
-void CougWaypointsPlugin::DefaultSpeedChanged(double value) {
+void CougarsWaypointsPlugin::DefaultSpeedChanged(double value) {
   auto d = manager_.getDefaults(current_topic_);
   d.speed = value;
   manager_.setDefaults(current_topic_, d);
 }
 
-void CougWaypointsPlugin::DefaultSlipRadiusChanged(double value) {
+void CougarsWaypointsPlugin::DefaultSlipRadiusChanged(double value) {
   auto d = manager_.getDefaults(current_topic_);
   d.slip_radius = value;
   manager_.setDefaults(current_topic_, d);
 }
 
-void CougWaypointsPlugin::DefaultCaptureRadiusChanged(double value) {
+void CougarsWaypointsPlugin::DefaultCaptureRadiusChanged(double value) {
   auto d = manager_.getDefaults(current_topic_);
   d.capture_radius = value;
   manager_.setDefaults(current_topic_, d);
@@ -691,7 +691,7 @@ void CougWaypointsPlugin::DefaultCaptureRadiusChanged(double value) {
 // Per-waypoint property slots
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::DepthChanged(double value) {
+void CougarsWaypointsPlugin::DepthChanged(double value) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -699,7 +699,7 @@ void CougWaypointsPlugin::DepthChanged(double value) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::DepthRefChanged(int /*index*/) {
+void CougarsWaypointsPlugin::DepthRefChanged(int /*index*/) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -707,7 +707,7 @@ void CougWaypointsPlugin::DepthRefChanged(int /*index*/) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::ParkChanged(int /*state*/) {
+void CougarsWaypointsPlugin::ParkChanged(int /*state*/) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -715,7 +715,7 @@ void CougWaypointsPlugin::ParkChanged(int /*state*/) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::SpeedOverrideToggled(int state) {
+void CougarsWaypointsPlugin::SpeedOverrideToggled(int state) {
   bool enabled = (state == Qt::Checked);
   ui_.speed_editor->setEnabled(enabled);
   if (selected_point_ < 0) return;
@@ -726,7 +726,7 @@ void CougWaypointsPlugin::SpeedOverrideToggled(int state) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::SpeedChanged(double value) {
+void CougarsWaypointsPlugin::SpeedChanged(double value) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -736,7 +736,7 @@ void CougWaypointsPlugin::SpeedChanged(double value) {
   }
 }
 
-void CougWaypointsPlugin::SlipRadiusOverrideToggled(int state) {
+void CougarsWaypointsPlugin::SlipRadiusOverrideToggled(int state) {
   bool enabled = (state == Qt::Checked);
   ui_.slip_radius_editor->setEnabled(enabled);
   if (selected_point_ < 0) return;
@@ -747,7 +747,7 @@ void CougWaypointsPlugin::SlipRadiusOverrideToggled(int state) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::SlipRadiusChanged(double value) {
+void CougarsWaypointsPlugin::SlipRadiusChanged(double value) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -757,7 +757,7 @@ void CougWaypointsPlugin::SlipRadiusChanged(double value) {
   }
 }
 
-void CougWaypointsPlugin::CaptureRadiusOverrideToggled(int state) {
+void CougarsWaypointsPlugin::CaptureRadiusOverrideToggled(int state) {
   bool enabled = (state == Qt::Checked);
   ui_.capture_radius_editor->setEnabled(enabled);
   if (selected_point_ < 0) return;
@@ -768,7 +768,7 @@ void CougWaypointsPlugin::CaptureRadiusOverrideToggled(int state) {
   manager_.setWaypoints(current_topic_, wps);
 }
 
-void CougWaypointsPlugin::CaptureRadiusChanged(double value) {
+void CougarsWaypointsPlugin::CaptureRadiusChanged(double value) {
   if (selected_point_ < 0) return;
   auto wps = manager_.getWaypoints(current_topic_);
   if (static_cast<size_t>(selected_point_) >= wps.size()) return;
@@ -782,7 +782,7 @@ void CougWaypointsPlugin::CaptureRadiusChanged(double value) {
 // Mouse interaction
 // ---------------------------------------------------------------------------
 
-bool CougWaypointsPlugin::eventFilter(QObject* object, QEvent* event) {
+bool CougarsWaypointsPlugin::eventFilter(QObject* object, QEvent* event) {
   (void)object;
   switch (event->type()) {
     case QEvent::MouseButtonPress:
@@ -796,7 +796,7 @@ bool CougWaypointsPlugin::eventFilter(QObject* object, QEvent* event) {
   }
 }
 
-int CougWaypointsPlugin::GetClosestPoint(const QPointF& point, double& distance) {
+int CougarsWaypointsPlugin::GetClosestPoint(const QPointF& point, double& distance) {
   swri_transform_util::Transform transform;
   if (!tf_manager_->GetTransform(target_frame_, swri_transform_util::_wgs84_frame, transform)) {
     return -1;
@@ -816,7 +816,7 @@ int CougWaypointsPlugin::GetClosestPoint(const QPointF& point, double& distance)
   return closest;
 }
 
-bool CougWaypointsPlugin::handleMousePress(QMouseEvent* event) {
+bool CougarsWaypointsPlugin::handleMousePress(QMouseEvent* event) {
   dragged_point_ = -1;
   double distance = 0.0;
   int closest_point = GetClosestPoint(event->localPos(), distance);
@@ -841,7 +841,7 @@ bool CougWaypointsPlugin::handleMousePress(QMouseEvent* event) {
   return false;
 }
 
-bool CougWaypointsPlugin::handleMouseRelease(QMouseEvent* event) {
+bool CougarsWaypointsPlugin::handleMouseRelease(QMouseEvent* event) {
   qreal dist = QLineF(mouse_down_pos_, event->localPos()).length();
   qint64 ms = QDateTime::currentMSecsSinceEpoch() - mouse_down_time_;
 
@@ -865,7 +865,7 @@ bool CougWaypointsPlugin::handleMouseRelease(QMouseEvent* event) {
       tf2::Vector3 position(transformed.x(), transformed.y(), 0.0);
       position = transform * position;
 
-      CougWaypoint wp;
+      CougarsWaypoint wp;
       wp.pose.position.x = position.x();
       wp.pose.position.y = position.y();
       wp.pose.position.z = ui_.depth_editor->value();
@@ -887,7 +887,7 @@ bool CougWaypointsPlugin::handleMouseRelease(QMouseEvent* event) {
   return false;
 }
 
-bool CougWaypointsPlugin::handleMouseMove(QMouseEvent* event) {
+bool CougarsWaypointsPlugin::handleMouseMove(QMouseEvent* event) {
   if (dragged_point_ >= 0) {
     if (selected_point_ != -1) {
       selected_point_ = -1;
@@ -914,28 +914,28 @@ bool CougWaypointsPlugin::handleMouseMove(QMouseEvent* event) {
 // Config
 // ---------------------------------------------------------------------------
 
-void CougWaypointsPlugin::LoadConfig(const YAML::Node& node, const std::string& path) {
+void CougarsWaypointsPlugin::LoadConfig(const YAML::Node& node, const std::string& path) {
   (void)node;
   (void)path;
 }
 
-void CougWaypointsPlugin::SaveConfig(YAML::Emitter& emitter, const std::string& path) {
+void CougarsWaypointsPlugin::SaveConfig(YAML::Emitter& emitter, const std::string& path) {
   (void)emitter;
   (void)path;
 }
 
-QWidget* CougWaypointsPlugin::GetConfigWidget(QWidget* parent) {
+QWidget* CougarsWaypointsPlugin::GetConfigWidget(QWidget* parent) {
   config_widget_->setParent(parent);
   return config_widget_;
 }
 
-void CougWaypointsPlugin::PrintError(const std::string& message) {
+void CougarsWaypointsPlugin::PrintError(const std::string& message) {
   PrintErrorHelper(ui_.status, message, 1.0);
 }
-void CougWaypointsPlugin::PrintInfo(const std::string& message) {
+void CougarsWaypointsPlugin::PrintInfo(const std::string& message) {
   PrintInfoHelper(ui_.status, message, 1.0);
 }
-void CougWaypointsPlugin::PrintWarning(const std::string& message) {
+void CougarsWaypointsPlugin::PrintWarning(const std::string& message) {
   PrintWarningHelper(ui_.status, message, 1.0);
 }
 

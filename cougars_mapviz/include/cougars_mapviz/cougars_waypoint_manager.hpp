@@ -31,7 +31,7 @@ namespace cougars_mapviz {
 // Per-waypoint data
 // ---------------------------------------------------------------------------
 
-struct CougWaypoint {
+struct CougarsWaypoint {
   geometry_msgs::msg::Pose pose;  // position: x=lon, y=lat, z=depth_value
 
   // Required per waypoint
@@ -51,24 +51,24 @@ struct CougWaypoint {
 struct MissionDefaults {
   int32_t mission_id = 0;
   double speed = 50.0;
-  double slip_radius = 2.0;
-  double capture_radius = 10.0;
+  double slip_radius = 10.0;
+  double capture_radius = 4.0;
 };
 
 // ---------------------------------------------------------------------------
 // Manager
 // ---------------------------------------------------------------------------
 
-class CougWaypointManager {
+class CougarsWaypointManager {
  public:
-  CougWaypointManager() = default;
-  ~CougWaypointManager() = default;
+  CougarsWaypointManager() = default;
+  ~CougarsWaypointManager() = default;
 
   // Waypoint CRUD
-  void addWaypoint(const std::string& topic, const CougWaypoint& waypoint);
-  void setWaypoints(const std::string& topic, const std::vector<CougWaypoint>& waypoints);
-  std::vector<CougWaypoint> getWaypoints(const std::string& topic) const;
-  const std::map<std::string, std::vector<CougWaypoint>>& getAllWaypoints() const;
+  void addWaypoint(const std::string& topic, const CougarsWaypoint& waypoint);
+  void setWaypoints(const std::string& topic, const std::vector<CougarsWaypoint>& waypoints);
+  std::vector<CougarsWaypoint> getWaypoints(const std::string& topic) const;
+  const std::map<std::string, std::vector<CougarsWaypoint>>& getAllWaypoints() const;
   void removeTopic(const std::string& topic);
   void clearWaypoints(const std::string& topic);
   void clearAllWaypoints();
@@ -91,7 +91,7 @@ class CougWaypointManager {
   bool loadFromFile(const std::string& filename, const std::string& topic = "");
 
  private:
-  std::map<std::string, std::vector<CougWaypoint>> waypoint_map_;
+  std::map<std::string, std::vector<CougarsWaypoint>> waypoint_map_;
   std::map<std::string, MissionDefaults> defaults_map_;
 };
 

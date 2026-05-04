@@ -31,32 +31,32 @@ namespace cougars_mapviz {
 // Waypoint CRUD
 // ---------------------------------------------------------------------------
 
-void CougWaypointManager::addWaypoint(const std::string& topic, const CougWaypoint& waypoint) {
+void CougarsWaypointManager::addWaypoint(const std::string& topic, const CougarsWaypoint& waypoint) {
   waypoint_map_[topic].push_back(waypoint);
 }
 
-void CougWaypointManager::setWaypoints(const std::string& topic,
-                                       const std::vector<CougWaypoint>& waypoints) {
+void CougarsWaypointManager::setWaypoints(const std::string& topic,
+                                       const std::vector<CougarsWaypoint>& waypoints) {
   waypoint_map_[topic] = waypoints;
 }
 
-std::vector<CougWaypoint> CougWaypointManager::getWaypoints(const std::string& topic) const {
+std::vector<CougarsWaypoint> CougarsWaypointManager::getWaypoints(const std::string& topic) const {
   auto it = waypoint_map_.find(topic);
-  return (it != waypoint_map_.end()) ? it->second : std::vector<CougWaypoint>{};
+  return (it != waypoint_map_.end()) ? it->second : std::vector<CougarsWaypoint>{};
 }
 
-const std::map<std::string, std::vector<CougWaypoint>>& CougWaypointManager::getAllWaypoints()
+const std::map<std::string, std::vector<CougarsWaypoint>>& CougarsWaypointManager::getAllWaypoints()
     const {
   return waypoint_map_;
 }
 
-void CougWaypointManager::clearWaypoints(const std::string& topic) {
+void CougarsWaypointManager::clearWaypoints(const std::string& topic) {
   waypoint_map_[topic].clear();
 }
 
-void CougWaypointManager::clearAllWaypoints() { waypoint_map_.clear(); }
+void CougarsWaypointManager::clearAllWaypoints() { waypoint_map_.clear(); }
 
-void CougWaypointManager::removeTopic(const std::string& topic) {
+void CougarsWaypointManager::removeTopic(const std::string& topic) {
   waypoint_map_.erase(topic);
   defaults_map_.erase(topic);
 }
@@ -65,12 +65,12 @@ void CougWaypointManager::removeTopic(const std::string& topic) {
 // Mission defaults
 // ---------------------------------------------------------------------------
 
-MissionDefaults CougWaypointManager::getDefaults(const std::string& topic) const {
+MissionDefaults CougarsWaypointManager::getDefaults(const std::string& topic) const {
   auto it = defaults_map_.find(topic);
   return (it != defaults_map_.end()) ? it->second : MissionDefaults{};
 }
 
-void CougWaypointManager::setDefaults(const std::string& topic, const MissionDefaults& defaults) {
+void CougarsWaypointManager::setDefaults(const std::string& topic, const MissionDefaults& defaults) {
   defaults_map_[topic] = defaults;
 }
 
@@ -96,7 +96,7 @@ static MissionDefaults defaultsFromJson(const QJsonObject& obj) {
   return d;
 }
 
-static QJsonArray waypointsToJson(const std::vector<CougWaypoint>& wps) {
+static QJsonArray waypointsToJson(const std::vector<CougarsWaypoint>& wps) {
   QJsonArray arr;
   for (const auto& wp : wps) {
     QJsonObject obj;
@@ -113,13 +113,13 @@ static QJsonArray waypointsToJson(const std::vector<CougWaypoint>& wps) {
   return arr;
 }
 
-static std::vector<CougWaypoint> waypointsFromJson(const QJsonArray& arr) {
-  std::vector<CougWaypoint> wps;
+static std::vector<CougarsWaypoint> waypointsFromJson(const QJsonArray& arr) {
+  std::vector<CougarsWaypoint> wps;
   for (const auto& val : arr) {
     QJsonObject obj = val.toObject();
     if (!obj.contains("lat") || !obj.contains("lon")) continue;
 
-    CougWaypoint wp;
+    CougarsWaypoint wp;
     wp.pose.position.x = obj["lon"].toDouble();
     wp.pose.position.y = obj["lat"].toDouble();
     wp.pose.position.z = obj["z"].toDouble();
@@ -138,7 +138,7 @@ static std::vector<CougWaypoint> waypointsFromJson(const QJsonArray& arr) {
 // File I/O
 // ---------------------------------------------------------------------------
 
-bool CougWaypointManager::saveToFile(const std::string& filename,
+bool CougarsWaypointManager::saveToFile(const std::string& filename,
                                      const std::string& specific_topic) const {
   QJsonObject root;
 
@@ -162,7 +162,7 @@ bool CougWaypointManager::saveToFile(const std::string& filename,
   return true;
 }
 
-bool CougWaypointManager::loadFromFile(const std::string& filename,
+bool CougarsWaypointManager::loadFromFile(const std::string& filename,
                                        const std::string& specific_topic) {
   QFile file(QString::fromStdString(filename));
   if (!file.open(QIODevice::ReadOnly)) return false;

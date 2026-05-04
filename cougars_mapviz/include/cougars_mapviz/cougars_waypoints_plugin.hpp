@@ -40,12 +40,12 @@
 
 namespace cougars_mapviz {
 
-class CougWaypointsPlugin : public mapviz::MapvizPlugin {
+class CougarsWaypointsPlugin : public mapviz::MapvizPlugin {
   Q_OBJECT
 
  public:
-  CougWaypointsPlugin();
-  ~CougWaypointsPlugin() override;
+  CougarsWaypointsPlugin();
+  ~CougarsWaypointsPlugin() override;
 
   bool Initialize(QGLWidget* canvas) override;
   void Shutdown() override {}
@@ -103,7 +103,7 @@ class CougWaypointsPlugin : public mapviz::MapvizPlugin {
 
   std::map<std::string, rclcpp::Publisher<geographic_msgs::msg::RouteNetwork>::SharedPtr>
       publishers_;
-  CougWaypointManager manager_;
+  CougarsWaypointManager manager_;
   std::string current_topic_;
 
   int selected_point_;
@@ -114,24 +114,24 @@ class CougWaypointsPlugin : public mapviz::MapvizPlugin {
 
   QTimer* discovery_timer_;
 
-  void PublishTopic(const std::string& topic, const std::vector<CougWaypoint>& wps);
+  void PublishTopic(const std::string& topic, const std::vector<CougarsWaypoint>& wps);
   bool IsTopicAvailable(const std::string& topic);
   int GetClosestPoint(const QPointF& point, double& distance);
 
   // Drawing helpers
-  void DrawWaypointCircles(const std::vector<CougWaypoint>& wps,
+  void DrawWaypointCircles(const std::vector<CougarsWaypoint>& wps,
                            const swri_transform_util::Transform& transform,
                            const MissionDefaults& defaults);
-  void DrawPath(const std::vector<CougWaypoint>& wps, const QColor& color,
+  void DrawPath(const std::vector<CougarsWaypoint>& wps, const QColor& color,
                 const swri_transform_util::Transform& transform, int selected_index = -1);
-  void PaintLabels(QPainter* painter, const std::vector<CougWaypoint>& wps,
+  void PaintLabels(QPainter* painter, const std::vector<CougarsWaypoint>& wps,
                    const swri_transform_util::Transform& transform, const QColor& color);
-  void PaintPath(QPainter* painter, const std::vector<CougWaypoint>& wps, const QColor& color,
+  void PaintPath(QPainter* painter, const std::vector<CougarsWaypoint>& wps, const QColor& color,
                  const swri_transform_util::Transform& transform, int selected_index = -1);
 
   // UI sync helpers
   void SetWaypointEditorsEnabled(bool enabled);
-  void UpdateEditorsFromWaypoint(const CougWaypoint& wp);
+  void UpdateEditorsFromWaypoint(const CougarsWaypoint& wp);
   void UpdateMissionDefaultsUI(const MissionDefaults& defaults);
 };
 
