@@ -13,10 +13,8 @@
 // limitations under the License.
 
 /**
- * @file coug_waypoint_manager.hpp
+ * @file cougars_waypoint_manager.hpp
  * @brief MapViz plugin helper, manages waypoint storage and file I/O.
- * @author Nelson Durrant
- * @date Jan 2026
  */
 
 #pragma once

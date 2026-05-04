@@ -1,5 +1,5 @@
 <library path="cougars_mapviz">
-  <class name="cougars_mapviz/coug_waypoints" type="coug_mapviz::CougWaypointsPlugin"
+  <class name="cougars_mapviz/cougars_waypoints" type="cougars_mapviz::CougarsWaypointsPlugin"
     base_class_type="mapviz::MapvizPlugin">
     <description>CougUV fleet waypoint manager</description>
   </class>

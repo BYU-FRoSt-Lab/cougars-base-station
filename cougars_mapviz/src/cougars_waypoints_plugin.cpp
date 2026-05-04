@@ -13,10 +13,8 @@
 // limitations under the License.
 
 /**
- * @file coug_waypoints_plugin.cpp
- * @brief Implementation of the CougWaypointsPlugin.
- * @author Nelson Durrant
- * @date Jan 2026
+ * @file cougars_waypoints_plugin.cpp
+ * @brief Implementation of the CougarsWaypointsPlugin.
  */
 
 #include <swri_transform_util/frames.h>
@@ -27,7 +25,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <cmath>
-#include <cougars_mapviz/coug_waypoints_plugin.hpp>
+#include <cougars_mapviz/cougars_waypoints_plugin.hpp>
 #include <cstdlib>
 #include <pluginlib/class_list_macros.hpp>
 #include <string>

@@ -13,10 +13,8 @@
 // limitations under the License.
 
 /**
- * @file coug_waypoints_plugin.hpp
+ * @file cougars_waypoints_plugin.hpp
  * @brief MapViz plugin for multi-agent waypoint mission planning.
- * @author Nelson Durrant
- * @date Jan 2026
  */
 
 #pragma once
@@ -24,7 +22,7 @@
 #include <mapviz/map_canvas.h>
 #include <mapviz/mapviz_plugin.h>
 #include <swri_transform_util/transform.h>
-#include <ui_coug_waypoints_config.h>
+#include <ui_cougars_waypoints_config.h>
 
 #include <QGLWidget>
 #include <QMouseEvent>
@@ -32,7 +30,7 @@
 #include <QPainter>
 #include <QTimer>
 #include <QWidget>
-#include <cougars_mapviz/coug_waypoint_manager.hpp>
+#include <cougars_mapviz/cougars_waypoint_manager.hpp>
 #include <geographic_msgs/msg/route_network.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <map>
@@ -99,7 +97,7 @@ class CougWaypointsPlugin : public mapviz::MapvizPlugin {
   void DefaultCaptureRadiusChanged(double value);
 
  private:
-  Ui::coug_waypoints_config ui_;
+  Ui::cougars_waypoints_config ui_;
   QWidget* config_widget_;
   mapviz::MapCanvas* map_canvas_;
 

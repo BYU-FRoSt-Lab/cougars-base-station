@@ -2,14 +2,13 @@
 <ui version="4.0">
 
   <!--
-  @file coug_waypoints_config.ui
-  @brief UI for the CougWaypointsPlugin.
-  @author Nelson Durrant
+  @file cougars_waypoints_config.ui
+  @brief UI for the CougarsWaypointsPlugin.
   @date Jan 2026
   -->
 
-  <class>coug_waypoints_config</class>
-  <widget class="QWidget" name="coug_waypoints_config">
+  <class>cougars_waypoints_config</class>
+  <widget class="QWidget" name="cougars_waypoints_config">
     <property name="geometry">
       <rect><x>0</x><y>0</y><width>404</width><height>590</height></rect>
     </property>

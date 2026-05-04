@@ -55,7 +55,7 @@ displays:
       offset_x: 0
       offset_y: 0
       ratio: original
-  - type: cougars_mapviz/coug_waypoints
+  - type: cougars_mapviz/cougars_waypoints
     name: new display
     config:
       visible: true

@@ -29,7 +29,7 @@ displays:
       bing_api_key: ""
       stadia_api_key: ""
       source: Google Maps
-  - type: cougars_mapviz/coug_waypoints
+  - type: cougars_mapviz/cougars_waypoints
     name: new display
     config:
       visible: true

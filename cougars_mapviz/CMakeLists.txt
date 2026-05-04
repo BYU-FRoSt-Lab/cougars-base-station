@@ -38,9 +38,9 @@ find_package(OpenGL REQUIRED)
 add_definitions(-DWFlags=WindowFlags)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(UI_FILES ui/coug_waypoints_config.ui)
-set(SRC_FILES src/coug_waypoints_plugin.cpp src/coug_waypoint_manager.cpp)
-set(HEADER_FILES include/${PROJECT_NAME}/coug_waypoints_plugin.hpp)
+set(UI_FILES ui/cougars_waypoints_config.ui)
+set(SRC_FILES src/cougars_waypoints_plugin.cpp src/cougars_waypoint_manager.cpp)
+set(HEADER_FILES include/${PROJECT_NAME}/cougars_waypoints_plugin.hpp)
 
 qt5_wrap_ui(UI_SRC_FILES ${UI_FILES})
 qt5_wrap_cpp(MOC_FILES ${HEADER_FILES})

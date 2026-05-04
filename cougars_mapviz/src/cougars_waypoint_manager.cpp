@@ -13,9 +13,8 @@
 // limitations under the License.
 
 /**
- * @file coug_waypoint_manager.cpp
- * @brief Implementation of the CougWaypointManager.
- * @author Nelson Durrant
+ * @file cougars_waypoint_manager.cpp
+ * @brief Implementation of the CougarsWaypointManager.
  * @date Jan 2026
  */
 
@@ -24,7 +23,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
-#include <cougars_mapviz/coug_waypoint_manager.hpp>
+#include <cougars_mapviz/cougars_waypoint_manager.hpp>
 
 namespace cougars_mapviz {
 
