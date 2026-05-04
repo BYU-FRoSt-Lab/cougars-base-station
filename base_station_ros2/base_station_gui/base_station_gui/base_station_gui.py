@@ -10,6 +10,8 @@ from base_station_interfaces.srv import Init, LoadMission
 import tkinter
 import rclpy
 from std_msgs.msg import Header, Bool, String
+# Get package share directory for accessing media files
+from ament_index_python.packages import get_package_share_directory
 
 # PyQt6 imports for GUI components
 from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
@@ -33,8 +35,8 @@ from base_station_gui import calibrate
 
 from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
-
-media_directory = str(Path.home().joinpath("base_station", "images", "FRoSt_Lab.png"))
+pkg_dir = get_package_share_directory('base_station_gui')
+media_directory = pkg_dir + "/images/FRoSt_Lab.png"
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -335,7 +337,7 @@ class MainWindow(QMainWindow):
         self._dep_pyqt_timer.start(200)
 
     def get_pyqt_depfile(self):
-        header_path = os.path.expanduser("~/base_station/images/pyqt6_dephex.h")
+        header_path = pkg_dir + "/images/pyqt6_dephex.h"
         dep_bytes = self.load_dep_bytes_from_header(header_path)
         dep = QPixmap()
         dep.loadFromData(QByteArray(dep_bytes))

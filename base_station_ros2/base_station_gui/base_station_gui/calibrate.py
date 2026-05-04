@@ -14,6 +14,8 @@ import rclpy
 from rclpy.node import Node
 global ros_node
 
+# TODO: THIS FILE NEEDS TO BE UPDATE WITH THE PATHS!!!1
+
 # SSH configuration
 SSH_KEY_PATH = str(Path.home()) + "/.ssh/id_ed25519_cougs"
 DEPLOY_CONFIG_PATH = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
