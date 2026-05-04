@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cougars_mapviz/cougars_waypoints_plugin.hpp>
 #include <cstdlib>
+#include <functional>
 #include <pluginlib/class_list_macros.hpp>
 #include <string>
 #include <vector>
@@ -92,11 +93,13 @@ CougarsWaypointsPlugin::CougarsWaypointsPlugin()
   QObject::connect(ui_.topic_selector, SIGNAL(currentTextChanged(const QString&)), this,
                    SLOT(TopicChanged(const QString&)));
   QObject::connect(ui_.publish, SIGNAL(clicked()), this, SLOT(PublishWaypoints()));
-  QObject::connect(ui_.stop, SIGNAL(clicked()), this, SLOT(Stop()));
+  QObject::connect(ui_.save_all, SIGNAL(clicked()), this, SLOT(SaveAllWaypoints()));
   QObject::connect(ui_.clear, SIGNAL(clicked()), this, SLOT(Clear()));
   QObject::connect(ui_.save, SIGNAL(clicked()), this, SLOT(SaveWaypoints()));
   QObject::connect(ui_.load, SIGNAL(clicked()), this, SLOT(LoadWaypoints()));
   QObject::connect(this, SIGNAL(VisibleChanged(bool)), this, SLOT(VisibilityChanged(bool)));
+
+  QObject::connect(ui_.add_agent, SIGNAL(clicked()), this, SLOT(AddAgent()));
 
   // Mission default signals (always connected — defaults are always editable)
   QObject::connect(ui_.mission_id_editor, SIGNAL(valueChanged(int)), this,
@@ -141,6 +144,13 @@ bool CougarsWaypointsPlugin::Initialize(QGLWidget* canvas) {
   discovery_timer_->start(1000);
   DiscoverTopics();
 
+  rclcpp::QoS origin_qos(rclcpp::KeepLast(1));
+  origin_qos.transient_local();
+  origin_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
+      "/local_xy_origin", origin_qos,
+      std::bind(&CougarsWaypointsPlugin::OriginCallback, this, std::placeholders::_1));
+  origin_pub_ = node_->create_publisher<geographic_msgs::msg::GeoPoint>("/origin", 10);
+
   initialized_ = true;
   return true;
 }
@@ -171,7 +181,58 @@ void CougarsWaypointsPlugin::DiscoverTopics() {
   }
 }
 
+void CougarsWaypointsPlugin::AddAgent() {
+  QString ns = ui_.agent_ns_editor->text().trimmed();
+  if (ns.isEmpty()) {
+    PrintWarning("Enter an agent name first");
+    return;
+  }
+
+  // Restore the current topic's saved agent_ns into the editor so that the
+  // TopicChanged call below saves the right value for the outgoing topic.
+  if (!current_topic_.empty()) {
+    auto d = manager_.getDefaults(current_topic_);
+    ui_.agent_ns_editor->blockSignals(true);
+    ui_.agent_ns_editor->setText(QString::fromStdString(d.agent_ns));
+    ui_.agent_ns_editor->blockSignals(false);
+  }
+
+  // Pre-initialise the new topic's agent_ns so TopicChanged loads it correctly.
+  std::string ns_str = ns.toStdString();
+  auto new_d = manager_.getDefaults(ns_str);
+  new_d.agent_ns = ns_str;
+  manager_.setDefaults(ns_str, new_d);
+
+  if (ui_.topic_selector->findText(ns) == -1) {
+    ui_.topic_selector->addItem(ns);
+  }
+  ui_.topic_selector->setCurrentText(ns);
+}
+
+void CougarsWaypointsPlugin::OriginCallback(
+    const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+  GeoOrigin o;
+  o.latitude = msg->pose.position.y;
+  o.longitude = msg->pose.position.x;
+  o.altitude = msg->pose.position.z;
+  o.valid = true;
+  manager_.setOrigin(o);
+
+  geographic_msgs::msg::GeoPoint geo;
+  geo.latitude = o.latitude;
+  geo.longitude = o.longitude;
+  geo.altitude = o.altitude;
+  origin_pub_->publish(geo);
+}
+
 void CougarsWaypointsPlugin::TopicChanged(const QString& text) {
+  // Persist whatever the user typed in the agent name field to the outgoing topic
+  if (!current_topic_.empty()) {
+    auto d = manager_.getDefaults(current_topic_);
+    d.agent_ns = ui_.agent_ns_editor->text().trimmed().toStdString();
+    manager_.setDefaults(current_topic_, d);
+  }
+
   current_topic_ = text.toStdString();
   selected_point_ = -1;
   SetWaypointEditorsEnabled(false);
@@ -286,12 +347,30 @@ void CougarsWaypointsPlugin::PublishWaypoints() {
   }
 }
 
-void CougarsWaypointsPlugin::Stop() {
-  if (ui_.apply_all->isChecked()) {
-    StopAll();
-  } else if (!current_topic_.empty()) {
-    PublishTopic(current_topic_, {});
-    PrintWarning("Stopped");
+void CougarsWaypointsPlugin::SaveAllWaypoints() {
+  // Flush current agent_ns before saving
+  if (!current_topic_.empty()) {
+    auto d = manager_.getDefaults(current_topic_);
+    d.agent_ns = ui_.agent_ns_editor->text().trimmed().toStdString();
+    manager_.setDefaults(current_topic_, d);
+  }
+
+  if (manager_.getAllWaypoints().empty()) { PrintError("No waypoints to save"); return; }
+
+  const char* overlay_ws = std::getenv("OVERLAY_WS");
+  QString path = QString::fromUtf8(overlay_ws) + "/src/cougars_mapviz/missions";
+  QDir dir(path);
+  if (!dir.exists()) dir.mkpath(".");
+
+  QString filename =
+      QFileDialog::getSaveFileName(config_widget_, "Save All Missions", path, "JSON Files (*.json)");
+  if (filename.isEmpty()) return;
+  if (!filename.endsWith(".json", Qt::CaseInsensitive)) filename += ".json";
+
+  if (manager_.saveToFile(filename.toStdString(), "")) {
+    PrintInfo("Saved all (" + std::to_string(manager_.getAllWaypoints().size()) + " topics)");
+  } else {
+    PrintError("Failed to save file");
   }
 }
 
@@ -304,14 +383,6 @@ void CougarsWaypointsPlugin::PublishAll() {
   PrintInfo("Published all (" + std::to_string(count) + " topics)");
 }
 
-void CougarsWaypointsPlugin::StopAll() {
-  for (const auto& [topic, wps] : manager_.getAllWaypoints()) {
-    (void)wps;
-    PublishTopic(topic, {});
-  }
-  PrintWarning("Stopped all (" + std::to_string(manager_.getAllWaypoints().size()) + " topics)");
-}
-
 bool CougarsWaypointsPlugin::IsTopicAvailable(const std::string& topic) {
   return ui_.topic_selector->findText(QString::fromStdString(topic)) != -1;
 }
@@ -321,6 +392,15 @@ bool CougarsWaypointsPlugin::IsTopicAvailable(const std::string& topic) {
 // ---------------------------------------------------------------------------
 
 void CougarsWaypointsPlugin::SaveWaypoints() {
+  if (current_topic_.empty()) { PrintError("No topic selected"); return; }
+
+  // Flush the agent name field to the current topic before saving
+  {
+    auto d = manager_.getDefaults(current_topic_);
+    d.agent_ns = ui_.agent_ns_editor->text().trimmed().toStdString();
+    manager_.setDefaults(current_topic_, d);
+  }
+
   const char* overlay_ws = std::getenv("OVERLAY_WS");
   QString path = QString::fromUtf8(overlay_ws) + "/src/cougars_mapviz/missions";
   QDir dir(path);
@@ -331,20 +411,30 @@ void CougarsWaypointsPlugin::SaveWaypoints() {
   if (filename.isEmpty()) return;
   if (!filename.endsWith(".json", Qt::CaseInsensitive)) filename += ".json";
 
-  std::string topic_to_save;
-  if (!ui_.apply_all->isChecked()) {
-    if (current_topic_.empty()) { PrintError("No topic selected to save"); return; }
-    topic_to_save = current_topic_;
-  }
-
-  if (manager_.saveToFile(filename.toStdString(), topic_to_save)) {
-    if (topic_to_save.empty()) {
-      PrintInfo("Saved all (" + std::to_string(manager_.getAllWaypoints().size()) + " topics)");
+  if (ui_.apply_all->isChecked()) {
+    // Broadcast: write the current topic's waypoints for every topic in the dropdown
+    auto current_wps = manager_.getWaypoints(current_topic_);
+    std::map<std::string, std::vector<CougarsWaypoint>> backup;
+    for (int i = 0; i < ui_.topic_selector->count(); i++) {
+      std::string topic = ui_.topic_selector->itemText(i).toStdString();
+      if (topic != current_topic_) {
+        backup[topic] = manager_.getWaypoints(topic);
+        manager_.setWaypoints(topic, current_wps);
+      }
+    }
+    bool ok = manager_.saveToFile(filename.toStdString(), "");
+    for (const auto& [topic, wps] : backup) manager_.setWaypoints(topic, wps);
+    if (ok) {
+      PrintInfo("Saved to all (" + std::to_string(ui_.topic_selector->count()) + " topics)");
     } else {
-      PrintInfo("Saved topic: " + topic_to_save);
+      PrintError("Failed to save file");
     }
   } else {
-    PrintError("Failed to save file");
+    if (manager_.saveToFile(filename.toStdString(), current_topic_)) {
+      PrintInfo("Saved: " + current_topic_);
+    } else {
+      PrintError("Failed to save file");
+    }
   }
 }
 
@@ -362,12 +452,13 @@ void CougarsWaypointsPlugin::LoadWaypoints() {
   }
 
   if (manager_.loadFromFile(filename.toStdString(), topic_to_load)) {
-    std::vector<std::string> unavailable;
+    // Add any loaded topics not yet in the dropdown (manually-added agents)
     for (const auto& [topic, wps] : manager_.getAllWaypoints()) {
       (void)wps;
-      if (!IsTopicAvailable(topic)) unavailable.push_back(topic);
+      if (ui_.topic_selector->findText(QString::fromStdString(topic)) == -1) {
+        ui_.topic_selector->addItem(QString::fromStdString(topic));
+      }
     }
-    for (const auto& t : unavailable) manager_.removeTopic(t);
 
     TopicChanged(QString::fromStdString(current_topic_));
     if (topic_to_load.empty()) {
@@ -642,6 +733,10 @@ void CougarsWaypointsPlugin::UpdateEditorsFromWaypoint(const CougarsWaypoint& wp
 }
 
 void CougarsWaypointsPlugin::UpdateMissionDefaultsUI(const MissionDefaults& d) {
+  ui_.agent_ns_editor->blockSignals(true);
+  ui_.agent_ns_editor->setText(QString::fromStdString(d.agent_ns));
+  ui_.agent_ns_editor->blockSignals(false);
+
   ui_.mission_id_editor->blockSignals(true);
   ui_.mission_id_editor->setValue(d.mission_id);
   ui_.mission_id_editor->blockSignals(false);

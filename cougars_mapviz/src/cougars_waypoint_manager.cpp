@@ -74,6 +74,9 @@ void CougarsWaypointManager::setDefaults(const std::string& topic, const Mission
   defaults_map_[topic] = defaults;
 }
 
+void CougarsWaypointManager::setOrigin(const GeoOrigin& origin) { origin_ = origin; }
+GeoOrigin CougarsWaypointManager::getOrigin() const { return origin_; }
+
 // ---------------------------------------------------------------------------
 // JSON helpers
 // ---------------------------------------------------------------------------
@@ -142,6 +145,14 @@ bool CougarsWaypointManager::saveToFile(const std::string& filename,
                                      const std::string& specific_topic) const {
   QJsonObject root;
 
+  if (origin_.valid) {
+    QJsonObject orig;
+    orig["latitude"] = origin_.latitude;
+    orig["longitude"] = origin_.longitude;
+    orig["altitude"] = origin_.altitude;
+    root["origin"] = orig;
+  }
+
   for (const auto& [topic, wps] : waypoint_map_) {
     if (!specific_topic.empty() && topic != specific_topic) continue;
 
@@ -150,9 +161,13 @@ bool CougarsWaypointManager::saveToFile(const std::string& filename,
     if (it != defaults_map_.end()) defs = it->second;
 
     QJsonObject entry;
+    entry["topic"] = QString::fromStdString(topic);
     entry["defaults"] = defaultsToJson(defs);
     entry["waypoints"] = waypointsToJson(wps);
-    root[QString::fromStdString(topic)] = entry;
+
+    QString key = defs.agent_ns.empty() ? QString::fromStdString(topic)
+                                        : QString::fromStdString(defs.agent_ns);
+    root[key] = entry;
   }
 
   QFile file(QString::fromStdString(filename));
@@ -172,9 +187,21 @@ bool CougarsWaypointManager::loadFromFile(const std::string& filename,
   if (!doc.isObject()) return false;
 
   QJsonObject root = doc.object();
+
+  if (root.contains("origin")) {
+    QJsonObject orig = root["origin"].toObject();
+    GeoOrigin o;
+    o.latitude = orig["latitude"].toDouble();
+    o.longitude = orig["longitude"].toDouble();
+    o.altitude = orig["altitude"].toDouble();
+    o.valid = true;
+    origin_ = o;
+  }
+
   int loaded = 0;
 
   for (const QString& key : root.keys()) {
+    if (key == "origin") continue;
     std::string topic = key.toStdString();
     if (!specific_topic.empty() && topic != specific_topic) continue;
 
@@ -186,14 +213,21 @@ bool CougarsWaypointManager::loadFromFile(const std::string& filename,
       defaults_map_[topic] = MissionDefaults{};
     } else if (val.isObject()) {
       QJsonObject entry = val.toObject();
+
+      // If the entry has a "topic" field the key is an agent_ns, not the topic
+      std::string actual_topic = entry.contains("topic")
+                                     ? entry["topic"].toString().toStdString()
+                                     : topic;
+
       if (entry.contains("waypoints")) {
-        waypoint_map_[topic] = waypointsFromJson(entry["waypoints"].toArray());
+        waypoint_map_[actual_topic] = waypointsFromJson(entry["waypoints"].toArray());
       }
-      if (entry.contains("defaults")) {
-        defaults_map_[topic] = defaultsFromJson(entry["defaults"].toObject());
-      } else {
-        defaults_map_[topic] = MissionDefaults{};
-      }
+
+      MissionDefaults defs = entry.contains("defaults")
+                                 ? defaultsFromJson(entry["defaults"].toObject())
+                                 : MissionDefaults{};
+      if (entry.contains("topic")) defs.agent_ns = topic;  // key was the ns
+      defaults_map_[actual_topic] = defs;
     }
     loaded++;
   }

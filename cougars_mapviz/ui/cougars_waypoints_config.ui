@@ -10,7 +10,7 @@
   <class>cougars_waypoints_config</class>
   <widget class="QWidget" name="cougars_waypoints_config">
     <property name="geometry">
-      <rect><x>0</x><y>0</y><width>404</width><height>590</height></rect>
+      <rect><x>0</x><y>0</y><width>404</width><height>610</height></rect>
     </property>
     <property name="windowTitle"><string>Form</string></property>
     <property name="styleSheet"><string notr="true" /></property>
@@ -35,8 +35,26 @@
         </widget>
       </item>
 
-      <!-- Row 1: Mission Defaults header -->
-      <item row="1" column="0" colspan="4">
+      <!-- Row 1: Agent Namespace -->
+      <item row="1" column="0">
+        <widget class="QLabel" name="label_agent_ns">
+          <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
+          <property name="text"><string>Agent Name:</string></property>
+        </widget>
+      </item>
+      <item row="1" column="1" colspan="2">
+        <widget class="QLineEdit" name="agent_ns_editor">
+          <property name="placeholderText"><string>e.g. coug1</string></property>
+        </widget>
+      </item>
+      <item row="1" column="3">
+        <widget class="QPushButton" name="add_agent">
+          <property name="text"><string>Add</string></property>
+        </widget>
+      </item>
+
+      <!-- Row 2: Mission Defaults header -->
+      <item row="2" column="0" colspan="4">
         <widget class="QLabel" name="label_mission_defaults">
           <property name="font">
             <font><family>Sans Serif</family><pointsize>8</pointsize><bold>true</bold></font>
@@ -48,14 +66,14 @@
         </widget>
       </item>
 
-      <!-- Row 2: Mission ID -->
-      <item row="2" column="0">
+      <!-- Row 3: Mission ID -->
+      <item row="3" column="0">
         <widget class="QLabel" name="label_mission_id">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Mission ID:</string></property>
         </widget>
       </item>
-      <item row="2" column="1" colspan="3">
+      <item row="3" column="1" colspan="3">
         <widget class="QSpinBox" name="mission_id_editor">
           <property name="minimum"><number>0</number></property>
           <property name="maximum"><number>65535</number></property>
@@ -64,14 +82,14 @@
         </widget>
       </item>
 
-      <!-- Row 3: Default Speed -->
-      <item row="3" column="0">
+      <!-- Row 4: Default Speed -->
+      <item row="4" column="0">
         <widget class="QLabel" name="label_default_speed">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Speed:</string></property>
         </widget>
       </item>
-      <item row="3" column="1" colspan="3">
+      <item row="4" column="1" colspan="3">
         <widget class="QDoubleSpinBox" name="default_speed_editor">
           <property name="decimals"><number>1</number></property>
           <property name="minimum"><double>0.0</double></property>
@@ -81,14 +99,14 @@
         </widget>
       </item>
 
-      <!-- Row 4: Default Slip Radius -->
-      <item row="4" column="0">
+      <!-- Row 5: Default Slip Radius -->
+      <item row="5" column="0">
         <widget class="QLabel" name="label_default_slip">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Slip Radius:</string></property>
         </widget>
       </item>
-      <item row="4" column="1" colspan="3">
+      <item row="5" column="1" colspan="3">
         <widget class="QDoubleSpinBox" name="default_slip_radius_editor">
           <property name="decimals"><number>2</number></property>
           <property name="minimum"><double>0.0</double></property>
@@ -98,14 +116,14 @@
         </widget>
       </item>
 
-      <!-- Row 5: Default Capture Radius -->
-      <item row="5" column="0">
+      <!-- Row 6: Default Capture Radius -->
+      <item row="6" column="0">
         <widget class="QLabel" name="label_default_capture">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Capture Radius:</string></property>
         </widget>
       </item>
-      <item row="5" column="1" colspan="3">
+      <item row="6" column="1" colspan="3">
         <widget class="QDoubleSpinBox" name="default_capture_radius_editor">
           <property name="decimals"><number>2</number></property>
           <property name="minimum"><double>0.0</double></property>
@@ -115,8 +133,8 @@
         </widget>
       </item>
 
-      <!-- Row 6: Waypoint Properties header -->
-      <item row="6" column="0" colspan="4">
+      <!-- Row 7: Waypoint Properties header -->
+      <item row="7" column="0" colspan="4">
         <widget class="QLabel" name="label_wp_props">
           <property name="font">
             <font><family>Sans Serif</family><pointsize>8</pointsize><bold>true</bold></font>
@@ -128,14 +146,14 @@
         </widget>
       </item>
 
-      <!-- Row 7: Depth value -->
-      <item row="7" column="0">
+      <!-- Row 8: Depth value -->
+      <item row="8" column="0">
         <widget class="QLabel" name="label_depth">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Depth:</string></property>
         </widget>
       </item>
-      <item row="7" column="1" colspan="3">
+      <item row="8" column="1" colspan="3">
         <widget class="QDoubleSpinBox" name="depth_editor">
           <property name="enabled"><bool>false</bool></property>
           <property name="decimals"><number>2</number></property>
@@ -145,14 +163,14 @@
         </widget>
       </item>
 
-      <!-- Row 8: Depth reference (required) -->
-      <item row="8" column="0">
+      <!-- Row 9: Depth reference (required) -->
+      <item row="9" column="0">
         <widget class="QLabel" name="label_depth_ref">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Depth Ref:</string></property>
         </widget>
       </item>
-      <item row="8" column="1" colspan="3">
+      <item row="9" column="1" colspan="3">
         <widget class="QComboBox" name="depth_ref_selector">
           <property name="enabled"><bool>false</bool></property>
           <item><property name="text"><string>surface</string></property></item>
@@ -160,28 +178,28 @@
         </widget>
       </item>
 
-      <!-- Row 9: Park (required) -->
-      <item row="9" column="0">
+      <!-- Row 10: Park (required) -->
+      <item row="10" column="0">
         <widget class="QLabel" name="label_park">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Park:</string></property>
         </widget>
       </item>
-      <item row="9" column="1" colspan="3">
+      <item row="10" column="1" colspan="3">
         <widget class="QCheckBox" name="park_checkbox">
           <property name="enabled"><bool>false</bool></property>
           <property name="text"><string></string></property>
         </widget>
       </item>
 
-      <!-- Row 10: Speed (optional per-waypoint override) -->
-      <item row="10" column="0">
+      <!-- Row 11: Speed (optional per-waypoint override) -->
+      <item row="11" column="0">
         <widget class="QLabel" name="label_speed">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Speed (opt):</string></property>
         </widget>
       </item>
-      <item row="10" column="1" colspan="3">
+      <item row="11" column="1" colspan="3">
         <layout class="QHBoxLayout" name="layout_speed">
           <item>
             <widget class="QCheckBox" name="speed_override_checkbox">
@@ -202,14 +220,14 @@
         </layout>
       </item>
 
-      <!-- Row 11: Slip Radius (optional per-waypoint override) -->
-      <item row="11" column="0">
+      <!-- Row 12: Slip Radius (optional per-waypoint override) -->
+      <item row="12" column="0">
         <widget class="QLabel" name="label_slip_radius">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Slip Radius (opt):</string></property>
         </widget>
       </item>
-      <item row="11" column="1" colspan="3">
+      <item row="12" column="1" colspan="3">
         <layout class="QHBoxLayout" name="layout_slip_radius">
           <item>
             <widget class="QCheckBox" name="slip_radius_override_checkbox">
@@ -230,14 +248,14 @@
         </layout>
       </item>
 
-      <!-- Row 12: Capture Radius (optional per-waypoint override) -->
-      <item row="12" column="0">
+      <!-- Row 13: Capture Radius (optional per-waypoint override) -->
+      <item row="13" column="0">
         <widget class="QLabel" name="label_capture_radius">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Capture Radius (opt):</string></property>
         </widget>
       </item>
-      <item row="12" column="1" colspan="3">
+      <item row="13" column="1" colspan="3">
         <layout class="QHBoxLayout" name="layout_capture_radius">
           <item>
             <widget class="QCheckBox" name="capture_radius_override_checkbox">
@@ -258,28 +276,12 @@
         </layout>
       </item>
 
-      <!-- Row 13: Publish / Stop -->
-      <item row="13" column="1" colspan="3">
-        <layout class="QHBoxLayout" name="horizontalLayout_pub_stop">
+      <!-- Row 14: Publish / Load -->
+      <item row="14" column="1" colspan="3">
+        <layout class="QHBoxLayout" name="horizontalLayout_pub_load">
           <item>
             <widget class="QPushButton" name="publish">
               <property name="text"><string>Publish</string></property>
-            </widget>
-          </item>
-          <item>
-            <widget class="QPushButton" name="stop">
-              <property name="text"><string>Stop</string></property>
-            </widget>
-          </item>
-        </layout>
-      </item>
-
-      <!-- Row 14: Save / Load -->
-      <item row="14" column="1" colspan="3">
-        <layout class="QHBoxLayout" name="horizontalLayout_file">
-          <item>
-            <widget class="QPushButton" name="save">
-              <property name="text"><string>Save</string></property>
             </widget>
           </item>
           <item>
@@ -290,30 +292,46 @@
         </layout>
       </item>
 
-      <!-- Row 15: Clear -->
+      <!-- Row 15: Save / Save All -->
       <item row="15" column="1" colspan="3">
+        <layout class="QHBoxLayout" name="horizontalLayout_file">
+          <item>
+            <widget class="QPushButton" name="save">
+              <property name="text"><string>Save</string></property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QPushButton" name="save_all">
+              <property name="text"><string>Save All</string></property>
+            </widget>
+          </item>
+        </layout>
+      </item>
+
+      <!-- Row 16: Clear -->
+      <item row="16" column="1" colspan="3">
         <widget class="QPushButton" name="clear">
           <property name="text"><string>Clear</string></property>
         </widget>
       </item>
 
-      <!-- Row 16: Apply all -->
-      <item row="16" column="1" colspan="3">
+      <!-- Row 17: Apply all -->
+      <item row="17" column="1" colspan="3">
         <widget class="QCheckBox" name="apply_all">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Apply to all topics</string></property>
-          <property name="checked"><bool>true</bool></property>
+          <property name="checked"><bool>false</bool></property>
         </widget>
       </item>
 
-      <!-- Row 17: Status -->
-      <item row="17" column="0">
+      <!-- Row 18: Status -->
+      <item row="18" column="0">
         <widget class="QLabel" name="label_status">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="text"><string>Status:</string></property>
         </widget>
       </item>
-      <item row="17" column="1" colspan="3">
+      <item row="18" column="1" colspan="3">
         <widget class="QLabel" name="status">
           <property name="font"><font><family>Sans Serif</family><pointsize>8</pointsize></font></property>
           <property name="styleSheet"><string notr="true" /></property>

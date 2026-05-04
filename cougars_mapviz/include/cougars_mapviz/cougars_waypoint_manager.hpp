@@ -28,6 +28,17 @@
 namespace cougars_mapviz {
 
 // ---------------------------------------------------------------------------
+// Origin
+// ---------------------------------------------------------------------------
+
+struct GeoOrigin {
+  double latitude = 0.0;
+  double longitude = 0.0;
+  double altitude = 0.0;
+  bool valid = false;
+};
+
+// ---------------------------------------------------------------------------
 // Per-waypoint data
 // ---------------------------------------------------------------------------
 
@@ -53,6 +64,7 @@ struct MissionDefaults {
   double speed = 50.0;
   double slip_radius = 10.0;
   double capture_radius = 4.0;
+  std::string agent_ns;  // used as JSON key on save; empty = use full topic name
 };
 
 // ---------------------------------------------------------------------------
@@ -77,6 +89,10 @@ class CougarsWaypointManager {
   MissionDefaults getDefaults(const std::string& topic) const;
   void setDefaults(const std::string& topic, const MissionDefaults& defaults);
 
+  // Origin
+  void setOrigin(const GeoOrigin& origin);
+  GeoOrigin getOrigin() const;
+
   /**
    * @brief Saves all (or one) topic to a JSON file.
    *        JSON format: { "/topic": { "defaults": {...}, "waypoints": [...] } }
@@ -93,6 +109,7 @@ class CougarsWaypointManager {
  private:
   std::map<std::string, std::vector<CougarsWaypoint>> waypoint_map_;
   std::map<std::string, MissionDefaults> defaults_map_;
+  GeoOrigin origin_;
 };
 
 }  // namespace cougars_mapviz

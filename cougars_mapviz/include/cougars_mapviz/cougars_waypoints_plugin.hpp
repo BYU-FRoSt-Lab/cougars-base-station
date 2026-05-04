@@ -31,8 +31,10 @@
 #include <QTimer>
 #include <QWidget>
 #include <cougars_mapviz/cougars_waypoint_manager.hpp>
+#include <geographic_msgs/msg/geo_point.hpp>
 #include <geographic_msgs/msg/route_network.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <map>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
@@ -69,14 +71,14 @@ class CougarsWaypointsPlugin : public mapviz::MapvizPlugin {
 
  protected Q_SLOTS:
   void PublishWaypoints();
-  void Stop();
+  void PublishAll();
   void Clear();
   void SaveWaypoints();
+  void SaveAllWaypoints();
   void LoadWaypoints();
   void TopicChanged(const QString& text);
   void DiscoverTopics();
-  void PublishAll();
-  void StopAll();
+  void AddAgent();
   void VisibilityChanged(bool visible);
 
   // Per-waypoint property slots (enabled only when a point is selected)
@@ -103,6 +105,8 @@ class CougarsWaypointsPlugin : public mapviz::MapvizPlugin {
 
   std::map<std::string, rclcpp::Publisher<geographic_msgs::msg::RouteNetwork>::SharedPtr>
       publishers_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr origin_sub_;
+  rclcpp::Publisher<geographic_msgs::msg::GeoPoint>::SharedPtr origin_pub_;
   CougarsWaypointManager manager_;
   std::string current_topic_;
 
@@ -116,6 +120,7 @@ class CougarsWaypointsPlugin : public mapviz::MapvizPlugin {
 
   void PublishTopic(const std::string& topic, const std::vector<CougarsWaypoint>& wps);
   bool IsTopicAvailable(const std::string& topic);
+  void OriginCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   int GetClosestPoint(const QPointF& point, double& distance);
 
   // Drawing helpers
