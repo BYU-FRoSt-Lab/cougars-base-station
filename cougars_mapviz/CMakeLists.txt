@@ -32,6 +32,7 @@ find_package(rclcpp REQUIRED)
 find_package(swri_transform_util REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(Qt5 REQUIRED COMPONENTS Core Gui OpenGL Widgets)
+find_package(yaml-cpp REQUIRED)
 find_package(OpenGL REQUIRED)
 
 # --- Qt Setup ---
@@ -75,6 +76,7 @@ target_link_libraries(${PROJECT_NAME}
   Qt5::OpenGL
   Qt5::Widgets
   OpenGL::GL
+  yaml-cpp
 )
 
 # --- Export ---

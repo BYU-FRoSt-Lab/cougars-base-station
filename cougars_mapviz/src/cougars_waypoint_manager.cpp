@@ -18,11 +18,8 @@
  * @date Jan 2026
  */
 
-#include <QFile>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QString>
+#include <fstream>
+#include <yaml-cpp/yaml.h>
 #include <cougars_mapviz/cougars_waypoint_manager.hpp>
 
 namespace cougars_mapviz {
@@ -78,60 +75,31 @@ void CougarsWaypointManager::setOrigin(const GeoOrigin& origin) { origin_ = orig
 GeoOrigin CougarsWaypointManager::getOrigin() const { return origin_; }
 
 // ---------------------------------------------------------------------------
-// JSON helpers
+// YAML helpers
 // ---------------------------------------------------------------------------
 
-static QJsonObject defaultsToJson(const MissionDefaults& d) {
-  QJsonObject obj;
-  obj["mission_id"] = d.mission_id;
-  obj["speed"] = d.speed;
-  obj["slip_radius"] = d.slip_radius;
-  obj["capture_radius"] = d.capture_radius;
-  return obj;
-}
-
-static MissionDefaults defaultsFromJson(const QJsonObject& obj) {
+static MissionDefaults defaultsFromYaml(const YAML::Node& node) {
   MissionDefaults d;
-  if (obj.contains("mission_id")) d.mission_id = obj["mission_id"].toInt();
-  if (obj.contains("speed")) d.speed = obj["speed"].toDouble();
-  if (obj.contains("slip_radius")) d.slip_radius = obj["slip_radius"].toDouble();
-  if (obj.contains("capture_radius")) d.capture_radius = obj["capture_radius"].toDouble();
+  if (node["mission_id"]) d.mission_id = node["mission_id"].as<int>();
+  if (node["speed"]) d.speed = node["speed"].as<double>();
+  if (node["slip_radius"]) d.slip_radius = node["slip_radius"].as<double>();
+  if (node["capture_radius"]) d.capture_radius = node["capture_radius"].as<double>();
   return d;
 }
 
-static QJsonArray waypointsToJson(const std::vector<CougarsWaypoint>& wps) {
-  QJsonArray arr;
-  for (const auto& wp : wps) {
-    QJsonObject obj;
-    obj["lon"] = wp.pose.position.x;
-    obj["lat"] = wp.pose.position.y;
-    obj["z"] = wp.pose.position.z;
-    obj["depth_ref"] = QString::fromStdString(wp.depth_ref);
-    obj["park"] = wp.park;
-    if (wp.speed.has_value()) obj["speed"] = *wp.speed;
-    if (wp.slip_radius.has_value()) obj["slip_radius"] = *wp.slip_radius;
-    if (wp.capture_radius.has_value()) obj["capture_radius"] = *wp.capture_radius;
-    arr.append(obj);
-  }
-  return arr;
-}
-
-static std::vector<CougarsWaypoint> waypointsFromJson(const QJsonArray& arr) {
+static std::vector<CougarsWaypoint> waypointsFromYaml(const YAML::Node& seq) {
   std::vector<CougarsWaypoint> wps;
-  for (const auto& val : arr) {
-    QJsonObject obj = val.toObject();
-    if (!obj.contains("lat") || !obj.contains("lon")) continue;
-
+  for (const auto& node : seq) {
+    if (!node["lat"] || !node["lon"]) continue;
     CougarsWaypoint wp;
-    wp.pose.position.x = obj["lon"].toDouble();
-    wp.pose.position.y = obj["lat"].toDouble();
-    wp.pose.position.z = obj["z"].toDouble();
-    wp.depth_ref =
-        obj.contains("depth_ref") ? obj["depth_ref"].toString().toStdString() : "surface";
-    wp.park = obj.contains("park") ? obj["park"].toBool() : false;
-    if (obj.contains("speed")) wp.speed = obj["speed"].toDouble();
-    if (obj.contains("slip_radius")) wp.slip_radius = obj["slip_radius"].toDouble();
-    if (obj.contains("capture_radius")) wp.capture_radius = obj["capture_radius"].toDouble();
+    wp.pose.position.x = node["lon"].as<double>();
+    wp.pose.position.y = node["lat"].as<double>();
+    wp.pose.position.z = node["z"] ? node["z"].as<double>() : 0.0;
+    wp.depth_ref = node["depth_ref"] ? node["depth_ref"].as<std::string>() : "surface";
+    wp.park = node["park"] ? node["park"].as<bool>() : false;
+    if (node["speed"]) wp.speed = node["speed"].as<double>();
+    if (node["slip_radius"]) wp.slip_radius = node["slip_radius"].as<double>();
+    if (node["capture_radius"]) wp.capture_radius = node["capture_radius"].as<double>();
     wps.push_back(wp);
   }
   return wps;
@@ -143,14 +111,16 @@ static std::vector<CougarsWaypoint> waypointsFromJson(const QJsonArray& arr) {
 
 bool CougarsWaypointManager::saveToFile(const std::string& filename,
                                      const std::string& specific_topic) const {
-  QJsonObject root;
+  YAML::Emitter out;
+  out << YAML::BeginMap;
+  out << YAML::Key << "mission_type" << YAML::Value << "waypoints";
 
   if (origin_.valid) {
-    QJsonObject orig;
-    orig["latitude"] = origin_.latitude;
-    orig["longitude"] = origin_.longitude;
-    orig["altitude"] = origin_.altitude;
-    root["origin"] = orig;
+    out << YAML::Key << "origin" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "altitude" << YAML::Value << origin_.altitude;
+    out << YAML::Key << "latitude" << YAML::Value << origin_.latitude;
+    out << YAML::Key << "longitude" << YAML::Value << origin_.longitude;
+    out << YAML::EndMap;
   }
 
   for (const auto& [topic, wps] : waypoint_map_) {
@@ -160,73 +130,87 @@ bool CougarsWaypointManager::saveToFile(const std::string& filename,
     auto it = defaults_map_.find(topic);
     if (it != defaults_map_.end()) defs = it->second;
 
-    QJsonObject entry;
-    entry["topic"] = QString::fromStdString(topic);
-    entry["defaults"] = defaultsToJson(defs);
-    entry["waypoints"] = waypointsToJson(wps);
+    std::string key = defs.agent_ns.empty() ? topic : defs.agent_ns;
+    out << YAML::Key << key << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "topic" << YAML::Value << topic;
 
-    QString key = defs.agent_ns.empty() ? QString::fromStdString(topic)
-                                        : QString::fromStdString(defs.agent_ns);
-    root[key] = entry;
+    out << YAML::Key << "defaults" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "capture_radius" << YAML::Value << defs.capture_radius;
+    out << YAML::Key << "mission_id" << YAML::Value << defs.mission_id;
+    out << YAML::Key << "slip_radius" << YAML::Value << defs.slip_radius;
+    out << YAML::Key << "speed" << YAML::Value << defs.speed;
+    out << YAML::EndMap;
+
+    out << YAML::Key << "waypoints" << YAML::Value << YAML::BeginSeq;
+    for (const auto& wp : wps) {
+      out << YAML::BeginMap;
+      out << YAML::Key << "depth_ref" << YAML::Value << wp.depth_ref;
+      out << YAML::Key << "lat" << YAML::Value << wp.pose.position.y;
+      out << YAML::Key << "lon" << YAML::Value << wp.pose.position.x;
+      out << YAML::Key << "park" << YAML::Value << wp.park;
+      out << YAML::Key << "z" << YAML::Value << wp.pose.position.z;
+      if (wp.speed.has_value()) out << YAML::Key << "speed" << YAML::Value << *wp.speed;
+      if (wp.slip_radius.has_value())
+        out << YAML::Key << "slip_radius" << YAML::Value << *wp.slip_radius;
+      if (wp.capture_radius.has_value())
+        out << YAML::Key << "capture_radius" << YAML::Value << *wp.capture_radius;
+      out << YAML::EndMap;
+    }
+    out << YAML::EndSeq;
+    out << YAML::EndMap;
   }
 
-  QFile file(QString::fromStdString(filename));
-  if (!file.open(QIODevice::WriteOnly)) return false;
-  file.write(QJsonDocument(root).toJson());
-  file.close();
+  out << YAML::EndMap;
+
+  std::ofstream file(filename);
+  if (!file.is_open()) return false;
+  file << out.c_str() << '\n';
   return true;
 }
 
 bool CougarsWaypointManager::loadFromFile(const std::string& filename,
                                        const std::string& specific_topic) {
-  QFile file(QString::fromStdString(filename));
-  if (!file.open(QIODevice::ReadOnly)) return false;
+  YAML::Node root;
+  try {
+    root = YAML::LoadFile(filename);
+  } catch (const YAML::Exception&) {
+    return false;
+  }
+  if (!root.IsMap()) return false;
 
-  QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-  file.close();
-  if (!doc.isObject()) return false;
-
-  QJsonObject root = doc.object();
-
-  if (root.contains("origin")) {
-    QJsonObject orig = root["origin"].toObject();
+  if (root["origin"]) {
+    YAML::Node orig = root["origin"];
     GeoOrigin o;
-    o.latitude = orig["latitude"].toDouble();
-    o.longitude = orig["longitude"].toDouble();
-    o.altitude = orig["altitude"].toDouble();
+    o.latitude = orig["latitude"].as<double>(0.0);
+    o.longitude = orig["longitude"].as<double>(0.0);
+    o.altitude = orig["altitude"].as<double>(0.0);
     o.valid = true;
     origin_ = o;
   }
 
   int loaded = 0;
 
-  for (const QString& key : root.keys()) {
-    if (key == "origin") continue;
-    std::string topic = key.toStdString();
-    if (!specific_topic.empty() && topic != specific_topic) continue;
+  for (auto it = root.begin(); it != root.end(); ++it) {
+    std::string key = it->first.as<std::string>();
+    if (key == "origin" || key == "mission_type") continue;
+    if (!specific_topic.empty() && key != specific_topic) continue;
 
-    QJsonValue val = root[key];
+    YAML::Node val = it->second;
 
-    if (val.isArray()) {
-      // Legacy format: array of waypoints, no defaults stored
-      waypoint_map_[topic] = waypointsFromJson(val.toArray());
-      defaults_map_[topic] = MissionDefaults{};
-    } else if (val.isObject()) {
-      QJsonObject entry = val.toObject();
-
+    if (val.IsSequence()) {
+      // Legacy format: bare array of waypoints
+      waypoint_map_[key] = waypointsFromYaml(val);
+      defaults_map_[key] = MissionDefaults{};
+    } else if (val.IsMap()) {
       // If the entry has a "topic" field the key is an agent_ns, not the topic
-      std::string actual_topic = entry.contains("topic")
-                                     ? entry["topic"].toString().toStdString()
-                                     : topic;
+      std::string actual_topic = val["topic"] ? val["topic"].as<std::string>() : key;
 
-      if (entry.contains("waypoints")) {
-        waypoint_map_[actual_topic] = waypointsFromJson(entry["waypoints"].toArray());
+      if (val["waypoints"]) {
+        waypoint_map_[actual_topic] = waypointsFromYaml(val["waypoints"]);
       }
 
-      MissionDefaults defs = entry.contains("defaults")
-                                 ? defaultsFromJson(entry["defaults"].toObject())
-                                 : MissionDefaults{};
-      if (entry.contains("topic")) defs.agent_ns = topic;  // key was the ns
+      MissionDefaults defs = val["defaults"] ? defaultsFromYaml(val["defaults"]) : MissionDefaults{};
+      if (val["topic"]) defs.agent_ns = key;
       defaults_map_[actual_topic] = defs;
     }
     loaded++;

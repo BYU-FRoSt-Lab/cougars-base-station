@@ -363,9 +363,9 @@ void CougarsWaypointsPlugin::SaveAllWaypoints() {
   if (!dir.exists()) dir.mkpath(".");
 
   QString filename =
-      QFileDialog::getSaveFileName(config_widget_, "Save All Missions", path, "JSON Files (*.json)");
+      QFileDialog::getSaveFileName(config_widget_, "Save All Missions", path, "YAML Files (*.yaml)");
   if (filename.isEmpty()) return;
-  if (!filename.endsWith(".json", Qt::CaseInsensitive)) filename += ".json";
+  if (!filename.endsWith(".yaml", Qt::CaseInsensitive)) filename += ".yaml";
 
   if (manager_.saveToFile(filename.toStdString(), "")) {
     PrintInfo("Saved all (" + std::to_string(manager_.getAllWaypoints().size()) + " topics)");
@@ -407,9 +407,9 @@ void CougarsWaypointsPlugin::SaveWaypoints() {
   if (!dir.exists()) dir.mkpath(".");
 
   QString filename =
-      QFileDialog::getSaveFileName(config_widget_, "Save Mission", path, "JSON Files (*.json)");
+      QFileDialog::getSaveFileName(config_widget_, "Save Mission", path, "YAML Files (*.yaml)");
   if (filename.isEmpty()) return;
-  if (!filename.endsWith(".json", Qt::CaseInsensitive)) filename += ".json";
+  if (!filename.endsWith(".yaml", Qt::CaseInsensitive)) filename += ".yaml";
 
   if (ui_.apply_all->isChecked()) {
     // Broadcast: write the current topic's waypoints for every topic in the dropdown
@@ -442,7 +442,7 @@ void CougarsWaypointsPlugin::LoadWaypoints() {
   const char* overlay_ws = std::getenv("OVERLAY_WS");
   QString path = QString::fromUtf8(overlay_ws) + "/src/cougars_mapviz/missions";
   QString filename =
-      QFileDialog::getOpenFileName(config_widget_, "Load Mission", path, "JSON Files (*.json)");
+      QFileDialog::getOpenFileName(config_widget_, "Load Mission", path, "YAML Files (*.yaml)");
   if (filename.isEmpty()) return;
 
   std::string topic_to_load;
@@ -879,6 +879,7 @@ void CougarsWaypointsPlugin::CaptureRadiusChanged(double value) {
 
 bool CougarsWaypointsPlugin::eventFilter(QObject* object, QEvent* event) {
   (void)object;
+  if (current_topic_.empty()) return false;
   switch (event->type()) {
     case QEvent::MouseButtonPress:
       return handleMousePress(dynamic_cast<QMouseEvent*>(event));

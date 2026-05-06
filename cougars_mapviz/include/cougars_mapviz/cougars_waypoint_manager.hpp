@@ -64,7 +64,7 @@ struct MissionDefaults {
   double speed = 50.0;
   double slip_radius = 10.0;
   double capture_radius = 4.0;
-  std::string agent_ns;  // used as JSON key on save; empty = use full topic name
+  std::string agent_ns;  // used as YAML key on save; empty = use full topic name
 };
 
 // ---------------------------------------------------------------------------
@@ -93,17 +93,7 @@ class CougarsWaypointManager {
   void setOrigin(const GeoOrigin& origin);
   GeoOrigin getOrigin() const;
 
-  /**
-   * @brief Saves all (or one) topic to a JSON file.
-   *        JSON format: { "/topic": { "defaults": {...}, "waypoints": [...] } }
-   *        Old array-only format is still readable via loadFromFile.
-   */
   bool saveToFile(const std::string& filename, const std::string& topic = "") const;
-
-  /**
-   * @brief Loads waypoints (and optional defaults) from a JSON file.
-   *        Handles both the new object format and the legacy array format.
-   */
   bool loadFromFile(const std::string& filename, const std::string& topic = "");
 
  private:
