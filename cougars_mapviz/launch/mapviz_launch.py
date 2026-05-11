@@ -12,7 +12,7 @@ def generate_launch_description():
     # Mapviz_config
     
     base_path = get_package_share_directory('cougars_mapviz')
-    config_path = os.path.join(base_path, 'mapviz', 'BlueROV.mvc')
+    config_path = os.path.join(base_path, 'mapviz', 'mapviz_config.mvc')
     # Mapviz origins param file
     mapviz_origins_path = os.path.join(
         base_path, 'mapviz', 'mapviz_origins.yaml'

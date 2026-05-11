@@ -26,6 +26,7 @@ find_package(ament_cmake_auto REQUIRED)
 
 find_package(geographic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(cougars_interfaces REQUIRED)
 find_package(mapviz REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -40,8 +41,8 @@ add_definitions(-DWFlags=WindowFlags)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(UI_FILES ui/cougars_waypoints_config.ui)
-set(SRC_FILES src/cougars_waypoints_plugin.cpp src/cougars_waypoint_manager.cpp)
-set(HEADER_FILES include/${PROJECT_NAME}/cougars_waypoints_plugin.hpp)
+set(SRC_FILES src/cougars_waypoints_plugin.cpp src/cougars_waypoint_manager.cpp src/cougars_startup_plugin.cpp)
+set(HEADER_FILES include/${PROJECT_NAME}/cougars_waypoints_plugin.hpp include/${PROJECT_NAME}/cougars_startup_plugin.hpp)
 
 qt5_wrap_ui(UI_SRC_FILES ${UI_FILES})
 qt5_wrap_cpp(MOC_FILES ${HEADER_FILES})
@@ -68,6 +69,7 @@ ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   swri_transform_util
   tf2
+  cougars_interfaces
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -78,6 +80,9 @@ target_link_libraries(${PROJECT_NAME}
   OpenGL::GL
   yaml-cpp
 )
+
+# Install plugin XML so pluginlib / mapviz can find the plugins
+install(FILES mapviz_plugins.xml DESTINATION share/${PROJECT_NAME})
 
 # --- Export ---
 pluginlib_export_plugin_description_file(mapviz mapviz_plugins.xml)
