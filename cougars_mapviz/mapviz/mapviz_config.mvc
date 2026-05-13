@@ -53,3 +53,8 @@ displays:
     config:
       visible: true
       collapsed: false
+  - type: cougars_mapviz/cougars_origin
+    name: Origin
+    config:
+      visible: true
+      collapsed: true

@@ -41,8 +41,8 @@ add_definitions(-DWFlags=WindowFlags)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(UI_FILES ui/cougars_waypoints_config.ui)
-set(SRC_FILES src/cougars_waypoints_plugin.cpp src/cougars_waypoint_manager.cpp src/cougars_startup_plugin.cpp)
-set(HEADER_FILES include/${PROJECT_NAME}/cougars_waypoints_plugin.hpp include/${PROJECT_NAME}/cougars_startup_plugin.hpp)
+set(SRC_FILES src/cougars_waypoints_plugin.cpp src/cougars_waypoint_manager.cpp src/cougars_startup_plugin.cpp src/cougars_origin_plugin.cpp)
+set(HEADER_FILES include/${PROJECT_NAME}/cougars_waypoints_plugin.hpp include/${PROJECT_NAME}/cougars_startup_plugin.hpp include/${PROJECT_NAME}/cougars_origin_plugin.hpp)
 
 qt5_wrap_ui(UI_SRC_FILES ${UI_FILES})
 qt5_wrap_cpp(MOC_FILES ${HEADER_FILES})

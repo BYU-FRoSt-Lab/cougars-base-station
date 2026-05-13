@@ -10,4 +10,10 @@
          base_class_type="mapviz::MapvizPlugin">
     <description>Simple SystemControl publisher UI</description>
   </class>
+
+  <class name="cougars_mapviz/cougars_origin"
+         type="cougars_mapviz::CougarsOrigin"
+         base_class_type="mapviz::MapvizPlugin">
+    <description>Displays an X marker at the origin location</description>
+  </class>
 </library>
