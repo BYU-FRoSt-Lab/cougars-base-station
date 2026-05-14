@@ -13,6 +13,7 @@
 #include <QEvent>
 
 #include <iostream>
+#include <algorithm>
 #include <yaml-cpp/yaml.h>
 
 #include <rclcpp/rclcpp.hpp>
@@ -23,10 +24,14 @@ PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougarsStartupPlugin, mapviz::MapvizPlugi
 namespace cougars_mapviz {
 
 CougarsStartupPlugin::CougarsStartupPlugin()
-    : MapvizPlugin(), config_widget_(new QWidget()) {
+    : MapvizPlugin(), config_widget_(new QWidget()), ns_combo_(nullptr), namespace_discovery_timer_(nullptr) {
 }
 
 CougarsStartupPlugin::~CougarsStartupPlugin() {
+  if (namespace_discovery_timer_) {
+    namespace_discovery_timer_->stop();
+    delete namespace_discovery_timer_;
+  }
   delete config_widget_;
 }
 
@@ -36,9 +41,8 @@ bool CougarsStartupPlugin::Initialize(QGLWidget* canvas) {
   // Build UI
   auto layout = new QFormLayout(config_widget_);
 
-  auto ns_combo = new QComboBox(config_widget_);
-  ns_combo->addItems({"coug0", "coug1", "coug2", "coug3"});
-  layout->addRow(QString("Vehicle Namespace"), ns_combo);
+  ns_combo_ = new QComboBox(config_widget_);
+  layout->addRow(QString("Publish Topic"), ns_combo_);
 
   auto start_chk = new QCheckBox(config_widget_);
   layout->addRow(QString("Start"), start_chk);
@@ -58,7 +62,7 @@ bool CougarsStartupPlugin::Initialize(QGLWidget* canvas) {
   auto publish_btn = new QPushButton("Publish", config_widget_);
   layout->addRow(publish_btn);
 
-  QObject::connect(publish_btn, &QPushButton::clicked, [this, ns_combo, start_chk, rosbag_chk, rosbag_prefix, thruster_chk, dvl_chk]() {
+  QObject::connect(publish_btn, &QPushButton::clicked, [this, start_chk, rosbag_chk, rosbag_prefix, thruster_chk, dvl_chk]() {
     auto msg = cougars_interfaces::msg::SystemControl();
     msg.header.stamp = node_->now();
 
@@ -68,13 +72,18 @@ bool CougarsStartupPlugin::Initialize(QGLWidget* canvas) {
     msg.thruster_arm.data = thruster_chk->isChecked();
     msg.dvl_acoustics.data = dvl_chk->isChecked();
 
-    std::string ns = ns_combo->currentText().toStdString();
-    std::string t = ns + "/system/control";
+    std::string t = "/" + ns_combo_->currentText().toStdString();  // Full topic name from combo box
     auto pub = node_->create_publisher<cougars_interfaces::msg::SystemControl>(t, rclcpp::QoS(10));
     pub->publish(msg);
 
     PrintInfo("Published SystemControl to " + t);
   });
+
+  // Set up discovery timer (same pattern as waypoint plugin)
+  namespace_discovery_timer_ = new QTimer(this);
+  QObject::connect(namespace_discovery_timer_, SIGNAL(timeout()), this, SLOT(DiscoverNamespaces()));
+  namespace_discovery_timer_->start(1000);
+  DiscoverNamespaces();
 
   return true;
 }
@@ -85,7 +94,9 @@ QWidget* CougarsStartupPlugin::GetConfigWidget(QWidget* parent) {
 }
 
 void CougarsStartupPlugin::Shutdown() {
-  // no-op
+  if (namespace_discovery_timer_) {
+    namespace_discovery_timer_->stop();
+  }
 }
 
 void CougarsStartupPlugin::Draw(double x, double y, double scale) {
@@ -127,6 +138,47 @@ void CougarsStartupPlugin::PrintWarning(const std::string& message) {
 bool CougarsStartupPlugin::eventFilter(QObject* object, QEvent* event) {
   (void)object; (void)event;
   return false;
+}
+
+void CougarsStartupPlugin::DiscoverNamespaces() {
+  auto topics_and_types = node_->get_topic_names_and_types();
+  std::vector<std::string> system_control_topics;
+  
+  for (const auto& [topic, types] : topics_and_types) {
+    // Look for /system/control topics
+    if (topic.find("/system/control") != std::string::npos && 
+        topic.substr(topic.find("/system/control")) == "/system/control") {
+      // Remove leading '/' if present
+      std::string clean_topic = topic;
+      if (!clean_topic.empty() && clean_topic[0] == '/') {
+        clean_topic = clean_topic.substr(1);
+      }
+      system_control_topics.push_back(clean_topic);
+    }
+  }
+  
+  // Sort topics
+  std::sort(system_control_topics.begin(), system_control_topics.end());
+  
+  // Only update UI if topics have changed
+  if (system_control_topics != detected_namespaces_) {
+    detected_namespaces_ = system_control_topics;
+    
+    // Store current selection
+    QString current_selection = ns_combo_->currentText();
+    
+    // Clear and repopulate combo box
+    ns_combo_->clear();
+    for (const auto& topic : system_control_topics) {
+      ns_combo_->addItem(QString::fromStdString(topic));
+    }
+    
+    // Restore selection if still available
+    int index = ns_combo_->findText(current_selection);
+    if (index >= 0) {
+      ns_combo_->setCurrentIndex(index);
+    }
+  }
 }
 
 }  // namespace cougars_mapviz

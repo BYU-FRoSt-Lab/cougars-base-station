@@ -5,7 +5,11 @@
 
 #include <mapviz/mapviz_plugin.h>
 #include <QWidget>
+#include <QComboBox>
+#include <QTimer>
 #include <memory>
+#include <vector>
+#include <string>
 
 namespace cougars_mapviz {
 
@@ -32,8 +36,14 @@ class CougarsStartupPlugin : public mapviz::MapvizPlugin {
   void PrintWarning(const std::string& message) override;
   bool eventFilter(QObject* object, QEvent* event) override;
 
+ private slots:
+  void DiscoverNamespaces();
+
  private:
   QWidget* config_widget_;
+  QComboBox* ns_combo_;
+  QTimer* namespace_discovery_timer_;
+  std::vector<std::string> detected_namespaces_;
   // UI elements are created in the cpp file to avoid Qt header clutter here.
 
   void PublishClicked();
