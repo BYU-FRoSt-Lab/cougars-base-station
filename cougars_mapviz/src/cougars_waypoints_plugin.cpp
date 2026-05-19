@@ -36,6 +36,10 @@ PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougarsWaypointsPlugin, mapviz::MapvizPlu
 
 namespace cougars_mapviz {
 
+// Route network property key names
+static constexpr const char* kPropCaptureRadius = "cap";
+static constexpr const char* kPropSlipRadius = "slip";
+
 // ---------------------------------------------------------------------------
 // Static OpenGL circle helpers
 // ---------------------------------------------------------------------------
@@ -63,6 +67,13 @@ static void DrawCircleOutline(double cx, double cy, double r, float red, float g
     glVertex2d(cx + r * std::cos(angle), cy + r * std::sin(angle));
   }
   glEnd();
+}
+
+static rclcpp::QoS originPublisherQoS() {
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable();
+  qos.transient_local();
+  return qos;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +160,7 @@ bool CougarsWaypointsPlugin::Initialize(QGLWidget* canvas) {
   origin_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
       "/local_xy_origin", origin_qos,
       std::bind(&CougarsWaypointsPlugin::OriginCallback, this, std::placeholders::_1));
-  origin_pub_ = node_->create_publisher<geographic_msgs::msg::GeoPoint>("/origin", 10);
+  origin_pub_ = node_->create_publisher<geographic_msgs::msg::GeoPoint>("/origin", originPublisherQoS());
 
   initialized_ = true;
   return true;
@@ -279,13 +290,13 @@ static geographic_msgs::msg::WayPoint makeGeoWaypoint(uint32_t index, const Coug
   }
   if (wp.slip_radius.has_value()) {
     geographic_msgs::msg::KeyValue kv;
-    kv.key = "slip_radius";
+    kv.key = kPropSlipRadius;
     kv.value = std::to_string(*wp.slip_radius);
     gp.props.push_back(kv);
   }
   if (wp.capture_radius.has_value()) {
     geographic_msgs::msg::KeyValue kv;
-    kv.key = "capture_radius";
+    kv.key = kPropCaptureRadius;
     kv.value = std::to_string(*wp.capture_radius);
     gp.props.push_back(kv);
   }
@@ -320,8 +331,8 @@ void CougarsWaypointsPlugin::PublishTopic(const std::string& topic,
     msg->props.push_back(kv);
   };
   addProp("speed", std::to_string(d.speed));
-  addProp("slip_radius", std::to_string(d.slip_radius));
-  addProp("capture_radius", std::to_string(d.capture_radius));
+  addProp(kPropSlipRadius, std::to_string(d.slip_radius));
+  addProp(kPropCaptureRadius, std::to_string(d.capture_radius));
 
   // Waypoints
   for (size_t i = 0; i < wps.size(); i++) {
