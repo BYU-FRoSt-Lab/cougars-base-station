@@ -32,14 +32,10 @@
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include <QComboBox>
-#include <QTimer>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geographic_msgs/msg/geo_point.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Vector3.h>
-#include <map>
-#include <set>
 #include <string>
 
 namespace cougars_mapviz {
@@ -70,7 +66,6 @@ class CougarsOrigin : public mapviz::MapvizPlugin {
   void OriginCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void UpdateOriginDisplay();
   void PublishOrigin();
-  void DiscoverNamespaces();
 
  private:
   QWidget* config_widget_;
@@ -78,13 +73,9 @@ class CougarsOrigin : public mapviz::MapvizPlugin {
   QDoubleSpinBox* lon_spinbox_;
   QDoubleSpinBox* alt_spinbox_;
   QPushButton* publish_button_;
-  QComboBox* namespace_selector_;
-  QTimer* discovery_timer_;
   mapviz::MapCanvas* map_canvas_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr origin_sub_;
-  std::map<std::string, rclcpp::Publisher<geographic_msgs::msg::GeoPoint>::SharedPtr>
-      publishers_;
-  std::set<std::string> namespaces_; 
+  rclcpp::Publisher<geographic_msgs::msg::GeoPoint>::SharedPtr publisher_;
   tf2::Vector3 origin_;
 };
 

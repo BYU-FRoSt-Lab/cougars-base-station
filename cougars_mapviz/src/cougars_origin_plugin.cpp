@@ -25,28 +25,24 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QComboBox>
-#include <QTimer>
-#include <map>
-#include <set>
 #include <string>
 
 PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougarsOrigin, mapviz::MapvizPlugin)
 
 namespace cougars_mapviz {
 
+static rclcpp::QoS originPublisherQoS() {
+  rclcpp::QoS qos(rclcpp::KeepLast(1));
+  qos.reliable();
+  qos.transient_local();
+  return qos;
+}
+
 CougarsOrigin::CougarsOrigin()
     : MapvizPlugin(), config_widget_(new QWidget()), map_canvas_(nullptr),
       origin_(0, 0, 0) {
   QVBoxLayout* layout = new QVBoxLayout(config_widget_);
-  // Namespace selector at the top
-  QHBoxLayout* ns_layout = new QHBoxLayout();
-  ns_layout->addWidget(new QLabel("Namespace:"));
-  namespace_selector_ = new QComboBox();
-  namespace_selector_->addItem("All detected");
-  ns_layout->addWidget(namespace_selector_);
-  layout->addLayout(ns_layout);
-  
+
   // Latitude
   QHBoxLayout* lat_layout = new QHBoxLayout();
   lat_layout->addWidget(new QLabel("Latitude:"));
@@ -93,12 +89,9 @@ bool CougarsOrigin::Initialize(QGLWidget* canvas) {
       "/local_xy_origin", origin_qos,
       std::bind(&CougarsOrigin::OriginCallback, this, std::placeholders::_1));
 
-    // Start namespace discovery
-    discovery_timer_ = new QTimer(this);
-    QObject::connect(discovery_timer_, &QTimer::timeout, this, &CougarsOrigin::DiscoverNamespaces);
-    discovery_timer_->start(1000);
-    DiscoverNamespaces();
-  
+    publisher_ = node_->create_publisher<geographic_msgs::msg::GeoPoint>(
+        "/origin", originPublisherQoS());
+
   initialized_ = true;
   return true;
 }
@@ -180,33 +173,6 @@ void CougarsOrigin::OriginCallback(
   UpdateOriginDisplay();
 }
 
-void CougarsOrigin::DiscoverNamespaces() {
-  auto topics_and_types = node_->get_topic_names_and_types();
-  std::set<std::string> found;
-  for (const auto& [topic, types] : topics_and_types) {
-    // look for topics that end with "/origin"
-    if (topic.size() >= 7 && topic.substr(topic.size() - 7) == "/origin") {
-      std::string t = topic;
-      if (!t.empty() && t[0] == '/') t.erase(0, 1);
-      auto pos = t.find('/');
-      if (pos != std::string::npos) {
-        std::string ns = t.substr(0, pos);
-        found.insert(ns);
-      }
-    }
-  }
-
-  if (found != namespaces_) {
-    namespaces_ = found;
-    // update combobox
-    namespace_selector_->blockSignals(true);
-    namespace_selector_->clear();
-    namespace_selector_->addItem("All detected");
-    for (const auto& ns : namespaces_) namespace_selector_->addItem(QString::fromStdString(ns));
-    namespace_selector_->blockSignals(false);
-  }
-}
-
 void CougarsOrigin::UpdateOriginDisplay() {
   lat_spinbox_->blockSignals(true);
   lon_spinbox_->blockSignals(true);
@@ -227,46 +193,8 @@ void CougarsOrigin::PublishOrigin() {
   geo.longitude = lon_spinbox_->value();
   geo.altitude = alt_spinbox_->value();
 
-  QString sel = namespace_selector_->currentText();
-  std::string sel_str = sel.toStdString();
-  if (sel_str == "All detected") {
-    for (const auto& ns : namespaces_) {
-      std::string topic = "/" + ns + "/origin";
-      if (publishers_.find(ns) == publishers_.end()) {
-        rclcpp::QoS origin_qos(1);
-        origin_qos.reliable();
-        origin_qos.transient_local();
-        publishers_[ns] = node_->create_publisher<geographic_msgs::msg::GeoPoint>(topic, origin_qos);
-      }
-      publishers_[ns]->publish(geo);
-    }
-  } else {
-    // single namespace selected
-    std::string ns = sel_str;
-    if (ns.empty()) {
-      // fallback to global /origin
-      std::string topic = "/origin";
-      if (publishers_.find("") == publishers_.end()) {
-        rclcpp::QoS origin_qos(1);
-        origin_qos.reliable();
-        origin_qos.transient_local();
-        publishers_[""] = node_->create_publisher<geographic_msgs::msg::GeoPoint>(topic, origin_qos);
-      }
-      publishers_[""]->publish(geo);
-    } else {
-      std::string topic = "/" + ns + "/origin";
-      if (publishers_.find(ns) == publishers_.end()) {
-        rclcpp::QoS origin_qos(1);
-        origin_qos.reliable();
-        origin_qos.transient_local();
-        publishers_[ns] = node_->create_publisher<geographic_msgs::msg::GeoPoint>(topic, origin_qos);
-      }
-      publishers_[ns]->publish(geo);
-    }
-  }
+  publisher_->publish(geo);
 
-  // Also update local origin immediately so the X moves without waiting
-  // for the round-trip from subscribers.
   origin_.setX(geo.longitude);
   origin_.setY(geo.latitude);
   origin_.setZ(geo.altitude);
