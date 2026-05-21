@@ -7,11 +7,11 @@ enable_antialiasing: true
 show_displays: true
 show_status_bar: true
 show_capture_tools: true
-window_width: 1854
-window_height: 1131
-view_scale: 0.19226782
-offset_x: -206.61879
-offset_y: 5.2063818
+window_width: 1680
+window_height: 1013
+view_scale: 0.19226788
+offset_x: -13.4907761
+offset_y: -6.1386857
 use_latest_transforms: true
 background: "#ffffff"
 image_transport: raw
@@ -29,6 +29,36 @@ displays:
       bing_api_key: ""
       stadia_api_key: ""
       source: Google Maps
+  - type: cougars_mapviz/cougars_waypoints
+    name: Waypoints
+    config:
+      visible: true
+      collapsed: false
+  - type: cougars_mapviz/cougars_startup
+    name: System Control
+    config:
+      visible: true
+      collapsed: false
+  - type: mapviz_plugins/odometry
+    name: Global Odom
+    config:
+      visible: true
+      collapsed: true
+      topic: /coug0/odometry/global
+      color: "#00ff00"
+      draw_style: points
+      position_tolerance: 0
+      buffer_size: 0
+      show_laps: false
+      show_covariance: true
+      show_all_covariances: false
+      static_arrow_sizes: false
+      arrow_size: 25
+      show_timestamps: 0
+      qos_depth: 10
+      qos_history: 1
+      qos_reliability: 1
+      qos_durability: 2
   - type: mapviz_plugins/navsat
     name: Raw GPS
     config:
@@ -43,18 +73,48 @@ displays:
       qos_history: 1
       qos_reliability: 1
       qos_durability: 2
-  - type: cougars_mapviz/cougars_waypoints
-    name: new display
+  - type: mapviz_plugins/odometry
+    name: DVL Odom
+    config:
+      visible: false
+      collapsed: true
+      topic: /coug0/dvl/odom
+      color: "#ff00ff"
+      draw_style: points
+      position_tolerance: 0
+      buffer_size: 0
+      show_laps: false
+      show_covariance: false
+      show_all_covariances: false
+      static_arrow_sizes: false
+      arrow_size: 25
+      show_timestamps: 0
+      qos_depth: 10
+      qos_history: 1
+      qos_reliability: 1
+      qos_durability: 2
+  - type: mapviz_plugins/odometry
+    name: Sim GT
     config:
       visible: true
-      collapsed: false
-  - type: cougars_mapviz/cougars_startup
-    name: System Control
-    config:
-      visible: true
-      collapsed: false
+      collapsed: true
+      topic: /holoocean/coug0/DynamicsSensorGT
+      color: "#000000"
+      draw_style: points
+      position_tolerance: 0
+      buffer_size: 0
+      show_laps: false
+      show_covariance: false
+      show_all_covariances: false
+      static_arrow_sizes: false
+      arrow_size: 25
+      show_timestamps: 0
+      qos_depth: 10
+      qos_history: 1
+      qos_reliability: 1
+      qos_durability: 2
   - type: cougars_mapviz/cougars_origin
     name: Origin
     config:
-      visible: true
+      visible: false
       collapsed: true
