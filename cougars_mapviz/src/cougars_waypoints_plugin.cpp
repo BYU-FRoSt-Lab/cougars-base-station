@@ -123,6 +123,10 @@ CougarsWaypointsPlugin::CougarsWaypointsPlugin()
                    SLOT(DefaultCaptureRadiusChanged(double)));
 
   // Per-waypoint property signals
+  QObject::connect(ui_.lat_editor, SIGNAL(valueChanged(double)), this,
+                   SLOT(LatitudeChanged(double)));
+  QObject::connect(ui_.lon_editor, SIGNAL(valueChanged(double)), this,
+                   SLOT(LongitudeChanged(double)));
   QObject::connect(ui_.depth_editor, SIGNAL(valueChanged(double)), this,
                    SLOT(DepthChanged(double)));
   QObject::connect(ui_.depth_ref_selector, SIGNAL(currentIndexChanged(int)), this,
@@ -684,6 +688,8 @@ void CougarsWaypointsPlugin::PaintLabels(QPainter* painter, const std::vector<Co
 // ---------------------------------------------------------------------------
 
 void CougarsWaypointsPlugin::SetWaypointEditorsEnabled(bool enabled) {
+  ui_.lat_editor->setEnabled(enabled);
+  ui_.lon_editor->setEnabled(enabled);
   ui_.depth_editor->setEnabled(enabled);
   ui_.depth_ref_selector->setEnabled(enabled);
   ui_.park_checkbox->setEnabled(enabled);
@@ -697,6 +703,14 @@ void CougarsWaypointsPlugin::SetWaypointEditorsEnabled(bool enabled) {
 }
 
 void CougarsWaypointsPlugin::UpdateEditorsFromWaypoint(const CougarsWaypoint& wp) {
+  ui_.lat_editor->blockSignals(true);
+  ui_.lat_editor->setValue(wp.pose.position.y);
+  ui_.lat_editor->blockSignals(false);
+
+  ui_.lon_editor->blockSignals(true);
+  ui_.lon_editor->setValue(wp.pose.position.x);
+  ui_.lon_editor->blockSignals(false);
+
   ui_.depth_editor->blockSignals(true);
   ui_.depth_editor->setValue(wp.pose.position.z);
   ui_.depth_editor->blockSignals(false);
@@ -796,6 +810,22 @@ void CougarsWaypointsPlugin::DefaultCaptureRadiusChanged(double value) {
 // ---------------------------------------------------------------------------
 // Per-waypoint property slots
 // ---------------------------------------------------------------------------
+
+void CougarsWaypointsPlugin::LatitudeChanged(double value) {
+  if (selected_point_ < 0) return;
+  auto wps = manager_.getWaypoints(current_topic_);
+  if (static_cast<size_t>(selected_point_) >= wps.size()) return;
+  wps[selected_point_].pose.position.y = value;
+  manager_.setWaypoints(current_topic_, wps);
+}
+
+void CougarsWaypointsPlugin::LongitudeChanged(double value) {
+  if (selected_point_ < 0) return;
+  auto wps = manager_.getWaypoints(current_topic_);
+  if (static_cast<size_t>(selected_point_) >= wps.size()) return;
+  wps[selected_point_].pose.position.x = value;
+  manager_.setWaypoints(current_topic_, wps);
+}
 
 void CougarsWaypointsPlugin::DepthChanged(double value) {
   if (selected_point_ < 0) return;

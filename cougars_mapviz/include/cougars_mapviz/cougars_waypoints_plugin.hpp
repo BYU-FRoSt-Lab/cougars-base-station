@@ -82,6 +82,8 @@ class CougarsWaypointsPlugin : public mapviz::MapvizPlugin {
   void VisibilityChanged(bool visible);
 
   // Per-waypoint property slots (enabled only when a point is selected)
+  void LatitudeChanged(double value);
+  void LongitudeChanged(double value);
   void DepthChanged(double value);
   void DepthRefChanged(int index);
   void ParkChanged(int state);
