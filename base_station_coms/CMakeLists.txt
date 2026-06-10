@@ -11,6 +11,8 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geographic_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(seatrac_interfaces REQUIRED)
 find_package(base_station_interfaces REQUIRED)
 find_package(cougars_interfaces REQUIRED)
@@ -20,14 +22,12 @@ find_package(ament_cmake_python REQUIRED)
 
 include_directories(include)
 
-add_executable(base_station_coms src/base_station_coms.cpp)
-ament_target_dependencies(base_station_coms rclcpp nav_msgs sensor_msgs std_srvs seatrac_interfaces base_station_interfaces cougars_interfaces)
 
 add_executable(modem_pinger src/modem_pinger.cpp)
 ament_target_dependencies(modem_pinger rclcpp std_srvs seatrac_interfaces)
 
 add_executable(base_station_modem src/base_station_modem.cpp)
-ament_target_dependencies(base_station_modem rclcpp nav_msgs sensor_msgs std_srvs std_msgs seatrac_interfaces base_station_interfaces cougars_interfaces)
+ament_target_dependencies(base_station_modem rclcpp nav_msgs sensor_msgs std_srvs std_msgs geographic_msgs diagnostic_msgs seatrac_interfaces base_station_interfaces cougars_interfaces)
 
 add_executable(teleop_couguv_key src/teleop_couguv_key.cpp)
 ament_target_dependencies(teleop_couguv_key rclcpp cougars_interfaces base_station_interfaces std_msgs)
@@ -48,7 +48,6 @@ ament_export_dependencies(rosidl_default_runtime)
 
 
 install(TARGETS
-base_station_coms
 base_station_modem
 modem_pinger
 teleop_couguv_key
