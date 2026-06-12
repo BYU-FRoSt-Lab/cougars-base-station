@@ -1,0 +1,79 @@
+import os
+from pathlib import Path
+
+import launch
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+
+
+def generate_launch_description():
+
+    ### Launch arguments
+    param_file_launch_arg = DeclareLaunchArgument(
+        'param_file',
+        default_value=f'{Path.home()}/config/base/base_station_params.yaml'
+    )
+    use_coms_launch_arg = DeclareLaunchArgument(
+        'use_coms',
+        default_value='true',
+        description='Launch base station communications'
+    )
+    use_gui_launch_arg = DeclareLaunchArgument(
+        'use_gui',
+        default_value='true',
+        description='Launch base station GUI'
+    )
+    use_mapviz_launch_arg = DeclareLaunchArgument(
+        'use_mapviz',
+        default_value='true',
+        description='Launch base station map visualization'
+    )
+
+    launch_args = [
+        ('param_file', LaunchConfiguration('param_file')),
+    ]
+
+    ### Package launch directories
+    coms_dir = os.path.join(
+        get_package_share_directory('base_station_coms'), 'launch')
+    gui_dir = os.path.join(
+        get_package_share_directory('base_station_gui'), 'launch')
+    utils_dir = os.path.join(
+        get_package_share_directory('base_station_utils'), 'launch')
+
+    ### Launch files
+    coms_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(coms_dir, 'coms_launch.py')),
+        launch_arguments=launch_args,
+        condition=IfCondition(LaunchConfiguration('use_coms')))
+
+    gui_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(gui_dir, 'gui_launch.py')),
+        launch_arguments=launch_args,
+        condition=IfCondition(LaunchConfiguration('use_gui')))
+
+    mapviz_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(utils_dir, 'mapvizlaunch.py')),
+        launch_arguments=launch_args,
+        condition=IfCondition(LaunchConfiguration('use_mapviz')))
+
+    launch_actions = [
+        # launch args
+        param_file_launch_arg,
+        use_coms_launch_arg,
+        use_gui_launch_arg,
+        use_mapviz_launch_arg,
+
+        # launch files
+        coms_launch,
+        gui_launch,
+        mapviz_launch,
+    ]
+
+    return launch.LaunchDescription(launch_actions)

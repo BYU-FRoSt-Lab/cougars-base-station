@@ -35,9 +35,13 @@ ament_target_dependencies(teleop_couguv_key rclcpp cougars_interfaces base_stati
 install(DIRECTORY include/
 DESTINATION include/${PROJECT_NAME})
 
+install(DIRECTORY launch/
+DESTINATION share/${PROJECT_NAME}/launch)
+
 install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
+  scripts/coms_logic_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
