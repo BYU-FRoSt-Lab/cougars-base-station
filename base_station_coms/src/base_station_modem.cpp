@@ -38,6 +38,10 @@ public:
 
         this->declare_parameter<std::vector<int64_t>>("vehicles_in_mission", {1,2,5});
         this->vehicles_in_mission_ = this->get_parameter("vehicles_in_mission").as_integer_array();
+        this->declare_parameter<bool>("disable_auto_link_status", false);
+        this->publish_link_status_ = !this->get_parameter("disable_auto_link_status").as_bool();
+        this->declare_parameter<int>("link_status_frequency", 2);
+        this->link_status_frequency_ = this->get_parameter("link_status_frequency").as_int();
 
         this->modem_subscriber_ = this->create_subscription<seatrac_interfaces::msg::ModemRec>(
             "modem_rec", 10,
@@ -56,8 +60,18 @@ public:
                 this,
                 this->get_logger(),
                 modem_publisher_,
-                max_missed_messages_
+                max_missed_messages_,
+                publish_link_status_
             );
+        }
+
+        if (publish_link_status_) {
+            this->link_status_timer_ = this->create_wall_timer(
+                std::chrono::seconds(link_status_frequency_),
+                std::bind(&ModemComs::check_connections, this)
+            );
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Automatic modem link-status timer disabled");
         }
 
     }
@@ -75,6 +89,11 @@ public:
         vehicle_it->second->handle_modem_message(*msg, this->now());
     }
 
+    void check_connections() {
+        for (auto& vehicle_modem : vehicle_modems_) {
+            vehicle_modem.second->mark_missed_message_and_publish();
+        }
+    }
 
 
 
@@ -83,11 +102,14 @@ private:
 
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
+    rclcpp::TimerBase::SharedPtr link_status_timer_;
 
     std::vector<int64_t> vehicles_in_mission_;
     std::unordered_map<int, std::shared_ptr<VehicleModemConnection>> vehicle_modems_;
 
     int max_missed_messages_ = 2;
+    int link_status_frequency_ = 2;
+    bool publish_link_status_ = true;
 };
 
 

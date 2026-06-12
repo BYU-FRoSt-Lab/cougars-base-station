@@ -3,11 +3,17 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
-from base_station_interfaces.msg import Connections, ConsoleLog, Status, UCommandBase
-from base_station_interfaces.srv import BeaconId, Init, LoadMission
-from std_msgs.msg import String
+from base_station_interfaces.msg import ConsoleLog,
+from cougars_interfaces.msg import MissionFeedback, SystemControl, WaypointFeedback
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from dvl_msgs.msg import DVL
+from geographic_msgs.msg import RouteNetwork
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import BatteryState, FluidPressure
+from std_msgs.msg import String, Bool
 from std_msgs.msg import Int8
 import time
+import math
 
 
 from digi.xbee.devices import XBeeDevice, RemoteXBeeDevice, XBee64BitAddress
@@ -17,6 +23,213 @@ import json
 import traceback
 from pathlib import Path
 import base64
+
+class VehicleRadioConnection:
+    def __init__(self, vehicle_id, node, max_missed_messages):
+        self.vehicle_id = vehicle_id
+        self.node = node
+        self.max_missed_messages = max_missed_messages
+        self.connection_status = False
+        self.radio_address = None
+        self.last_ping_time = time.time()
+        self.last_status_request_time = 0.0
+        self.modem_connection = False
+        self.wifi_connection = False
+    
+
+        self.link_status_publisher = node.create_publisher(
+            DiagnosticStatus,
+            f'coug{vehicle_id}/link_status',
+            10
+        )
+
+        self.state_estimate_publisher = node.create_publisher(
+            Odometry,
+            f'coug{vehicle_id}/state_estimate',
+            10
+        )
+
+        self.pressure_data_publisher = node.create_publisher(
+            FluidPressure,
+            f'coug{vehicle_id}/pressure_data',
+            10
+        )
+
+        self.battery_data_publisher = node.create_publisher(
+            BatteryState,
+            f'coug{vehicle_id}/battery_data',
+            10
+        )
+
+        self.dvl_publisher = node.create_publisher(
+            DVL,
+            f'coug{vehicle_id}/dvl',
+            10
+        )
+
+        self.waypoint_feedback_publisher = node.create_publisher(
+            WaypointFeedback,
+            f'coug{vehicle_id}/waypoint_feedback',
+            10
+        )
+
+        self.link_status_subscriber = node.create_subscription(
+            DiagnosticStatus,
+            f'coug{vehicle_id}/link_status',
+            self.link_status_callback,
+            10
+        )
+
+        self.load_mission_subscriber = node.create_subscription(
+            RouteNetwork,
+            f'coug{vehicle_id}/load_mission',
+            self.load_mission_callback,
+            10
+        )
+
+        self.start_mission_subscriber = node.create_subscription(
+            SystemControl,
+            f'coug{vehicle_id}/start_mission',
+            self.start_mission_callback,
+            10
+        )
+
+        self.emergency_kill_subscriber = node.create_subscription(
+            Bool,
+            f'coug{vehicle_id}/emergency_kill',
+            self.emergency_kill_callback,
+            10
+        )
+
+        self.emergency_surface_subscriber = node.create_subscription(
+            Bool,
+            f'coug{vehicle_id}/emergency_surface',
+            self.emergency_surface_callback,
+            10
+        )
+
+    def link_status_callback(self, msg):
+        connected = msg.level == DiagnosticStatus.OK
+        if msg.hardware_id == "radio":
+            self.connection_status = connected
+        elif msg.hardware_id == "wifi":
+            self.wifi_connection = connected
+        elif msg.hardware_id == "modem":
+            self.modem_connection = connected
+
+    def load_mission_callback(self, msg):
+        if not self.wifi_connection and self.connection_status:
+            # log sending over radio
+            self.node.get_logger().info(f"Sending mission for vehicle {self.vehicle_id} over radio")
+
+    def start_mission_callback(self, msg):
+        if not self.wifi_connection and self.connection_status:
+            # log sending over radio
+            self.node.get_logger().info(f"Starting mission for vehicle {self.vehicle_id} over radio")
+
+    def emergency_kill_callback(self, msg):
+        if msg.data and not self.wifi_connection and self.connection_status:
+            # log sending over radio
+            self.node.get_logger().info(f"Emergency kill for vehicle {self.vehicle_id} over radio")
+
+    def emergency_surface_callback(self, msg):
+        if msg.data and not self.wifi_connection and self.connection_status:
+            self.node.get_logger().info(f"Emergency surface for vehicle {self.vehicle_id} over radio")
+
+    def handle_ping(self, sender_address):
+        self.radio_address = sender_address
+        self.last_ping_time = time.time()
+        self.connection_status = True
+        self.publish_link_status()
+
+    def has_address(self):
+        return self.radio_address is not None
+
+    def is_connected(self):
+        return self.connection_status
+
+    def seconds_since_ping(self):
+        return int(time.time() - self.last_ping_time)
+
+    def check_connection(self, ping_frequency):
+        if self.seconds_since_ping() >= ping_frequency * self.max_missed_messages:
+            self.connection_status = False
+        self.publish_link_status()
+
+
+    def should_request_status(self):
+        return self.connection_status and not self.wifi_connection and self.has_address()
+
+    def request_status(self, send_fn):
+        if not self.should_request_status():
+            return False
+
+        status_request = {
+            "message": "STATUS",
+            "vehicle_id": self.vehicle_id,
+        }
+        sent = self.send_message(send_fn, json.dumps(status_request, separators=(',', ':')))
+        if sent:
+            self.last_status_request_time = time.time()
+            self.node.get_logger().debug(f"Requested status from Coug{self.vehicle_id} over radio")
+        return sent
+
+    def publish_link_status(self):
+        status_msg = DiagnosticStatus()
+        status_msg.name = f"Coug{self.vehicle_id} Radio Connection"
+        status_msg.hardware_id = "radio"
+        status_msg.level = DiagnosticStatus.OK if self.connection_status else DiagnosticStatus.ERROR
+        status_msg.message = "Connected" if self.connection_status else "Disconnected"
+        status_msg.values.append(KeyValue(key="last_message_time", value=str(self.last_ping_time)))
+        self.link_status_publisher.publish(status_msg)
+    
+    # Function to handle received status messages
+    def recieve_status(self, data):
+        self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
+        self.get_logger().debug(f"    Data: {data}")
+
+        odometry_msg = Odometry()
+        odometry_msg.header.stamp = self.get_clock().now().to_msg()
+        odometry_msg.header.frame_id = "odom"
+        odometry_msg.child_frame_id = "base_link"
+        odometry_msg.pose.pose.position.x = data.get('x', 0.0)
+        odometry_msg.pose.pose.position.y = data.get('y', 0.0)
+        odometry_msg.pose.pose.position.z = data.get('z', 0.0)
+        odometry_msg.pose.pose.orientation.x = data.get('qx', 0.0)
+        odometry_msg.pose.pose.orientation.y = data.get('qy', 0.0)
+        odometry_msg.pose.pose.orientation.z = data.get('qz', 0.0)
+        odometry_msg.pose.pose.orientation.w = data.get('qw', 1.0)
+        self.odom_publisher.publish(odometry_msg)
+
+        fluid_pressure_msg = FluidPressure()
+        fluid_pressure_msg.fluid_pressure = data.get('pressure', 0.0)
+        self.pressure_publisher.publish(fluid_pressure_msg)
+
+        battery_state_msg = BatteryState()
+        battery_state_msg.voltage = data.get('voltage', 0.0)
+        self.battery_publisher.publish(battery_state_msg)
+
+        dvl_msg = DVL()
+        dvl_msg.velocity.x = data.get('dvl_x', 0.0)
+        dvl_msg.velocity.y = data.get('dvl_y', 0.0)
+        dvl_msg.velocity.z = data.get('dvl_z', 0.0)
+        self.dvl_publisher.publish(dvl_msg)
+
+        waypoint_msg = WaypointFeedback()
+        waypoint_msg.state = data.get('ws', 0)
+        waypoint_msg.horizontal_distance_error = data.get('hd', 0.0)
+        self.waypoint_publisher.publish(waypoint_msg)
+
+        mission_msg = MissionFeedback()
+        mission_msg.state = data.get('ms', 0)
+        mission_msg.waypoints_completed = data.get('wc', 0)
+        mission_msg.waypoints_total = data.get('tw', 0)
+        mission_msg.elapsed_time = data.get('et', 0.0)
+        mission_msg.current = data.get('c', 0.0)
+        self.mission_publisher.publish(mission_msg)
+
+
+
 
 class RFBridge(Node):
     def __init__(self):
@@ -46,6 +259,11 @@ class RFBridge(Node):
         # Frequency of PING messages keeping track of radio connections
         self.declare_parameter('ping_frequency', 2)
         self.ping_frequency = self.get_parameter('ping_frequency').get_parameter_value().integer_value
+        self.request_status = self.declare_parameter('request_status', True).value
+        self.status_request_frequency_seconds = self.declare_parameter(
+            'status_request_frequency_seconds',
+            2.0
+        ).value
 
         # base station vehicle ID
         self.declare_parameter('vehicle_id', 15)
@@ -56,42 +274,27 @@ class RFBridge(Node):
         self.xbee_baud = self.declare_parameter('xbee_baud', 9600).value
         self.device = XBeeDevice(self.xbee_port, self.xbee_baud)
 
-        # ROS publishers and subscribers
-        self.publisher = self.create_publisher(String, 'rf_received', 10)
-        self.init_publisher = self.create_publisher(String, 'init', 10)
-
-        # publishes status messages
-        self.status_publisher = self.create_publisher(Status, 'status', 10)
-
-        # publishes connections messages
-        self.rf_connection_publisher = self.create_publisher(Connections, 'connections', 10)
+        self.radio_addresses = {}
 
         # publishes console log messages to GUI
         self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
-        
-        self.load_mission_service = self.create_service(LoadMission, 'radio_load_mission', self.load_mission_callback)
-
-
-        self.subscription = self.create_subscription(
-            String,
-            'rf_transmit',
-            self.tx_callback,
-            10)
+    
+        self.running = True
+        self.max_msgs_missed = 5  # Number of missed messages before considering a vehicle disconnected
+        self.vehicle_radios = {
+            vehicle: VehicleRadioConnection(vehicle, self, self.max_msgs_missed)
+            for vehicle in self.vehicles_in_mission
+        }
     
         self.timer = self.create_timer(self.ping_frequency, self.check_connections)
-                    # Thread-safe shutdown flag
-        self.running = True
-        self.ping_timestamp = {}
-        self.connections = {}
-        self.radio_addresses = {}
-        self.max_msgs_missed = 3  # Number of missed messages before considering a vehicle disconnected
-        for vehicle in self.vehicles_in_mission:
-            self.connections[vehicle] = False
-            self.ping_timestamp[vehicle] = self.get_clock().now().nanoseconds / 1e9  # Initialize with current time in seconds
 
-        self.local_fleet_params_path = Path(f"/home/frostlab/base_station/mission_control/params/fleet_params.yaml")
-        self.local_vehicle_params_path = Path(f"/home/frostlab/base_station/mission_control/params/")
-
+        if self.request_status:
+            self.status_request_timer = self.create_timer(
+                self.status_request_frequency_seconds,
+                self.request_status_when_wifi_disconnected
+            )
+        else:
+            self.get_logger().info("Radio status requests disabled by parameter")
 
         try:
             self.device.open()
@@ -101,38 +304,6 @@ class RFBridge(Node):
             self.get_logger().info("RF Bridge node started using digi-xbee library.")
         except Exception as e:
             self.get_logger().error(f"Failed to open XBee device: {e}")
-
-
-
-
-    #transmit function
-    def tx_callback(self, msg):
-        try:
-            try:
-                data = json.loads(msg.data)
-                self.get_logger().debug(f"Decoded JSON data: {data}")
-            except json.JSONDecodeError:
-                self.get_logger().debug(f"Failed to decode JSON from message data {msg.data}. Sending as raw string.")
-                data = msg.data  # If JSON decoding fails, treat payload as a string
-            
-            if isinstance(data, dict) and "vehicle_id" in data:
-                vehicle_id = data.pop("vehicle_id")  # Remove vehicle_id from the message
-                self.get_logger().debug(f"Preparing to send direct message to vehicle {vehicle_id}")
-                # Check if we have the radio address for this vehicle
-                if vehicle_id in self.radio_addresses:
-                    # Send to specific vehicle
-                    self.get_logger().debug(f"Sent targeted message to vehicle {vehicle_id}: {json.dumps(data)}")
-                    self.send_message(json.dumps(data), self.radio_addresses[vehicle_id])
-                    return
-                else:
-                    self.get_logger().warn(f"No radio address found for vehicle {vehicle_id}, broadcasting instead")
-                                        
-            # Broadcast for simple string messages or messages without vehicle_id
-            self.device.send_data_broadcast(msg.data)
-            self.get_logger().debug(f"Broadcast via XBee: {msg.data}")
-        except Exception as e:
-            self.get_logger().error(f"XBee transmission error for message {msg.data}: {str(e)}")
-            self.get_logger().error(traceback.format_exc())
 
     # Function to send a message to a specific address
     def send_message(self, msg, address):
@@ -155,24 +326,24 @@ class RFBridge(Node):
         try:
             payload = xbee_message.data.decode('utf-8', errors='replace')
             sender_address = xbee_message.remote_device.get_64bit_addr()
+
             self.get_logger().debug(f"Received from {sender_address}: {payload}")
 
-            try:
-                data = json.loads(payload)
-            except json.JSONDecodeError:
-                data = payload  # If JSON decoding fails, treat payload as a string
+            data = json.loads(payload)
+            message_type = data.get("message")
+            if (message_type == "PING"):
+                self.get_logger().debug(f"Received PING from vehicle {data.get('src_id')}")
+                self.recieve_ping(data.get("src_id"), sender_address)
+            
+            if sender_address not in self.radio_addresses:
+                self.get_logger().warn(f"Received message from unknown vehicle: {sender_address}")
+                return
 
-            if isinstance(data, dict):
-                message_type = data.get("message")
-            else:
-                message_type = data
 
             if message_type == "STATUS":
-                self.recieve_status(data)
+                self.vehicle_radios[self.radio_addresses[sender_address]].recieve_status(data)
             elif message_type == "E_KILL":
-                self.confirm_e_kill(data)
-            elif message_type == "PING":
-                self.recieve_ping(data.get("src_id"), sender_address)
+                self.vehicle_radios[self.radio_addresses[sender_address]].confirm_e_kill(data)
             elif message_type == "INIT":
                 self.print_to_gui_publisher.publish(ConsoleLog(message="Start mission command was successful", vehicle_number=data.get("src_id")))
             elif message_type == "INIT_ACK":
@@ -197,110 +368,27 @@ class RFBridge(Node):
 
     # Function to check connections and send PING messages
     def check_connections(self):
-        msg = Connections()
-        msg.connection_type = 1
+    
         self.get_logger().debug(f"Sending PING")
         ping = "PING"
 
-        if len(self.radio_addresses) < len(self.vehicles_in_mission):
+        if any(not vehicle_radio.has_address() for vehicle_radio in self.vehicle_radios.values()):
             try:
                 self.device.send_data_broadcast(ping)
             except Exception as e:
                 self.get_logger().debug(f"Failed to send broadcast PING: {e}")
         else:
-            for vehicle in self.radio_addresses:
-                self.send_message(ping, self.radio_addresses[vehicle])
+            for vehicle_radio in self.vehicle_radios.values():
+                vehicle_radio.send_message(self.send_message, ping)
 
-        for vehicle in self.vehicles_in_mission:
-            last_ping = int(time.time() - self.ping_timestamp[vehicle])
-            if (last_ping >= self.ping_frequency*self.max_msgs_missed):
-                self.connections[vehicle] = False 
-            msg.connections.append(self.connections[vehicle])
-            msg.last_ping.append(last_ping)
-        msg.vehicle_ids = list(self.vehicles_in_mission)
-        self.rf_connection_publisher.publish(msg)
+        for vehicle_radio in self.vehicle_radios.values():
+            vehicle_radio.check_connection(self.ping_frequency)
 
-        if self.debug_mode:
-            self.get_logger().debug(f"Connections: {self.connections}")
+    def request_status_when_wifi_disconnected(self):
+        for vehicle_radio in self.vehicle_radios.values():
+            vehicle_radio.request_status(self.send_message)
     
-    def load_mission_callback(self, request, response):
-        try:
-            target_vehicle_id = request.vehicle_id
-            mission_file_path = request.mission_path.data
-            vehicle_params_path = self.local_vehicle_params_path / f"coug{target_vehicle_id}_params.yaml"
 
-            if target_vehicle_id is None:
-                self.get_logger().error("Load mission request missing target vehicle ID.")
-                response.success = False
-                return response
-            
-            if target_vehicle_id not in self.radio_addresses:
-                self.get_logger().error(f"No radio address found for vehicle {target_vehicle_id}")
-                response.success = False
-                return response
-
-            self.get_logger().info(f"Loading mission file {mission_file_path} to Coug {target_vehicle_id} via radio")
-            
-            # Check if file exists
-            if not Path(mission_file_path).exists():
-                self.get_logger().error(f"Mission file not found: {mission_file_path}")
-                response.success = False
-                return response
-
-            # Send the mission file
-            success0 = self.send_file_over_radio(mission_file_path, target_vehicle_id, "mission.yaml")
-            mission_status = "was successful" if success0 else "was not successful"
-            self.print_to_gui_publisher.publish(
-                    ConsoleLog(
-                        message=f"Mission file sent t)o Coug {target_vehicle_id} via radio {mission_status}",
-                        vehicle_number=target_vehicle_id
-                    )
-                )
-            success1 = self.send_file_over_radio(vehicle_params_path, target_vehicle_id, f"coug{target_vehicle_id}_params.yaml")
-            params_status = "was successful" if success1 else "was not successful"
-            self.print_to_gui_publisher.publish(
-                    ConsoleLog(
-                        message=f"Vehicle params file sent to Coug {target_vehicle_id} via radio {params_status}",
-                        vehicle_number=target_vehicle_id
-                    )
-                )
-            success2 = self.send_file_over_radio(self.local_fleet_params_path, target_vehicle_id, f"fleet_params.yaml")
-            fleet_status = "was successful" if success2 else "was not successful"
-            self.print_to_gui_publisher.publish(
-                    ConsoleLog(
-                        message=f"Fleet params file sent to Coug {target_vehicle_id} via radio {fleet_status}",
-                        vehicle_number=target_vehicle_id
-                    )
-                )
-
-            if success0 and success1 and success2:
-                self.print_to_gui_publisher.publish(
-                    ConsoleLog(
-                        message=f"Files successfully sent to Coug {target_vehicle_id} via radio",
-                        vehicle_number=target_vehicle_id
-                    )
-                )
-                response.success = True
-            else:
-                self.print_to_gui_publisher.publish(
-                    ConsoleLog(
-                        message=f"One or more files failed to send to Coug {target_vehicle_id} via radio",
-                        vehicle_number=target_vehicle_id
-                    )
-                )
-                response.success = False
-
-        except Exception as e:
-            self.get_logger().error(f"Error loading mission through radio: {e}")
-            self.print_to_gui_publisher.publish(
-                ConsoleLog(
-                    message=f"Error loading mission: {str(e)}",
-                    vehicle_number=request.vehicle_id if hasattr(request, 'vehicle_id') else 0
-                )
-            )
-            response.success = False
-
-        return response
 
     def send_file_over_radio(self, file_path, target_vehicle_id, remote_filename):
         """
@@ -338,7 +426,8 @@ class RFBridge(Node):
                 "transfer_id": int(time.time())  # Use timestamp as transfer ID
             }
             
-            if not self.send_message(json.dumps(start_msg), self.radio_addresses[target_vehicle_id]):
+            vehicle_radio = self.vehicle_radios[target_vehicle_id]
+            if not vehicle_radio.send_message(self.send_message, json.dumps(start_msg)):
                 self.get_logger().error("Failed to send FILE_START message")
                 return False
             
@@ -366,7 +455,7 @@ class RFBridge(Node):
                 retry_count = 0
                 max_retries = 3
                 while retry_count < max_retries:
-                    if self.send_message(json.dumps(chunk_msg), self.radio_addresses[target_vehicle_id]):
+                    if vehicle_radio.send_message(self.send_message, json.dumps(chunk_msg)):
                         self.get_logger().debug(f"Sent chunk {chunk_num + 1}/{total_chunks}")
                         break
                     else:
@@ -391,7 +480,7 @@ class RFBridge(Node):
                 "total_chunks": total_chunks
             }
             
-            if not self.send_message(json.dumps(end_msg), self.radio_addresses[target_vehicle_id]):
+            if not vehicle_radio.send_message(self.send_message, json.dumps(end_msg)):
                 self.get_logger().error("Failed to send FILE_END message")
                 return False
             
@@ -403,40 +492,6 @@ class RFBridge(Node):
             return False
 
 
-    # Helper function to create Int8 message
-    def make_int8(self, val):
-        msg = Int8()
-        msg.data = val
-        return msg
-
-    # Function to handle received status messages
-    def recieve_status(self, data):
-        self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
-        self.get_logger().debug(f"    Data: {data}")
-        safety_status = data.get('s', {})
-        dvl_pos = data.get('dv', {})
-        battery_state = data.get('b', {})
-        depth_data = data.get('d', {})
-        pressure_data = data.get('p', {})
-
-        status = Status()
-        status.vehicle_id = data.get('src_id', 0)
-        status.safety_status.depth_status = self.make_int8(safety_status.get('d_s', 0))
-        status.safety_status.gps_status = self.make_int8(safety_status.get('g_s', 0))
-        status.safety_status.modem_status = self.make_int8(safety_status.get('m_s', 0))
-        status.safety_status.dvl_status = self.make_int8(safety_status.get('d_s', 0))
-        status.safety_status.emergency_status = self.make_int8(safety_status.get('e_s', 0))
-        status.dvl_pos.position.x = dvl_pos.get('x', 0.0)
-        status.dvl_pos.position.y = dvl_pos.get('y', 0.0)
-        status.dvl_pos.position.z = dvl_pos.get('z', 0.0)
-        status.dvl_pos.roll = dvl_pos.get('r', 0.0)
-        status.dvl_pos.pitch = dvl_pos.get('p', 0.0)
-        status.dvl_pos.yaw = dvl_pos.get('y', 0.0)
-        status.battery_state.voltage = battery_state.get('volt', 0.0)
-        status.depth_data.pose.pose.position.z = -depth_data.get('de', 0.0)
-        status.pressure.fluid_pressure = pressure_data.get('pres', 0.0)
-        self.status_publisher.publish(status)
-
 
 
     # Function to handle received PING messages
@@ -444,49 +499,8 @@ class RFBridge(Node):
         if sender_id not in self.vehicles_in_mission:
             self.get_logger().warn(f"Received PING from unknown vehicle ID {sender_id}. Ignoring.")
             return
-        
-        self.radio_addresses[sender_id] = sender_address
-        self.ping_timestamp[sender_id] = time.time()
-        self.connections[sender_id] = True
-
-
-    # Function to confirm emergency kill command
-    def confirm_e_kill(self, data):
-        self.get_logger().info(f"Confirmation emergency kill for Coug {data.get('src_id')} was {'successful' if data.get('success') else 'unsuccessful'}")
-        if data.get("success"):
-            self.print_to_gui_publisher.publish(
-                ConsoleLog(
-                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
-                    vehicle_number=data.get('src_id', 0),
-                )
-            )
-        else:
-            self.print_to_gui_publisher.publish(
-                ConsoleLog(
-                    message=f"Emergency kill command sent to Coug {data.get('src_id') } was {'successful' if data.get('success') else 'unsuccessful'}",
-                    vehicle_number=data.get('src_id', 0),
-                )
-            )
-
-    def key_controls_callback(self, msg):
-        vehicle_id = msg.vehicle_id
-        self.get_logger().debug(f"Received keyboard controls for Coug {vehicle_id}")
-        if vehicle_id not in self.vehicles_in_mission:
-            self.get_logger().warn(f"Received keyboard controls for unknown vehicle ID {vehicle_id}. Ignoring.")
-            return
-        if self.connections.get(vehicle_id, False):
-            self.get_logger().debug(f"Sending keyboard controls to Coug {vehicle_id} through radio")
-            key_msg = {
-                "message": "KEY_CONTROL",
-                "command": {
-                    "fin": list(msg.ucommand.fin),
-                    "throttle": int(msg.ucommand.thruster),
-                    "enable": bool(msg.thruster_enabled)
-                }
-            }
-            self.send_message(json.dumps(key_msg), self.radio_addresses.get(vehicle_id, None))
-        else:
-            self.get_logger().warn(f"Cannot send keyboard controls to Coug {vehicle_id} because there is no connection")
+        self.radio_addresses[sender_address] = sender_id
+        self.vehicle_radios[sender_id].handle_ping(sender_address)
 
     # Function to handle node destruction
     def destroy_node(self):

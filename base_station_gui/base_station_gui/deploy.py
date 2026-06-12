@@ -16,7 +16,10 @@ PARAM_DIR = os.environ.get(
     os.path.expanduser("~/base_station/mission_control/params")
 )
 DEPLOY_HISTORY_DIR = "/home/frostlab/bag/deployment_history"
-CONFIG_FILE = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
+CONFIG_FILE = os.environ.get(
+    "BASE_STATION_DEPLOY_CONFIG",
+    str(Path.home() / "config" / "cougars-config" / "base_station" / "deploy_config.json")
+)
 
 os.makedirs(DEPLOY_HISTORY_DIR, exist_ok=True)
 
@@ -26,8 +29,9 @@ def load_config(sel_vehicles):
         vehicles = config["vehicles"]
     result = []
     for num in sel_vehicles:
-        if str(num) in vehicles:
-            result.append(vehicles[str(num)])
+        vehicle = vehicles.get(f"coug{num}") or vehicles.get(str(num))
+        if vehicle:
+            result.append(vehicle)
         else:
             ros_node.console_log.publish(ConsoleLog(message=f"❌ Vehicle {num} not found in config, consider adding (skipping)", vehicle_number=num))
     return result

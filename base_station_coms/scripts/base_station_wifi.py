@@ -1,18 +1,334 @@
 #!/usr/bin/env python3
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from rclpy.node import Node
 import subprocess
 from base_station_interfaces.msg import Connections, ConsoleLog, UCommandBase
-from base_station_interfaces.srv import BeaconId, LoadMission
 from cougars_interfaces.msg import SystemControl, UCommand
-from base_station_interfaces.srv import Init
-from std_msgs.msg import Header, Empty
+from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
+from geographic_msgs.msg import GeoPoint, RouteNetwork
+from std_msgs.msg import Header, Empty, Bool
 from std_srvs.srv import SetBool
 import json
+import time
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from base_station_gui import deploy
+
+
+def diagnostic_level_value(level):
+    if isinstance(level, int):
+        return level
+    if isinstance(level, (bytes, bytearray)):
+        return level[0] if level else 0
+    if isinstance(level, str):
+        return ord(level[0]) if level else 0
+    return int(level)
+
+
+class VehicleWifiConnection:
+    def __init__(self, vehicle_id, ip_address, node, max_missed_pings):
+        self.vehicle_id = vehicle_id
+        self.ip_address = ip_address
+        self.node = node
+        self.max_missed_pings = max_missed_pings
+        self.missed_ping_count = 0
+        self.connection_status = False
+        self.thruster_enabled = False
+        self.modem_connection = False
+        self.radio_connection = False
+        self.start_time = time.monotonic()
+        self.last_ping_time = None
+
+        self.mission_publisher = node.create_publisher(
+            RouteNetwork,
+            f'coug{vehicle_id}/mission',
+            10
+        )
+
+        self.reload_params_publisher = node.create_publisher(
+            Empty,
+            f'coug{vehicle_id}/reload_parameters',
+            10
+        )
+        self.init_publisher = node.create_publisher(
+            SystemControl,
+            f'coug{vehicle_id}/system/status',
+            10
+        )
+        self.keyboard_controls_publisher = node.create_publisher(
+            UCommand,
+            f'coug{vehicle_id}/controls/command',
+            10
+        )
+        self.thruster_client = node.create_client(
+            SetBool,
+            f'coug{vehicle_id}/arm_thruster'
+        )
+        self.surface_client = node.create_client(
+            SetBool,
+            f'coug{vehicle_id}/surface'
+        )
+        self.link_status_publisher = node.create_publisher(
+            DiagnosticStatus,
+            f'coug{vehicle_id}/link_status',
+            10
+        )
+
+        self.link_status_subscriber = node.create_subscription(
+            DiagnosticStatus,
+            f'coug{vehicle_id}/link_status',
+            self.link_status_callback,
+            10
+        )
+
+        self.load_mission_subscriber = node.create_subscription(
+            RouteNetwork,
+            f'coug{vehicle_id}/load_mission',
+            self.load_mission_callback,
+            10
+        )
+
+        self.start_mission_subscriber = node.create_subscription(
+            SystemControl,
+            f'coug{vehicle_id}/start_mission',
+            self.start_mission_callback,
+            10
+        )
+
+        self.emergency_kill_subscriber = node.create_subscription(
+            Bool,
+            f'coug{vehicle_id}/emergency_kill',
+            self.emergency_kill_callback,
+            10
+        )
+
+        self.emergency_surface_subscriber = node.create_subscription(
+            Bool,
+            f'coug{vehicle_id}/emergency_surface',
+            self.emergency_surface_callback,
+            10
+        )
+
+    def link_status_callback(self, msg):
+        connected = diagnostic_level_value(msg.level) == DiagnosticStatus.OK
+        if msg.hardware_id == "wifi":
+            return
+        elif msg.hardware_id == "radio":
+            self.radio_connection = connected
+        elif msg.hardware_id == "modem":
+            self.modem_connection = connected
+
+    def load_mission_callback(self, msg):
+        if self.node.is_wifi_enabled() and self.connection_status:
+            self.node.get_logger().info(f"Loading mission for vehicle {self.vehicle_id} over WiFi")
+            self.mission_publisher.publish(msg)
+
+    def start_mission_callback(self, msg):
+        if self.node.is_wifi_enabled() and self.connection_status:
+            self.node.get_logger().info(f"Starting mission for vehicle {self.vehicle_id} over WiFi")
+            self.init_publisher.publish(msg)
+
+    def emergency_kill_callback(self, msg):
+        self.node.get_logger().info(
+            f"Received emergency kill for vehicle {self.vehicle_id}: "
+            f"data={msg.data}, wifi_enabled={self.node.is_wifi_enabled()}, wifi_connected={self.connection_status}"
+        )
+        if not msg.data:
+            return
+        if not self.node.is_wifi_enabled() or not self.connection_status:
+            self.node.get_logger().warn(
+                f"Not sending emergency kill for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
+            )
+            return
+        self.node.get_logger().info(f"Emergency kill for vehicle {self.vehicle_id} over WiFi")
+        self.send_e_kill()
+
+    def emergency_surface_callback(self, msg):
+        self.node.get_logger().info(
+            f"Received emergency surface for vehicle {self.vehicle_id}: "
+            f"data={msg.data}, wifi_enabled={self.node.is_wifi_enabled()}, wifi_connected={self.connection_status}"
+        )
+        if msg.data and self.node.is_wifi_enabled() and self.connection_status:
+            self.node.get_logger().info(f"Emergency surface for vehicle {self.vehicle_id} over WiFi")
+            self.send_e_surface()
+        elif msg.data:
+            self.node.get_logger().warn(
+                f"Not sending emergency surface for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
+            )
+
+    def ping(self):
+        if not self.node.is_wifi_enabled():
+            return False
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", self.ip_address],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            return result.returncode == 0
+        except Exception as e:
+            self.node.get_logger().warn(f"Exception pinging {self.ip_address}: {e}")
+            return False
+
+    def update_connection(self, is_connected):
+        previous_status = self.connection_status
+        if not self.node.is_wifi_enabled():
+            self.missed_ping_count = self.max_missed_pings
+            self.connection_status = False
+        elif is_connected:
+            self.last_ping_time = time.monotonic()
+            self.missed_ping_count = 0
+            self.connection_status = True
+        else:
+            self.missed_ping_count += 1
+            self.node.get_logger().debug(
+                f"WiFi ping failed for vehicle {self.vehicle_id} at {self.ip_address} "
+                f"(missed_pings={self.missed_ping_count}/{self.max_missed_pings})"
+            )
+            if self.missed_ping_count >= self.max_missed_pings:
+                self.connection_status = False
+
+        if self.connection_status != previous_status:
+            state = "connected" if self.connection_status else "disconnected"
+            self.node.get_logger().info(
+                f"WiFi vehicle {self.vehicle_id} marked {state} "
+                f"(last_ping_success={is_connected}, missed_pings={self.missed_ping_count})"
+            )
+
+        self.publish_link_status()
+
+    def seconds_since_ping(self):
+        current_time = time.monotonic()
+        if self.last_ping_time is None:
+            return int(current_time - self.start_time)
+        return int(current_time - self.last_ping_time)
+
+    def publish_keyboard_controls(self, msg):
+        if not self.node.is_wifi_enabled() or not self.connection_status:
+            self.node.get_logger().warn(
+                f"Not sending keyboard controls for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
+            )
+            return
+        self.keyboard_controls_publisher.publish(msg.ucommand)
+
+        if msg.thruster_enabled != self.thruster_enabled:
+            self.node.get_logger().info(
+                f"Thruster state change detected for vehicle {self.vehicle_id}: {msg.thruster_enabled}"
+            )
+            self.thruster_enabled = msg.thruster_enabled
+            self.send_thruster_command_async(msg.thruster_enabled)
+
+    def send_thruster_command_async(self, enable):
+        service_request = SetBool.Request()
+        service_request.data = enable
+
+        if not self.thruster_client.wait_for_service(timeout_sec=0.1):
+            self.node.get_logger().error(f"arm_thruster service not available for vehicle {self.vehicle_id}")
+            return
+
+        try:
+            future = self.thruster_client.call_async(service_request)
+
+            def handle_thruster_response(future_result):
+                try:
+                    service_response = future_result.result()
+                    if service_response.success:
+                        state_str = "enabled" if enable else "disabled"
+                        self.node.get_logger().info(
+                            f"Thruster has been {state_str} for vehicle {self.vehicle_id}."
+                        )
+                    else:
+                        self.node.get_logger().error(
+                            f"Failed to change thruster state for vehicle {self.vehicle_id}."
+                        )
+                except Exception as e:
+                    self.node.get_logger().error(
+                        f"Error in thruster response callback for vehicle {self.vehicle_id}: {str(e)}"
+                    )
+
+            future.add_done_callback(handle_thruster_response)
+        except Exception as e:
+            self.node.get_logger().error(
+                f"Error while trying to change thruster state for vehicle {self.vehicle_id}: {str(e)}"
+            )
+
+    def send_e_kill(self):
+        service_request = SetBool.Request()
+        service_request.data = False
+
+        if not self.thruster_client.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().error("arm_thruster service not available")
+            return False
+
+        try:
+            future = self.thruster_client.call_async(service_request)
+            rclpy.spin_until_future_complete(self.node, future)
+            service_response = future.result()
+
+            if service_response.success:
+                self.node.get_logger().info("Thruster has been deactivated.")
+                return True
+
+            self.node.get_logger().error("Failed to deactivate thruster.")
+            return False
+        except Exception as e:
+            self.node.get_logger().error(f"Error while trying to deactivate thruster: {str(e)}")
+            return False
+
+    def send_e_surface(self):
+        service_request = SetBool.Request()
+        service_request.data = True
+
+        if not self.surface_client.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().error(f"surface service not available for vehicle {self.vehicle_id}")
+            return False
+
+        try:
+            future = self.surface_client.call_async(service_request)
+            rclpy.spin_until_future_complete(self.node, future)
+            service_response = future.result()
+
+            if service_response.success:
+                self.node.get_logger().info(f"Surface override enabled for vehicle {self.vehicle_id}.")
+                return True
+
+            self.node.get_logger().error(
+                f"Failed to enable surface override for vehicle {self.vehicle_id}: {service_response.message}"
+            )
+            return False
+        except Exception as e:
+            self.node.get_logger().error(
+                f"Error while trying to send surface command for vehicle {self.vehicle_id}: {str(e)}"
+            )
+            return False
+
+    def publish_init(self, request):
+        msg = SystemControl()
+        msg.header = Header()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.frame_id = 'system_status_input'
+        msg.start = request.start
+        msg.rosbag_flag = request.rosbag_flag
+        msg.rosbag_prefix = request.rosbag_prefix
+        msg.thruster_arm = request.thruster_arm
+        msg.dvl_acoustics = request.dvl_acoustics
+        self.init_publisher.publish(msg)
+        return msg
+
+    def reload_params(self):
+        self.reload_params_publisher.publish(Empty())
+
+    def publish_link_status(self):
+        status_msg = DiagnosticStatus()
+        status_msg.name = f"Coug{self.vehicle_id} WiFi Connection"
+        status_msg.hardware_id = "wifi"
+        status_msg.level = DiagnosticStatus.OK if self.connection_status else DiagnosticStatus.ERROR
+        status_msg.message = "Connected" if self.connection_status else "Disconnected"
+        status_msg.values.append(KeyValue(key="last_ping_seconds", value=str(self.seconds_since_ping())))
+        self.link_status_publisher.publish(status_msg)
 
 
 class Base_Station_Wifi(Node):
@@ -28,13 +344,6 @@ class Base_Station_Wifi(Node):
         # publishes connections messages
         self.wifi_connection_publisher = self.create_publisher(Connections, 'connections', 10)
 
-        # Service to send emergency kill command
-        self.e_kill_service = self.create_service(BeaconId, 'wifi_e_kill', self.send_e_kill_callback)
-
-        self.init_service = self.create_service(Init, 'wifi_init', self.init_callback)
-
-        self.load_mission_service = self.create_service(LoadMission, 'wifi_load_mission', self.load_mission_callback)
-
         self.keyboard_controls_publisher = self.create_publisher(UCommand, 'keyboard_controls', 10)
 
         self.keyboard_controls_subscriber = self.create_subscription(
@@ -45,245 +354,202 @@ class Base_Station_Wifi(Node):
         )
 
         self.console_log = self.create_publisher(ConsoleLog, 'console_log', 10)
-        self.thruster_enabled = {vehicle: False for vehicle in self.vehicles_in_mission}
-        self.init_publishers = {}
-        self.thruster_clients = {}
-        self.reload_params_publishers = {}
-        self.keyboard_controls_publishers = {}
-        for vehicle in self.vehicles_in_mission:
-            self.reload_params_publishers[vehicle] = self.create_publisher(Empty, f'coug{vehicle}/reload_parameters', 10)
-            self.init_publishers[vehicle] = self.create_publisher(SystemControl, f'coug{vehicle}/system/status', 10)
-            self.keyboard_controls_publishers[vehicle] = self.create_publisher(UCommand, f'coug{vehicle}/controls/command', 10)
-            self.thruster_clients[vehicle] = self.create_client(SetBool, f'coug{vehicle}/arm_thruster')
 
-        self.ping_timestamp = {}
+        self.last_origin = None
+        origin_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.origin_subscriber = self.create_subscription(
+            GeoPoint,
+            '/origin',
+            self.origin_callback,
+            origin_qos,
+        )
+
         self.ip_addresses = {}
-        # Track consecutive missed pings for each vehicle
-        self.missed_ping_count = {}
-        # Track connection status for each vehicle
-        self.connection_status = {}
+        self.ping_rate_seconds = 2
+        self.max_missed_pings = 2
+        self.wifi_enabled = self.declare_parameter('wifi_enabled', True).value
+        self.disable_auto_link_status = self.declare_parameter('disable_auto_link_status', False).value
+        self.vehicle_wifis = {}
         self.get_IP_addresses()
-        self.start_time = self.get_clock().now()
+        self.add_on_set_parameters_callback(self.on_parameter_update)
 
         # Create thread pool executor - use different name to avoid conflict with ROS2's executor
         self.thread_executor = ThreadPoolExecutor(max_workers=10)
-        self.ping_rate_seconds = 2
-        self.max_missed_pings = 2
+        if not self.wifi_enabled:
+            self.get_logger().warn("WiFi is disabled by parameter; publishing disconnected WiFi status")
+            self.force_wifi_disconnected()
         # timer that calls check connections
-        self.create_timer(self.ping_rate_seconds, self.check_connections)
+        if self.disable_auto_link_status:
+            self.get_logger().warn("Automatic WiFi link-status timer disabled")
+        else:
+            self.create_timer(self.ping_rate_seconds, self.check_connections)
 
+    def is_wifi_enabled(self):
+        return bool(self.wifi_enabled)
 
-    def ping_single_ip(self, vehicle, ip):
-        """Ping a single IP address using system ping command"""
-        try:
-            # Use system ping command, 1 packet, 1 second timeout
-            result = subprocess.run([
-                "ping", "-c", "1", "-W", "1", ip
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            current_time = self.get_clock().now()
-            if result.returncode == 0:
-                self.ping_timestamp[vehicle] = current_time
-                return vehicle, True
-            return vehicle, False
-        except Exception as e:
-            self.get_logger().warn(f"Exception pinging {ip}: {e}")
-            return vehicle, False
+    def on_parameter_update(self, params):
+        for param in params:
+            if param.name == 'wifi_enabled':
+                self.wifi_enabled = bool(param.value)
+                if self.wifi_enabled:
+                    self.get_logger().info("WiFi enabled by parameter")
+                else:
+                    self.get_logger().warn("WiFi disabled by parameter; forcing all WiFi links disconnected")
+                    self.force_wifi_disconnected()
+        return SetParametersResult(successful=True)
+
+    def force_wifi_disconnected(self):
+        for vehicle_wifi in self.vehicle_wifis.values():
+            vehicle_wifi.connection_status = False
+            vehicle_wifi.missed_ping_count = vehicle_wifi.max_missed_pings
+            vehicle_wifi.publish_link_status()
+        self.publish_connections()
+
+    def publish_connections(self):
+        msg = Connections()
+        msg.connection_type = 2
+        msg.vehicle_ids = self.vehicles_in_mission
+        msg.connections = [
+            self.vehicle_wifis[vehicle].connection_status if vehicle in self.vehicle_wifis else False
+            for vehicle in self.vehicles_in_mission
+        ]
+        msg.last_ping = [
+            self.vehicle_wifis[vehicle].seconds_since_ping() if vehicle in self.vehicle_wifis else 0
+            for vehicle in self.vehicles_in_mission
+        ]
+        self.wifi_connection_publisher.publish(msg)
 
     def keyboard_controls_callback(self, msg):
         """Callback for keyboard controls messages, republishes to the appropriate vehicle topic"""
         self.get_logger().debug(f"Received keyboard controls for vehicle {msg.vehicle_id}")
-        self.get_logger().debug(f"Thruster enabled: {msg.thruster_enabled}, Current state: {self.thruster_enabled[msg.vehicle_id]}")
-        
-        # Always publish the command first to ensure it gets sent
-        command_msg = msg.ucommand
-        self.keyboard_controls_publishers[msg.vehicle_id].publish(command_msg)
-        
-        # Then handle thruster state change if needed
-        if msg.thruster_enabled != self.thruster_enabled[msg.vehicle_id]:
-            self.get_logger().info(f"Thruster state change detected for vehicle {msg.vehicle_id}: {msg.thruster_enabled}")
-            self.thruster_enabled[msg.vehicle_id] = msg.thruster_enabled
-            # Call arm_thruster service asynchronously to avoid blocking
-            self.send_thruster_command_async(msg.vehicle_id, msg.thruster_enabled)
-
-    def send_thruster_command_async(self, vehicle_id, enable):
-        """Send thruster command asynchronously without blocking"""
-        thruster_client = self.thruster_clients[vehicle_id]
-        service_request = SetBool.Request()
-        service_request.data = enable
-
-        if not thruster_client.wait_for_service(timeout_sec=0.1):  # Very short timeout
-            self.get_logger().error(f"arm_thruster service not available for vehicle {vehicle_id}")
+        if not self.is_wifi_enabled():
+            self.get_logger().warn("Ignoring keyboard controls because WiFi is disabled")
             return
+        vehicle_wifi = self.vehicle_wifis.get(msg.vehicle_id)
+        if vehicle_wifi is None:
+            self.get_logger().warn(f"Received keyboard controls for unknown vehicle ID {msg.vehicle_id}. Ignoring.")
+            return
+        self.get_logger().debug(
+            f"Thruster enabled: {msg.thruster_enabled}, Current state: {vehicle_wifi.thruster_enabled}"
+        )
+        vehicle_wifi.publish_keyboard_controls(msg)
 
-        try:
-            # Send async request without blocking
-            future = thruster_client.call_async(service_request)
-            
-            # Add callback to handle the response
-            def handle_thruster_response(future_result):
-                try:
-                    service_response = future_result.result()
-                    if service_response.success:
-                        state_str = "enabled" if enable else "disabled"
-                        self.get_logger().info(f"Thruster has been {state_str} for vehicle {vehicle_id}.")
-                    else:
-                        self.get_logger().error(f"Failed to change thruster state for vehicle {vehicle_id}.")
-                except Exception as e:
-                    self.get_logger().error(f"Error in thruster response callback for vehicle {vehicle_id}: {str(e)}")
-            
-            future.add_done_callback(handle_thruster_response)
-            
-        except Exception as e:
-            self.get_logger().error(f"Error while trying to change thruster state for vehicle {vehicle_id}: {str(e)}")
-
-    def send_e_kill_callback(self, request, response):
-        vehicle_id = request.beacon_id
-        
-        # Get the correct thruster client for this vehicle
-        if vehicle_id not in self.thruster_clients:
-            response.success = False
-            return response
-        
-        thruster_client = self.thruster_clients[vehicle_id]
-        
-        service_request = SetBool.Request()
-        service_request.data = False
-
-        if not thruster_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().error("arm_thruster service not available")
-            response.success = False
-            return response
-
-        try:
-            future = thruster_client.call_async(service_request)
-            rclpy.spin_until_future_complete(self, future)
-            service_response = future.result()
-            
-            if service_response.success:
-                self.get_logger().info("Thruster has been deactivated.")
-                response.success = True
-            else:
-                self.get_logger().error("Failed to deactivate thruster.")
-                response.success = False
-                
-        except Exception as e:
-            self.get_logger().error(f"Error while trying to deactivate thruster: {str(e)}")
-            response.success = False
-        
-        return response
-
-    def init_callback(self, request, response):
-        try:
-            msg = SystemControl()
-            msg.header = Header()
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = 'system_status_input'
-            msg.start = request.start
-            msg.rosbag_flag = request.rosbag_flag
-            msg.rosbag_prefix = request.rosbag_prefix
-            msg.thruster_arm = request.thruster_arm
-            msg.dvl_acoustics = request.dvl_acoustics
-            self.init_publishers[request.vehicle_id].publish(msg)
-            self.get_logger().info("Published SystemControl message.")
-            self.get_logger().info(f"Start: {msg.start.data}, Rosbag Flag: {msg.rosbag_flag.data}, Prefix: {msg.rosbag_prefix}, Thruster: {msg.thruster_arm.data}, DVL: {msg.dvl_acoustics.data}")
-            # self.console_log.publish(f"Start: {msg.start.data}, Rosbag Flag: {msg.rosbag_flag.data}, Prefix: {msg.rosbag_prefix}, Thruster: {msg.thruster_arm.data}, DVL: {msg.dvl_acoustics.data}")
-            response.success = True
-            return response
-        except Exception as e:
-            self.get_logger().error(f"Error publishing SystemControl message: {e}")
-            response.success = False
-            return response
-        
-    def load_mission_callback(self, request, response):
-        # Handle the load mission request
-        self.get_logger().info(f"Loading mission for vehicle {request.vehicle_id}")
-
-        try:
-            # Call deploy function to send missions to vehicles
-            deploy.main(self, [request.vehicle_id], [request.mission_path.data])
-            self.console_log.publish(ConsoleLog(message="Loading Mission Command Complete", vehicle_number=request.vehicle_id))
-            self.reload_params_publishers[request.vehicle_id].publish(Empty())
-            response.success = True
-        except Exception as e:
-            err_msg = f"Mission loading failed: {e}"
-            print(err_msg)
-            self.console_log.publish(ConsoleLog(message=err_msg, vehicle_number=request.vehicle_id))
-            response.success = False
-
-        return response
 
     def get_IP_addresses(self):
         """Load IP addresses from config file"""
-        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
+        config_path = Path.home().joinpath("config", "cougars-config", "base_station", "deploy_config.json")
         try:
             with open(config_path, "r") as f:
                 config = json.load(f)
             vehicles = config["vehicles"]
 
             for num in self.vehicles_in_mission:
-                if str(num) in vehicles:
-                    ip = vehicles[str(num)]['remote_host']
+                vehicle_info = vehicles.get(f"coug{num}") or vehicles.get(str(num))
+                if vehicle_info:
+                    ip = vehicle_info['remote_host']
                     self.ip_addresses[num] = ip
-                    # Initialize counters for each vehicle
-                    self.missed_ping_count[num] = 0
-                    self.connection_status[num] = False
+                    self.vehicle_wifis[num] = VehicleWifiConnection(
+                        num,
+                        ip,
+                        self,
+                        self.max_missed_pings
+                    )
                 else:
                     err_msg = f"❌ Vehicle {num} not found in config"
-                    self.get_logger().error(err_msg)
+                    if self.disable_auto_link_status:
+                        self.get_logger().warn(f"{err_msg}; using 127.0.0.1 for logic test")
+                        self.create_test_wifi_connection(num)
+                    else:
+                        self.get_logger().error(err_msg)
         except Exception as e:
-            self.get_logger().error(f"Error loading config: {e}")
+            if self.disable_auto_link_status:
+                self.get_logger().warn(f"Error loading config: {e}; using test WiFi connections")
+                for num in self.vehicles_in_mission:
+                    self.create_test_wifi_connection(num)
+            else:
+                self.get_logger().error(f"Error loading config: {e}")
+
+    def origin_callback(self, msg):
+        self.last_origin = msg
+        if not self.is_wifi_enabled():
+            self.get_logger().warn(
+                f"Received origin on /origin, but WiFi is disabled: "
+                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
+            )
+            self.console_log.publish(
+                ConsoleLog(
+                    message=f"Received origin on /origin but WiFi is disabled: lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}",
+                    vehicle_number=0,
+                )
+            )
+            return
+
+        connected_vehicles = [
+            vehicle_id
+            for vehicle_id, vehicle_wifi in self.vehicle_wifis.items()
+            if vehicle_wifi.connection_status
+        ]
+
+        if connected_vehicles:
+            self.get_logger().info(
+                f"Received origin on /origin over WiFi for connected vehicles {connected_vehicles}: "
+                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
+            )
+        else:
+            self.get_logger().warn(
+                f"Received origin on /origin, but no WiFi-connected vehicles are currently available: "
+                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
+            )
+
+        self.console_log.publish(
+            ConsoleLog(
+                message=f"Received origin on /origin: lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}",
+                vehicle_number=0,
+            )
+        )
+
+    def create_test_wifi_connection(self, vehicle_id):
+        self.ip_addresses[vehicle_id] = '127.0.0.1'
+        self.vehicle_wifis[vehicle_id] = VehicleWifiConnection(
+            vehicle_id,
+            '127.0.0.1',
+            self,
+            self.max_missed_pings
+        )
 
     def check_connections(self):
             """Check all connections using thread pool"""
             try:
+                if not self.is_wifi_enabled():
+                    self.force_wifi_disconnected()
+                    return
+
                 # Submit all ping tasks to thread pool
-                futures = {self.thread_executor.submit(self.ping_single_ip, vehicle, ip): vehicle 
-                        for vehicle, ip in self.ip_addresses.items()}
+                futures = {
+                    self.thread_executor.submit(vehicle_wifi.ping): vehicle
+                    for vehicle, vehicle_wifi in self.vehicle_wifis.items()
+                }
                 
                 # Collect results as they complete
                 ping_results = {}
-                for future in as_completed(futures, timeout=2.0):  # 2 second timeout for all pings
-                    vehicle, is_connected = future.result()
-                    ping_results[vehicle] = is_connected
+                try:
+                    for future in as_completed(futures, timeout=2.0):  # 2 second timeout for all pings
+                        vehicle = futures[future]
+                        ping_results[vehicle] = future.result()
+                except TimeoutError:
+                    self.get_logger().warn("Timed out waiting for one or more WiFi ping results")
 
                 # Update connection status based on consecutive missed pings
                 for vehicle in self.vehicles_in_mission:
-                    if vehicle in ping_results:
-                        if ping_results[vehicle]:
-                            # Ping successful - reset missed count and mark as connected
-                            self.missed_ping_count[vehicle] = 0
-                            self.connection_status[vehicle] = True
-                        else:
-                            # Ping failed - increment missed count
-                            self.missed_ping_count[vehicle] += 1
+                    vehicle_wifi = self.vehicle_wifis.get(vehicle)
+                    if vehicle_wifi is not None:
+                        vehicle_wifi.update_connection(ping_results.get(vehicle, False))
 
-                            # Only mark as disconnected after 2 consecutive missed pings
-                            if self.missed_ping_count[vehicle] >= self.max_missed_pings:
-                                self.connection_status[vehicle] = False
-                            # Otherwise keep previous connection status
-                    else:
-                        # No ping result - treat as failed ping
-                        self.missed_ping_count[vehicle] += 1
-                        if self.missed_ping_count[vehicle] >= self.max_missed_pings:
-                            self.connection_status[vehicle] = False
-
-                # Create and publish the message
-                msg = Connections()
-                msg.connection_type = 2  # WiFi connections
-                msg.vehicle_ids = self.vehicles_in_mission
-                msg.connections = [self.connection_status[vehicle] for vehicle in self.vehicles_in_mission]
-
-                # Calculate time since last successful ping
-                current_time = self.get_clock().now()
-                msg.last_ping = []
-                for vehicle in msg.vehicle_ids:
-                    if vehicle in self.ping_timestamp:
-                        time_diff = (current_time - self.ping_timestamp[vehicle]).nanoseconds / 1e9
-                        msg.last_ping.append(int(time_diff))
-                    else:
-                        msg.last_ping.append(int((current_time - self.start_time).nanoseconds / 1e9))  # Never pinged successfully
-
-                self.wifi_connection_publisher.publish(msg)
+                self.publish_connections()
 
             except Exception as e:
                 self.get_logger().error(f"Exception in check_connections: {e}")

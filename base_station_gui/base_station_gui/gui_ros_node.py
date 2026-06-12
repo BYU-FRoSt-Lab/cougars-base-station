@@ -8,6 +8,7 @@ import threading
 import signal
 import yaml
 import os
+import struct
 
 import rclpy
 from rclpy.node import Node
@@ -21,13 +22,33 @@ from std_msgs.msg import String, Bool
 from nav_msgs.msg import Odometry
 
 from nav_msgs.msg import Path #used to publish the map viz path
-from sensor_msgs.msg import NavSatFix, FluidPressure, BatteryState #NavSatFix used to publish the origin
+from geographic_msgs.msg import GeoPoint, RouteNetwork, WayPoint, KeyValue
+from sensor_msgs.msg import FluidPressure, BatteryState
 from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianceStamped
+from unique_identifier_msgs.msg import UUID
+from diagnostic_msgs.msg import DiagnosticStatus
 
-from base_station_interfaces.srv import BeaconId, Init, LoadMission
-from base_station_interfaces.msg import Connections, ConsoleLog
-from cougars_interfaces.msg import SystemStatus, SystemControl, UCommand
-from dvl_msgs.msg import DVLDR, DVL
+from base_station_interfaces.msg import ConsoleLog
+from cougars_interfaces.msg import SystemStatus, SystemControl, UCommand, MissionFeedback, WaypointFeedback
+from dvl_msgs.msg import DVL
+
+
+def _make_uuid(index: int) -> UUID:
+    uuid = UUID()
+    uuid.uuid = [0] * 16
+    packed = struct.pack('>I', index & 0xFFFFFFFF)
+    uuid.uuid[12] = packed[0]
+    uuid.uuid[13] = packed[1]
+    uuid.uuid[14] = packed[2]
+    uuid.uuid[15] = packed[3]
+    return uuid
+
+
+def _kv(key: str, value: str) -> KeyValue:
+    kv = KeyValue()
+    kv.key = key
+    kv.value = value
+    return kv
 
 class GuiNode(Node):
     """
@@ -48,14 +69,14 @@ class GuiNode(Node):
             )
             setattr(self, f'safety_status_subscription{coug_number}', sub)
 
-            # Subscribe to dvl/position messages for each vehicle
+            # Subscribe to state estimate messages for each vehicle
             sub = self.create_subscription(
-                DVLDR,
-                f'coug{coug_number}/dvl/position',
-                lambda msg, n=coug_number: window.recieve_smoothed_output_message(n, msg),
+                Odometry,
+                f'coug{coug_number}/state_estimate',
+                lambda msg, n=coug_number: window.recieve_state_estimate_message(n, msg),
                 10
             )
-            setattr(self, f'smoothed_ouput_subscription{coug_number}', sub)
+            setattr(self, f'state_estimate_subscription{coug_number}', sub)
 
             # Subscribe to smoothed output messages for each vehicle
             sub = self.create_subscription(
@@ -66,15 +87,6 @@ class GuiNode(Node):
             )
             setattr(self, f'dvl_vel_subscription{coug_number}', sub)
 
-            # Subscribe to depth data messages for each vehicle
-            sub = self.create_subscription(
-                PoseWithCovarianceStamped,
-                f'coug{coug_number}/depth_data',
-                lambda msg, n=coug_number: window.recieve_depth_data_message(n, msg),
-                10
-            )
-            setattr(self, f'depth_data_subscription{coug_number}', sub)            
-            
             # Subscribe to pressure data topic for each vehicle
             sub = self.create_subscription(
                 FluidPressure,
@@ -93,6 +105,22 @@ class GuiNode(Node):
             )
             setattr(self, f'battery_data_subscription{coug_number}', sub)
 
+            sub = self.create_subscription(
+                MissionFeedback,
+                f'coug{coug_number}/mission_feedback',
+                lambda msg, n=coug_number: window.recieve_mission_feedback(n, msg),
+                10
+            )
+            setattr(self, f'mission_feedback_subscription{coug_number}', sub)
+
+            sub = self.create_subscription(
+                WaypointFeedback,
+                f'coug{coug_number}/waypoint_feedback',
+                lambda msg, n=coug_number: window.recieve_waypoint_feedback(n, msg),
+                10
+            )
+            setattr(self, f'waypoint_feedback_subscription{coug_number}', sub)
+
             # Publisher for system status messages for each vehicle
             pub = self.create_publisher(
                 SystemControl,
@@ -100,6 +128,34 @@ class GuiNode(Node):
                 1
             )
             setattr(self, f'coug{coug_number}_publisher_', pub)
+
+            pub = self.create_publisher(
+                RouteNetwork,
+                f'coug{coug_number}/load_mission',
+                10
+            )
+            setattr(self, f'coug{coug_number}_load_mission_pub', pub)
+
+            pub = self.create_publisher(
+                SystemControl,
+                f'coug{coug_number}/start_mission',
+                10
+            )
+            setattr(self, f'coug{coug_number}_start_mission_pub', pub)
+
+            pub = self.create_publisher(
+                Bool,
+                f'coug{coug_number}/emergency_kill',
+                10
+            )
+            setattr(self, f'coug{coug_number}_emergency_kill_pub', pub)
+
+            pub = self.create_publisher(
+                Bool,
+                f'coug{coug_number}/emergency_surface',
+                10
+            )
+            setattr(self, f'coug{coug_number}_emergency_surface_pub', pub)
 
             # Publisher for map visualization paths for each vehicle
             pub = self.create_publisher(
@@ -132,16 +188,13 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_kinematics_client', client)
 
-
-        self.init_client = self.create_client(
-            Init,
-            f'init_service'
-        )
-
-        self.load_mission_client = self.create_client(
-            LoadMission,
-            f'load_mission_service'
-        )
+            sub = self.create_subscription(
+                DiagnosticStatus,
+                f'coug{coug_number}/link_status',
+                lambda msg, n=coug_number: window.recieve_link_status(n, msg),
+                10
+            )
+            setattr(self, f'link_status_subscription{coug_number}', sub)
 
         # Subscription for emergency kill confirmation messages
         self.kill_subscription = self.create_subscription(
@@ -157,13 +210,6 @@ class GuiNode(Node):
             window.recieve_surface_confirmation_message,  # Calls the GUI's recieve_surface_confirmation_message method
             10)
 
-        # Subscription for receiving Connections messages from the 'connections' topic
-        self.conn_subscription = self.create_subscription(
-            Connections,
-            'connections',
-            window.recieve_connections,  # Calls the GUI's recieve_connections method
-            10)  
-
         # Subscription for console log updates, specific to vehicles. 0 means send to all
         self.console_log_sub = self.create_subscription(
             ConsoleLog,
@@ -172,20 +218,19 @@ class GuiNode(Node):
             10
         ) 
 
-        # Publisher for the map visualization origin 
-        #TODO: Fix the origin to be a transient local publisher
-        self.origin_pub = self.create_publisher(NavSatFix, '/map_viz_origin', 10)
+        # Publisher for the shared origin topic used by vehicle navigation.
+        origin_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.origin_pub = self.create_publisher(GeoPoint, '/origin', origin_qos)
 
         # Publisher for console log messages
         self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
 
         # Publisher for key press events to teleop
         self.keypress_publisher = self.create_publisher(String, 'gui_keypress', 10)
-
-        # Service clients for emergency kill, surface, and modem shut off services
-        self.cli = self.create_client(BeaconId, 'e_kill_service')
-        self.cli2 = self.create_client(BeaconId, 'e_surface_service')
-        # self.cli3 = self.create_client(ModemControl, 'modem_shut_off_service')
 
     def publish_console_log(self, msg_text, msg_num):
         """
@@ -204,16 +249,105 @@ class GuiNode(Node):
         msg.data = key_text
         self.keypress_publisher.publish(msg)
 
+    def publish_load_mission(self, vehicle_number, mission_file_path):
+        if not mission_file_path:
+            self.get_logger().error(f"No mission file selected for Coug {vehicle_number}")
+            self.publish_console_log(f"Mission loading failed for Coug {vehicle_number}: no file selected", vehicle_number)
+            return
+        msg = self.load_route_network(mission_file_path)
+        getattr(self, f'coug{vehicle_number}_load_mission_pub').publish(msg)
+        self.publish_console_log(f"Published load mission command for Coug {vehicle_number}", vehicle_number)
+
+    def publish_start_mission(self, vehicle_number, start_config):
+        msg = SystemControl()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'system_status_input'
+        msg.start = Bool(data=start_config["start_node"])
+        msg.rosbag_flag = Bool(data=start_config["record_rosbag"])
+        msg.rosbag_prefix = start_config["rosbag_prefix"]
+        msg.thruster_arm = Bool(data=start_config["arm_thruster"])
+        msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
+        getattr(self, f'coug{vehicle_number}_start_mission_pub').publish(msg)
+        self.publish_console_log(f"Published start mission command for Coug {vehicle_number}", vehicle_number)
+
+    def publish_emergency_kill(self, vehicle_number):
+        getattr(self, f'coug{vehicle_number}_emergency_kill_pub').publish(Bool(data=True))
+        self.publish_console_log(f"Published emergency kill command for Coug {vehicle_number}", vehicle_number)
+
+    def publish_emergency_surface(self, vehicle_number):
+        getattr(self, f'coug{vehicle_number}_emergency_surface_pub').publish(Bool(data=True))
+        self.publish_console_log(f"Published emergency surface command for Coug {vehicle_number}", vehicle_number)
+
+    def load_route_network(self, mission_file_path):
+        try:
+            with open(mission_file_path, 'r') as f:
+                data = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            self.get_logger().error(f'Failed to load mission file "{mission_file_path}": {e}')
+            return RouteNetwork()
+
+        if not isinstance(data, dict) or not data:
+            self.get_logger().error(f'Mission file "{mission_file_path}" must be a non-empty mapping.')
+            return RouteNetwork()
+
+        key, value = next(iter(data.items()))
+        if isinstance(value, list):
+            defaults = {}
+            waypoints = value
+        elif isinstance(value, dict):
+            defaults = value.get('defaults', {})
+            waypoints = value.get('waypoints', [])
+        else:
+            self.get_logger().error(f'Mission key "{key}" has unexpected format.')
+            return RouteNetwork()
+
+        return self.build_route_network(defaults, waypoints)
+
+    def build_route_network(self, defaults, waypoints):
+        msg = RouteNetwork()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'wgs84'
+
+        mission_id = int(defaults.get('mission_id', 0))
+        msg.id = _make_uuid(mission_id)
+
+        msg.props.append(_kv('speed', str(defaults.get('speed', 50.0))))
+        msg.props.append(_kv('slip_radius', str(defaults.get('slip_radius', 2.0))))
+        msg.props.append(_kv('capture_radius', str(defaults.get('capture_radius', 10.0))))
+
+        for i, wp_data in enumerate(waypoints):
+            wp = WayPoint()
+            wp.id = _make_uuid(i)
+            wp.position = GeoPoint()
+            wp.position.latitude = float(wp_data.get('lat', 0.0))
+            wp.position.longitude = float(wp_data.get('lon', 0.0))
+            wp.position.altitude = float(wp_data.get('z', 0.0))
+            wp.props.append(_kv('depth_ref', wp_data.get('depth_ref', 'surface')))
+            wp.props.append(_kv('park', 'true' if wp_data.get('park', False) else 'false'))
+            if 'speed' in wp_data:
+                wp.props.append(_kv('speed', str(wp_data['speed'])))
+            if 'slip_radius' in wp_data:
+                wp.props.append(_kv('slip_radius', str(wp_data['slip_radius'])))
+            if 'capture_radius' in wp_data:
+                wp.props.append(_kv('capture_radius', str(wp_data['capture_radius'])))
+            msg.points.append(wp)
+
+        return msg
+
     def publish_origin(self, origin_msg):
         """
-        Publishes the map visualization origin to the '/map_viz_origin' topic.
-        origin_msg: tuple(float, float)
+        Publishes the shared origin to the '/origin' topic.
+        origin_msg: tuple(float, float) or tuple(float, float, float)
         """
-        msg = NavSatFix()
+        msg = GeoPoint()
         msg.latitude = origin_msg[0]
         msg.longitude = origin_msg[1]
-        msg.header.frame_id = 'local_xy_origin'
+        msg.altitude = origin_msg[2] if len(origin_msg) > 2 else 0.0
         self.origin_pub.publish(msg)
+        self.publish_console_log(
+            f"Published origin on /origin: lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}",
+            0,
+        )
         self.get_logger().info(f'Publishing from GUI: "{msg}"')
 
     def publish_path(self, path_msg, vehicle_number):
@@ -284,7 +418,11 @@ def get_vehicles_from_params():
     Returns a list of vehicle numbers to create tabs for.
     """
     # Try to read directly from the parameter file
-    param_file_path = os.path.expanduser("~/config/base_station_params.yaml")
+    param_file_path = os.environ.get(
+        "BASE_STATION_PARAM_FILE",
+        os.path.expanduser("~/config/base_station_params.yaml")
+    )
+    param_file_path = os.path.expanduser(param_file_path)
     
     try:
         if os.path.exists(param_file_path):
@@ -293,19 +431,19 @@ def get_vehicles_from_params():
                 # Navigate the YAML structure: /**/ros__parameters/vehicles_in_mission
                 if params and '/**' in params:
                     ros_params = params['/**'].get('ros__parameters', {})
-                    vehicles_list = ros_params.get('vehicles_in_mission', [1, 2, 3, 4])
+                    vehicles_list = ros_params.get('vehicles_in_mission', [1, 2, 3])
                     print(f"GUI: Read vehicles_in_mission from parameter file: {vehicles_list}")
                     return vehicles_list
                 else:
-                    print(f"GUI: Parameter file structure not found, using default vehicles [1,2,3,4]")
-                    return [1, 2, 3, 4]
+                    print(f"GUI: Parameter file structure not found, using default vehicles [1,2,3]")
+                    return [1, 2, 3]
         else:
-            print(f"GUI: Parameter file not found at {param_file_path}, using default vehicles [1,2,3,4]")
-            return [1, 2, 3, 4]
+            print(f"GUI: Parameter file not found at {param_file_path}, using default vehicles [1,2,3]")
+            return [1, 2, 3]
             
     except Exception as e:
-        print(f"GUI: Failed to read parameter file: {e}, using default [1,2,3,4]")
-        return [1, 2, 3, 4]  # Default fallback
+        print(f"GUI: Failed to read parameter file: {e}, using default [1,2,3]")
+        return [1, 2, 3]  # Default fallback
 
 def main():
     """     

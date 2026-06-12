@@ -31,7 +31,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-		    'gui_node = base_station_gui.gui_ros_node:main'
+		    'gui_node = base_station_gui.gui_ros_node:main',
+            'gui_tester = base_station_gui.gui_tester:main',
         ],
     },
 )

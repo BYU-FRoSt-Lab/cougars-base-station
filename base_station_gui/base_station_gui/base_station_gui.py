@@ -1,15 +1,12 @@
 # Created by Seth Ricks, July 2025
 
 # Standard library imports
-import sys, random, os, re
+import sys, random, os, re, time
 import yaml, json
 import base64, math, functools
-from functools import partial
 import multiprocessing, threading, paramiko
-from base_station_interfaces.srv import Init, LoadMission
 import tkinter
 import rclpy
-from std_msgs.msg import Header, Bool, String
 # Get package share directory for accessing media files
 from ament_index_python.packages import get_package_share_directory
 
@@ -18,7 +15,7 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
     QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog, 
-    QDialogButtonBox, QMessageBox, QColorDialog
+    QDialogButtonBox, QMessageBox, QColorDialog, QDoubleSpinBox
 )
 from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
     QPainter, QAction, QIcon, QActionGroup
@@ -26,9 +23,6 @@ from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortc
 from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
 
 from pathlib import Path
-# ROS 2 service imports
-from base_station_interfaces.srv import BeaconId
-
 # Import custom modules for mission control, calibration, startup, and waypoint planner
 from base_station_gui import deploy
 from base_station_gui import calibrate
@@ -37,6 +31,15 @@ from base_station_gui.waypoint_planner import App as WaypointPlannerApp
 
 pkg_dir = get_package_share_directory('base_station_gui')
 media_directory = pkg_dir + "/images/FRoSt_Lab.png"
+
+def diagnostic_level_value(level):
+    if isinstance(level, int):
+        return level
+    if isinstance(level, (bytes, bytearray)):
+        return level[0] if level else 0
+    if isinstance(level, str):
+        return ord(level[0]) if level else 0
+    return int(level)
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -52,6 +55,8 @@ class MainWindow(QMainWindow):
     battery_data_signal = pyqtSignal(int, object)
     surface_confirm_signal = pyqtSignal(object)
     update_wifi_signal = pyqtSignal(dict)
+    mission_feedback_signal = pyqtSignal(int, object)
+    waypoint_feedback_signal = pyqtSignal(int, object)
 
     # Initializes GUI window with a ros node inside
     def __init__(self, ros_node, vehicle_list):
@@ -188,6 +193,12 @@ class MainWindow(QMainWindow):
             #Vehicles 1-3 Waypoint, list of ints
             "Waypoint": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
 
+            "Mission_state": {vehicle_num: "Idle" for vehicle_num in self.selected_vehicles},
+
+            "Mission_time": {vehicle_num: "0.0 s" for vehicle_num in self.selected_vehicles},
+
+            "Waypoint_distance": {vehicle_num: "x" for vehicle_num in self.selected_vehicles},
+
             #Vehicles 1-3 Linear Velocities, list of ints
             "DVL_vel": {vehicle_num: 2 for vehicle_num in self.selected_vehicles},
 
@@ -202,6 +213,9 @@ class MainWindow(QMainWindow):
             "Depth": "Depth (m): ",
             "Heading": "Heading (deg): ",
             "Waypoint": "Current Waypoint: ",
+            "Mission_state": "Mission State: ",
+            "Mission_time": "Mission Time: ",
+            "Waypoint_distance": "Distance to Next WP (m): ",
             "DVL_vel": "DVL Velocity <br>(m/s): ",
             "Battery": "Battery (V): ",
             "Pressure": "Pressure (Pa): ",
@@ -300,6 +314,8 @@ class MainWindow(QMainWindow):
         self.pressure_data_signal.connect(self.update_pressure_data)
         self.battery_data_signal.connect(self.update_battery_data)
         self.update_wifi_signal.connect(self.update_wifi_widgets)
+        self.mission_feedback_signal.connect(self._update_mission_feedback)
+        self.waypoint_feedback_signal.connect(self._update_waypoint_feedback)
 
         # Get IP addresses for selected vehicles and display in console
         self.get_IP_addresses()
@@ -390,7 +406,7 @@ class MainWindow(QMainWindow):
         Populates self.Vehicle_IP_addresses and self.ip_to_vehicle for later use.
         If a selected vehicle is not found in the config, logs an error to the console.
         """
-        config_path = Path.home().joinpath("base_station", "mission_control", "deploy_config.json")
+        config_path = Path.home().joinpath("config", "cougars-config", "base_station", "deploy_config.json")
         # Open and parse the config file
         with open(str(config_path), "r") as f:
             config = json.load(f)
@@ -399,8 +415,9 @@ class MainWindow(QMainWindow):
         self.ip_to_vehicle = {} 
         # Loop through selected vehicles and get their IPs
         for num in self.selected_vehicles:
-            if str(num) in vehicles:
-                ip = vehicles[str(num)]['remote_host']
+            vehicle_info = vehicles.get(f"coug{num}") or vehicles.get(str(num))
+            if vehicle_info:
+                ip = vehicle_info['remote_host']
                 self.Vehicle_IP_addresses.append(ip)
                 self.ip_to_vehicle[ip] = num 
             else:
@@ -863,10 +880,7 @@ class MainWindow(QMainWindow):
             if dlg.exec():
                 start_config = dlg.get_states()
                 selected_files = list(start_config['selected_files'].values())
-                msg = LoadMission.Request()
-                msg.mission_path = String(data=selected_files[i])
-                msg.vehicle_id = vehicle
-                self.ros_node.load_mission_client.call_async(msg)
+                self.ros_node.publish_load_mission(vehicle, selected_files[i])
                 i+=1
 
             else:
@@ -886,26 +900,7 @@ class MainWindow(QMainWindow):
         def deploy_in_thread(start_config):
             try:
                 for vehicle in self.selected_vehicles:
-                    msg = Init.Request()
-                    msg.header = Header()
-                    msg.header.stamp = self.ros_node.get_clock().now().to_msg()
-                    msg.header.frame_id = 'system_status_input'
-                    msg.vehicle_id = vehicle
-                    msg.start = Bool(data=start_config["start_node"])
-                    msg.rosbag_flag = Bool(data=start_config["record_rosbag"])
-                    msg.rosbag_prefix = start_config["rosbag_prefix"]
-                    msg.thruster_arm = Bool(data=start_config["arm_thruster"])
-                    msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
-                    if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
-                        future = self.ros_node.init_client.call_async(msg)
-                        # def on_result(fut):
-                        #     if fut.result() is not None:
-                        #         self.update_console_signal.emit("Init command initiated successfully.", vehicle)
-                        #     else:
-                        #         self.update_console_signal.emit("Failed to send init command.", vehicle)
-                        # future.add_done_callback(on_result)
-                    else:
-                        self.update_console_signal.emit(f"Init service for vehicle {vehicle} not available.", vehicle)
+                    self.ros_node.publish_start_mission(vehicle, start_config)
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 self.update_console_signal.emit(err_msg, 0)
@@ -935,18 +930,19 @@ class MainWindow(QMainWindow):
         self.replace_confirm_reject_label(msg)
         self.recieve_console_update(msg, vehicle_number)
 
-        dlg = LoadMissionsDialog(parent=self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_vehicles=[vehicle_number])
+        dlg = LoadMissionsDialog(parent=self, vehicle=vehicle_number, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style, selected_vehicles=[vehicle_number])
         if dlg.exec():
             start_config = dlg.get_states()
-            msg = LoadMission.Request()
-            msg.vehicle_id = vehicle_number
-            # Get the actual file path from the dict values
-            file_path = list(start_config["selected_files"].values())[0]
+            file_path = start_config.get("selected_file")
+            if file_path is None and "selected_files" in start_config:
+                file_path = next(iter(start_config["selected_files"].values()), None)
+            if not file_path:
+                err_msg = "Mission Loading failed: no mission file was selected."
+                self.recieve_console_update(err_msg, vehicle_number)
+                self.replace_confirm_reject_label(err_msg)
+                return
             self.ros_node.get_logger().info(f"Loading mission file: {file_path}")
-            # Create String message for mission_path
-            msg.mission_path = String()
-            msg.mission_path.data = file_path
-            self.ros_node.load_mission_client.call_async(msg)
+            self.ros_node.publish_load_mission(vehicle_number, file_path)
 
         else:
             err_msg = "Mission Loading command was cancelled."
@@ -964,27 +960,7 @@ class MainWindow(QMainWindow):
 
         def deploy_in_thread(start_config):
             try:
-                # Publish system control message to start mission for the specific vehicle
-                msg = Init.Request()
-                msg.header = Header()
-                msg.header.stamp = self.ros_node.get_clock().now().to_msg()
-                msg.header.frame_id = 'system_status_input'
-                msg.vehicle_id = vehicle_number
-                msg.start = Bool(data=start_config["start_node"])
-                msg.rosbag_flag = Bool(data=start_config["record_rosbag"])
-                msg.rosbag_prefix = start_config["rosbag_prefix"]
-                msg.thruster_arm = Bool(data=start_config["arm_thruster"])
-                msg.dvl_acoustics = Bool(data=start_config["start_dvl"])
-                if self.ros_node.init_client.wait_for_service(timeout_sec=1.0):
-                    future = self.ros_node.init_client.call_async(msg)
-                    # def on_result(fut):
-                    #     if fut.result() is not None:
-                    #         self.update_console_signal.emit("Init command initiated successfully.", vehicle_number)
-                    #     else:
-                    #         self.update_console_signal.emit("Failed to send init command.", vehicle_number)
-                    # future.add_done_callback(on_result)
-                else:
-                    self.update_console_signal.emit(f"Init service for vehicle {vehicle_number} not available.", vehicle_number)
+                self.ros_node.publish_start_mission(vehicle_number, start_config)
             except Exception as e:
                 err_msg = f"Mission starting failed: {e}"
                 print(err_msg)
@@ -1180,11 +1156,11 @@ class MainWindow(QMainWindow):
         base_kinematics = None
 
         # Try to get the params path from the vehicle
-        config_path = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
+        config_path = Path.home().joinpath("config", "cougars-config", "base_station", "deploy_config.json")
         with open(config_path, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
-        vehicle_info = vehicles.get(str(vehicle_num))
+        vehicle_info = vehicles.get(f"coug{vehicle_num}") or vehicles.get(str(vehicle_num))
         if vehicle_info:
             remote_user = vehicle_info["remote_user"]
             remote_host = vehicle_info["remote_host"]
@@ -1358,16 +1334,10 @@ class MainWindow(QMainWindow):
         Sends a shutdown request to the ROS service for the specified vehicle.
         Updates the GUI and console log with status messages.
         """
-        message = BeaconId.Request()
-        message.beacon_id = vehicle_number
         dlg = ConfirmationDialog("Emergency Shutdown?", "Are you sure you want to initiate emergency shutdown?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Shutdown...")
-            # self.recieve_console_update(f"Starting Emergency Shutdown for Vehicle {vehicle_number}", vehicle_number)
-            future = self.ros_node.cli.call_async(message)
-            # Add callback to handle response
-            future.add_done_callback(partial(self.handle_service_response, action="Emergency Shutdown", vehicle_number=vehicle_number))
-            return future
+            self.ros_node.publish_emergency_kill(vehicle_number)
         else:
             self.replace_confirm_reject_label("Canceling Emergency Shutdown command...")
             self.recieve_console_update(f"Canceling Emergency Shutdown for Vehicle {vehicle_number}", vehicle_number)
@@ -1379,16 +1349,10 @@ class MainWindow(QMainWindow):
         Sends a surface request to the ROS service for the specified vehicle.
         Updates the GUI and console log with status messages.
         """
-        message = BeaconId.Request()
-        message.beacon_id = vehicle_number
         dlg = ConfirmationDialog("Emergency Surface?", "Are you sure you want to initiate emergency surface?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
         if dlg.exec():
             self.replace_confirm_reject_label("Starting Emergency Surface...")
-            # self.recieve_console_update(f"Starting Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
-            future = self.ros_node.cli2.call_async(message)
-            # Add callback to handle response
-            future.add_done_callback(partial(self.handle_service_response, action="Emergency Surface", vehicle_number=vehicle_number))
-            return future
+            self.ros_node.publish_emergency_surface(vehicle_number)
         else:
             self.replace_confirm_reject_label("Canceling Emergency Surface command...")
             self.recieve_console_update(f"Canceling Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
@@ -1451,38 +1415,36 @@ class MainWindow(QMainWindow):
             if vehicle_number in self.selected_vehicles: self.recieve_console_update(f"{action} service call failed: {e}", vehicle_number)
             else: print(f"{action} service call failed: {e}")
 
-    #(No Signal) -> not yet connected to a signal
-    def recall_vehicles(self):
+    def publish_origin_command(self):
         """
-        Handler for 'Recall Vehicles' button on the general tab, with confirmation dialog.
-        Aborts all missions for all selected vehicles if confirmed.
-        Updates the confirmation/rejection label and console log.
+        Handler for the general-tab origin button.
+        Prompts for an origin and publishes it on the global /origin topic.
         """
-        dlg = ConfirmationDialog("Recall Vehicles?", "Are you sure that you want recall the Vehicles? This will abort all the missions, and cannot be undone.", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
-        if dlg.exec():
-            self.replace_confirm_reject_label("Recalling the Vehicles...")
-            for i in self.selected_vehicles: self.recieve_console_update("Recalling the Vehicles...", i)
-        else:
-            self.replace_confirm_reject_label("Canceling Recall All Vehicles Command...")
-            for i in self.selected_vehicles: self.recieve_console_update("Canceling Recall All Vehicles Command...", i)
-    
-    #(No Signal) -> not yet connected to a signal
-    def recall_spec_vehicle(self, vehicle_number):
-        """
-        Handler for 'Recall Vehicle' button on a specific Vehicle tab, with confirmation dialog.
-        Aborts the mission for the specified vehicle if confirmed.
-        Updates the confirmation/rejection label and console log.
-        Parameters:
-            vehicle_number (int): Vehicle number to recall.
-        """
-        dlg = ConfirmationDialog("Recall Vehicle?", "Are you sure that you want to recall this Vehicle?", self, background_color=self.background_color, text_color=self.text_color, pop_up_window_style=self.pop_up_window_style)
-        if dlg.exec():
-            self.replace_confirm_reject_label(f"Recalling Vehicle {vehicle_number}...")
-            self.recieve_console_update(f"Recalling Vehicle {vehicle_number}...", vehicle_number)
-        else:
-            self.replace_confirm_reject_label("Canceling Recall Vehicle Command...")
-            self.recieve_console_update(f"Canceling Recall Vehicle {vehicle_number} Command...", vehicle_number)
+        origin_values = getattr(self, "last_origin_values", (40.247125, -111.647000, 1420.00))
+        dlg = OriginDialog(
+            origin_values,
+            self,
+            background_color=self.background_color,
+            text_color=self.text_color,
+            pop_up_window_style=self.pop_up_window_style,
+        )
+        if not dlg.exec():
+            self.replace_confirm_reject_label("Publish Origin command was cancelled.")
+            for i in self.selected_vehicles:
+                self.recieve_console_update("Publish Origin command was cancelled.", i)
+            return
 
+        latitude, longitude, altitude = dlg.get_origin()
+        self.last_origin_values = (latitude, longitude, altitude)
+        self.replace_confirm_reject_label("Publishing origin over WiFi...")
+        for i in self.selected_vehicles:
+            self.recieve_console_update(
+                f"Publishing origin over WiFi: lat={latitude}, lon={longitude}, alt={altitude}",
+                i,
+            )
+
+        self.ros_node.publish_origin((latitude, longitude, altitude))
+    
     def make_vline(self):
         """
         Creates and returns a vertical line QFrame for use in layouts.
@@ -1545,7 +1507,7 @@ class MainWindow(QMainWindow):
     def set_general_page_C0_widgets(self):
         """
         Sets up the widgets for the first column on the General tab.
-        Adds general option buttons such as Load Missions, Start Missions, Plot Waypoints, Copy Bags, Calibrate, Recall, etc.
+        Adds general option buttons such as Load Missions, Start Missions, Plot Waypoints, Copy Bags, Calibrate, and Publish Origin.
         Styles and arranges the buttons and labels vertically.
         """
         general_label = QLabel("General Options:")
@@ -1578,15 +1540,15 @@ class MainWindow(QMainWindow):
         self.sync_all_vehicles_button.clicked.connect(lambda: self.run_calibrate_script(0))
         self.sync_all_vehicles_button.setStyleSheet(self.normal_button_style_sheet)
 
-        #Recall all the vehicles button
+        # Calibrate fins button
         self.calibrate_fins_button = QPushButton("Calibrate Fins (In Progress)")
         self.calibrate_fins_button.clicked.connect(self.calibrate_fins)
         self.calibrate_fins_button.setStyleSheet(self.normal_button_style_sheet)
 
-        #Recall all the vehicles button
-        self.recall_all_vehicles = QPushButton("Recall Vehicles (No Signal)")
-        self.recall_all_vehicles.clicked.connect(self.recall_vehicles)
-        self.recall_all_vehicles.setStyleSheet(self.danger_button_style_sheet)
+        # Publish the global origin over WiFi
+        self.publish_origin_button = QPushButton("Publish Origin")
+        self.publish_origin_button.clicked.connect(self.publish_origin_command)
+        self.publish_origin_button.setStyleSheet(self.normal_button_style_sheet)
 
         # Add widgets to the layout
         self.general_page_C0_layout.addWidget(general_label, alignment=Qt.AlignmentFlag.AlignTop)
@@ -1604,11 +1566,10 @@ class MainWindow(QMainWindow):
         self.general_page_C0_layout.addWidget(self.calibrate_fins_button)
         self.general_page_C0_layout.addSpacing(20)
 
-        # Add spacer to push the rest of the buttons down
-        self.general_page_C0_layout.addWidget(self.recall_all_vehicles)
+        self.general_page_C0_layout.addWidget(self.publish_origin_button)
         self.general_page_C0_layout.addSpacing(20)
-        
-        # Add remaining buttons (red recall vehicles at the bottom)
+
+        # Add spacer to push the rest of the buttons down
         spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         self.general_page_C0_layout.addItem(spacer)
             
@@ -1917,8 +1878,8 @@ class MainWindow(QMainWindow):
 
         # Emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
-        # Abort mission (danger button)
-        self.create_vehicle_button(vehicle_number, "recall", f"Recall Vehicle (No Signal)", lambda: self.recall_spec_vehicle(vehicle_number), danger=True)
+        # Publish the shared origin to the vehicles
+        self.create_vehicle_button(vehicle_number, "publish_origin", "Publish Origin", self.publish_origin_command)
         # Emergency shutdown (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_shutdown", "Emergency Shutdown", lambda: self.emergency_shutdown_button(vehicle_number), danger=True)
         # Clear console (danger button)
@@ -1936,7 +1897,7 @@ class MainWindow(QMainWindow):
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
-        temp_layout2.addWidget(getattr(self, f"recall_vehicle{vehicle_number}_button"))
+        temp_layout2.addWidget(getattr(self, f"publish_origin_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_shutdown_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
@@ -2106,6 +2067,12 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Mission State: Idle", f"Mission_state{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Mission Time: 0.0 s", f"Mission_time{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Distance to Next WP (m): x", f"Waypoint_distance{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("DVL Velocity <br>(m/s): v", f"DVL_vel{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
 
@@ -2206,33 +2173,39 @@ class MainWindow(QMainWindow):
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "DVL_vel")
 
-    def recieve_smoothed_output_message(self, vehicle_number, msg):
+    def recieve_state_estimate_message(self, vehicle_number, msg):
         """
-        Receives a smoothed output message from ROS and emits a signal to update the GUI.
-        Used to update position, heading, velocity widgets.
+        Receives a state estimate message from ROS and emits a signal to update the GUI.
+        Used to update x, y, depth, and heading widgets.
         """
         self.smoothed_output_signal.emit(vehicle_number, msg)
 
     def _update_gui_smoothed_output(self, vehicle_number, msg):
         """
-        Updates the GUI widgets for position, heading, velocity
-        based on the received smoothed output message.
+        Updates the GUI widgets for x, y, depth, and heading based on nav_msgs/Odometry state_estimate.
         """
-        position = msg.position
+        position = msg.pose.pose.position
+        orientation = msg.pose.pose.orientation
+
         x = position.x
         y = position.y
-
-        roll = msg.roll
-        pitch = msg.pitch
-        heading = msg.yaw
+        depth = -position.z
+        heading = math.degrees(
+            math.atan2(
+                2.0 * (orientation.w * orientation.z + orientation.x * orientation.y),
+                1.0 - 2.0 * (orientation.y * orientation.y + orientation.z * orientation.z),
+            )
+        )
 
         self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
         self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
+        self.feedback_dict["Depth"][vehicle_number] = round(depth, 2)
         self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
         self.replace_specific_status_widget(vehicle_number, "YPos")
+        self.replace_specific_status_widget(vehicle_number, "Depth")
         self.replace_specific_status_widget(vehicle_number, "Heading")
 
     def recieve_depth_data_message(self, vehicle_number, msg):
@@ -2283,7 +2256,63 @@ class MainWindow(QMainWindow):
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "Battery")
 
-    def recieve_kill_confirmation_message(self, kill_message): 
+    def recieve_mission_feedback(self, vehicle_number, msg):
+        """
+        Receives mission feedback from the vehicle navigation stack.
+        """
+        self.mission_feedback_signal.emit(vehicle_number, msg)
+
+    def recieve_waypoint_feedback(self, vehicle_number, msg):
+        """
+        Receives current waypoint feedback from the vehicle navigation stack.
+        """
+        self.waypoint_feedback_signal.emit(vehicle_number, msg)
+
+    def _update_mission_feedback(self, vehicle_number, msg):
+        state_labels = {
+            0: "Idle",
+            1: "Running",
+            2: "Paused",
+            3: "Complete",
+            4: "Aborted",
+        }
+
+        state_value = diagnostic_level_value(msg.state)
+        state = state_labels.get(state_value, f"Unknown ({state_value})")
+        total = int(msg.waypoints_total)
+        completed = int(msg.waypoints_completed)
+        current = completed if state == "Complete" else completed + 1
+        current = min(current, total) if total else 0
+
+        self.feedback_dict["Mission_state"][vehicle_number] = state
+        self.feedback_dict["Mission_time"][vehicle_number] = f"{float(msg.elapsed_time):.1f} s"
+        self.feedback_dict["Waypoint"][vehicle_number] = f"{current} / {total}"
+
+        distance = getattr(getattr(msg, "current", None), "horizontal_distance_error", None)
+        if distance is not None:
+            self.feedback_dict["Waypoint_distance"][vehicle_number] = f"{float(distance):.1f}"
+
+        for key in ("Mission_state", "Mission_time", "Waypoint", "Waypoint_distance"):
+            self.replace_specific_status_widget(vehicle_number, key)
+
+    def _update_waypoint_feedback(self, vehicle_number, msg):
+        waypoint_state_labels = {
+            0: "Transiting",
+            1: "Arrived",
+            2: "Parking",
+            3: "Skipped",
+        }
+        waypoint_state_value = diagnostic_level_value(msg.state)
+        waypoint_state = waypoint_state_labels.get(waypoint_state_value, f"Unknown ({waypoint_state_value})")
+
+        self.feedback_dict["Waypoint_distance"][vehicle_number] = f"{float(msg.horizontal_distance_error):.1f}"
+        if self.feedback_dict["Mission_state"].get(vehicle_number) in ("Idle", ""):
+            self.feedback_dict["Mission_state"][vehicle_number] = waypoint_state
+
+        self.replace_specific_status_widget(vehicle_number, "Waypoint_distance")
+        self.replace_specific_status_widget(vehicle_number, "Mission_state")
+
+    def recieve_kill_confirmation_message(self, kill_message):
         """
         Slot to receive a kill confirmation message from the ROS topic.
         Emits a signal to update the GUI with the received message.
@@ -2346,14 +2375,26 @@ class MainWindow(QMainWindow):
         """
         self.update_connections_signal.emit(conn_message)
 
+    def recieve_link_status(self, vehicle_number, status_message):
+        """
+        Slot to receive a per-vehicle DiagnosticStatus link update.
+        """
+        self.update_connections_signal.emit((vehicle_number, status_message))
+
     def _update_connections_gui(self, conn_message):
         """
         Updates the GUI to reflect the latest connection status and ping times for each Vehicle.
 
         Parameters:
-            conn_message: The Connections message object containing connection_type, connections, and last_ping.
+            conn_message: Either a (vehicle_number, DiagnosticStatus) tuple or the legacy
+            Connections message object containing connection_type, connections, and last_ping.
         """
         try:
+            if isinstance(conn_message, tuple):
+                vehicle_number, status_message = conn_message
+                self._update_link_status_gui(vehicle_number, status_message)
+                return
+
             if conn_message.connection_type == 1:
                 feedback_key = "Radio"
                 feedback_key_seconds = "Radio_seconds"
@@ -2433,6 +2474,60 @@ class MainWindow(QMainWindow):
             print("Exception in update_connections_gui:", e)
             for i in self.selected_vehicles:
                 self.recieve_console_update(f"Exception in update_connections_gui: {e}", i)
+
+    def _update_link_status_gui(self, vehicle_number, status_message):
+        hardware_id = getattr(status_message, "hardware_id", "").lower()
+        link_info = {
+            "radio": ("Radio", "Radio_seconds", "Radio"),
+            "wifi": ("Wifi", "Wifi_seconds", "Wifi"),
+            "modem": ("Modem", "Modem_seconds", "Acoustics"),
+        }.get(hardware_id)
+
+        if link_info is None or vehicle_number not in self.selected_vehicles:
+            return
+
+        feedback_key, feedback_key_seconds, label_prefix = link_info
+        status = 1 if diagnostic_level_value(getattr(status_message, "level", 2)) == 0 else 0
+        self.feedback_dict[feedback_key][vehicle_number] = status
+
+        layout = self.general_page_vehicle_layouts.get(vehicle_number)
+        widget = self.general_page_vehicle_widgets.get(vehicle_number)
+        if layout and widget:
+            self.replace_general_page_icon_widget(vehicle_number, feedback_key)
+
+        layout = getattr(self, f"vehicle{vehicle_number}_column0_layout", None)
+        widget = getattr(self, f"vehicle{vehicle_number}_column0_widget", None)
+        if layout and widget:
+            self.replace_specific_icon_widget(vehicle_number, feedback_key)
+
+        seconds = self._seconds_from_link_status(status_message, feedback_key_seconds, vehicle_number)
+        self.feedback_dict[feedback_key_seconds][vehicle_number] = seconds
+
+        buttons_widget = getattr(self, f"vehicle{vehicle_number}_buttons_column_widget", None)
+        if buttons_widget:
+            label_name = f"vehicle{vehicle_number}_{hardware_id}_seconds_widget"
+            existing_label = buttons_widget.findChild(QLabel, label_name)
+            if existing_label:
+                existing_label.setText(f"{label_prefix}: {seconds}")
+
+    def _seconds_from_link_status(self, status_message, fallback_key, vehicle_number):
+        values = {item.key: item.value for item in getattr(status_message, "values", [])}
+
+        if "last_ping_seconds" in values:
+            try:
+                return int(float(values["last_ping_seconds"]))
+            except (TypeError, ValueError):
+                pass
+
+        if "last_message_time" in values:
+            try:
+                timestamp = float(values["last_message_time"])
+                if timestamp > 0:
+                    return max(0, int(time.time() - timestamp))
+            except (TypeError, ValueError):
+                pass
+
+        return self.feedback_dict[fallback_key].get(vehicle_number, 0)
             
     def get_status_label(self, vehicle_number, status_message):
         """
@@ -2694,6 +2789,60 @@ class ConfirmationDialog(QDialog):
         layout.addWidget(message)
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
+
+class OriginDialog(QDialog):
+    """
+    Dialog for publishing the shared WGS84 origin.
+    """
+    def __init__(self, origin_values, parent=None, background_color="white", text_color="black", pop_up_window_style=None):
+        super().__init__(parent)
+        self.setWindowTitle("Publish Origin")
+        self.setStyleSheet(pop_up_window_style)
+
+        latitude, longitude, altitude = origin_values
+
+        layout = QGridLayout()
+        self.latitude_spin = self.create_spin_box(latitude, -90.0, 90.0, 8)
+        self.longitude_spin = self.create_spin_box(longitude, -180.0, 180.0, 8)
+        self.altitude_spin = self.create_spin_box(altitude, -10000.0, 10000.0, 2)
+
+        fields = [
+            ("Latitude:", self.latitude_spin),
+            ("Longitude:", self.longitude_spin),
+            ("Altitude:", self.altitude_spin),
+        ]
+        for row, (label_text, spin_box) in enumerate(fields):
+            label = QLabel(label_text)
+            label.setStyleSheet(f"color: {text_color};")
+            layout.addWidget(label, row, 0)
+            layout.addWidget(spin_box, row, 1)
+
+        button_box = QDialogButtonBox()
+        publish_button = button_box.addButton("Publish Origin", QDialogButtonBox.ButtonRole.AcceptRole)
+        button_box.addButton(QDialogButtonBox.StandardButton.Cancel)
+        publish_button.setStyleSheet(
+            f"background-color: {background_color}; color: {text_color}; border: 1px solid {text_color}; padding: 4px;"
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+        layout.addWidget(button_box, len(fields), 0, 1, 2)
+        self.setLayout(layout)
+
+    def create_spin_box(self, value, minimum, maximum, decimals):
+        spin_box = QDoubleSpinBox()
+        spin_box.setRange(minimum, maximum)
+        spin_box.setDecimals(decimals)
+        spin_box.setSingleStep(0.000001 if decimals > 2 else 1.0)
+        spin_box.setValue(float(value))
+        return spin_box
+
+    def get_origin(self):
+        return (
+            self.latitude_spin.value(),
+            self.longitude_spin.value(),
+            self.altitude_spin.value(),
+        )
 
 class LoadMissionsDialog(QDialog):
     """

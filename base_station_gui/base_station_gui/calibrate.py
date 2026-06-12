@@ -18,7 +18,10 @@ global ros_node
 
 # SSH configuration
 SSH_KEY_PATH = str(Path.home()) + "/.ssh/id_ed25519_cougs"
-DEPLOY_CONFIG_PATH = str(Path.home()) + "/base_station/mission_control/deploy_config.json"
+DEPLOY_CONFIG_PATH = os.environ.get(
+    "BASE_STATION_DEPLOY_CONFIG",
+    str(Path.home() / "config" / "cougars-config" / "base_station" / "deploy_config.json")
+)
 
 #Confirmed: This exists
 VEHICLE_PARAMS_PATH = os.path.expanduser("~/config/vehicle_params.yaml")
@@ -35,7 +38,7 @@ def get_vehicle_config(vehicle_number):
         with open(DEPLOY_CONFIG_PATH, "r") as f:
             config = json.load(f)
         vehicles = config["vehicles"]
-        vehicle_info = vehicles.get(str(vehicle_number))
+        vehicle_info = vehicles.get(f"coug{vehicle_number}") or vehicles.get(str(vehicle_number))
         if vehicle_info:
             return vehicle_info
         else:

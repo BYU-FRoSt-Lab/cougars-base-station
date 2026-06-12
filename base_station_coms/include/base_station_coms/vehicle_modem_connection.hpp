@@ -22,13 +22,15 @@ public:
         rclcpp::Node* node,
         rclcpp::Logger logger,
         rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher,
-        int max_missed_messages = 2)
+        int max_missed_messages = 2,
+        bool publish_link_status = true)
         : vehicle_id_(vehicle_id),
           modem_connection_status_(true),
           radio_connection_status_(false),
           wifi_connection_status_(false),
           messages_missed_(max_missed_messages - 1),
           max_missed_messages_(max_missed_messages),
+          publish_link_status_(publish_link_status),
           last_message_time_(node->now()),
           logger_(logger),
           modem_publisher_(modem_publisher) {
@@ -99,6 +101,10 @@ public:
                 RCLCPP_INFO(logger_, "Vehicle %d: confirmed emergency surface", this->get_vehicle_id());
             } break;
         }
+
+        if (publish_link_status_) {
+            this->check_modem_connection();
+        }
     }
 
         //used by the service callback functions to publish messages to the cougs
@@ -113,7 +119,9 @@ public:
        
         this->modem_publisher_->publish(request);
         this->increment_missed_messages();
-        this->check_modem_connection();
+        if (publish_link_status_) {
+            this->check_modem_connection();
+        }
     }
 
     void check_modem_connection() {
@@ -135,11 +143,21 @@ public:
         this->modem_connections_publisher_->publish(status_msg);
     }
 
+    void mark_missed_message_and_publish() {
+        increment_missed_messages();
+        check_modem_connection();
+    }
+
     void connections_callback(const diagnostic_msgs::msg::DiagnosticStatus::SharedPtr msg) {
         if (msg->hardware_id == "radio") {
             radio_connection_status_ = (msg->level == diagnostic_msgs::msg::DiagnosticStatus::OK);
         } else if (msg->hardware_id == "wifi") {
             wifi_connection_status_ = (msg->level == diagnostic_msgs::msg::DiagnosticStatus::OK);
+        } else if (msg->hardware_id == "modem") {
+            modem_connection_status_ = (msg->level == diagnostic_msgs::msg::DiagnosticStatus::OK);
+            if (modem_connection_status_) {
+                messages_missed_ = 0;
+            }
         }
     }
 
@@ -189,6 +207,11 @@ private:
     }
 
     void start_mission_callback(const cougars_interfaces::msg::SystemControl::SharedPtr msg) {
+        if (!this->is_connected() || radio_connection_status_ || wifi_connection_status_) {
+            return;
+        }
+
+        RCLCPP_WARN(logger_, "Starting mission for vehicle %d over modem", this->get_vehicle_id());
         cougars_coms::Init init_msg;
 
         // construct the bitmask based on the incoming message fields
@@ -214,7 +237,11 @@ private:
     }
 
     void emergency_kill_callback(const std_msgs::msg::Bool::SharedPtr msg) {
-        (void)msg;
+        if (!msg->data || !this->is_connected() || radio_connection_status_ || wifi_connection_status_) {
+            return;
+        }
+
+        RCLCPP_WARN(logger_, "Emergency kill for vehicle %d over modem", this->get_vehicle_id());
         cougars_coms::EmergencyKill e_kill_msg;
         send_acoustic_message(
             sizeof(e_kill_msg),
@@ -224,7 +251,11 @@ private:
     }
 
     void emergency_surface_callback(const std_msgs::msg::Bool::SharedPtr msg) {
-        (void)msg;
+        if (!msg->data || !this->is_connected() || radio_connection_status_ || wifi_connection_status_) {
+            return;
+        }
+
+        RCLCPP_WARN(logger_, "Emergency surface for vehicle %d over modem", this->get_vehicle_id());
         cougars_coms::EmergencySurface e_surface_msg;
         send_acoustic_message(
             sizeof(e_surface_msg),
@@ -239,6 +270,7 @@ private:
     bool wifi_connection_status_;
     int messages_missed_;
     int max_missed_messages_;
+    bool publish_link_status_;
     rclcpp::Time last_message_time_;
     rclcpp::Logger logger_;
     

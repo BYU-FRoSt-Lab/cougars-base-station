@@ -14,7 +14,6 @@ VISUALIZER_PATH="/home/frostlab/base_station/base-station-ros2/src/base_station_
 CONFIG_PATH="/home/frostlab/config/mapvizconfig.mvc"
 
 def generate_launch_description():
-    base_params_path = "/home/frostlab/base_station/base-station-ros2/base_station_params.yaml"
     activesubs=[False]*MAXSUB
 
     rclpy.init()
@@ -111,17 +110,23 @@ def generate_launch_description():
         default_value=CONFIG_PATH,
         description='Path to a Mapviz config file.'
         )
+    param_file_arg=DeclareLaunchArgument(
+        'param_file',
+        default_value="/home/frostlab/config/base_station_params.yaml",
+        description='Path to the base station parameter file.'
+        )
     launch_actions.extend([ #use period if needed
         launch.actions.ExecuteProcess( #start map tile server
             cmd=['bash',VISUALIZER_PATH+"/launch_server.sh"]
         ),
         arg,
+        param_file_arg,
         launch_ros.actions.Node( #mapviz 
             package='mapviz',
             executable='mapviz',
             name='mapviz',
             output='screen',
-            parameters= [base_params_path]
+            parameters= [LaunchConfiguration('param_file')]
             # arguments=[LaunchConfiguration('config')] #path of mapviz config yaml
         ),
         # launch_ros.actions.Node( #origin broadcaster
@@ -132,7 +137,7 @@ def generate_launch_description():
             package="swri_transform_util",
             executable="initialize_origin.py",
             name="initialize_origin",
-            parameters= [base_params_path,
+            parameters= [LaunchConfiguration('param_file'),
                 {"local_xy_frame": "map"},
                 {"local_xy_origin": "swri"},
                 {"local_xy_origins": """[
