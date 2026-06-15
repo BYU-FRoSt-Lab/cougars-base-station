@@ -224,7 +224,7 @@ class GuiNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self.origin_pub = self.create_publisher(GeoPoint, '/origin', origin_qos)
+        self.origin_pub = self.create_publisher(GeoPoint, 'send_origin', origin_qos)
 
         # Publisher for console log messages
         self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)

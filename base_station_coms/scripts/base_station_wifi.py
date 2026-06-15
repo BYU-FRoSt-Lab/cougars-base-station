@@ -55,7 +55,7 @@ class VehicleWifiConnection:
         )
         self.init_publisher = node.create_publisher(
             SystemControl,
-            f'coug{vehicle_id}/system/status',
+            f'coug{vehicle_id}/system/control',
             10
         )
         self.keyboard_controls_publisher = node.create_publisher(
@@ -77,6 +77,12 @@ class VehicleWifiConnection:
             10
         )
 
+        self.origin_publisher = node.create_publisher(
+            GeoPoint,
+            f'/origin',
+            10
+        )
+
         self.link_status_subscriber = node.create_subscription(
             DiagnosticStatus,
             f'coug{vehicle_id}/link_status',
@@ -95,6 +101,13 @@ class VehicleWifiConnection:
             SystemControl,
             f'coug{vehicle_id}/start_mission',
             self.start_mission_callback,
+            10
+        )
+
+        self.origin_subscriber = node.create_subscription(
+            GeoPoint,
+            f'/send_origin',
+            self.origin_callback,
             10
         )
 
@@ -130,6 +143,11 @@ class VehicleWifiConnection:
         if self.node.is_wifi_enabled() and self.connection_status:
             self.node.get_logger().info(f"Starting mission for vehicle {self.vehicle_id} over WiFi")
             self.init_publisher.publish(msg)
+
+    def origin_callback(self, msg):
+        self.node.get_logger().info(f"Received origin for vehicle {self.vehicle_id}: "
+                                    f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}")
+        self.origin_publisher.publish(msg)
 
     def emergency_kill_callback(self, msg):
         self.node.get_logger().info(
@@ -355,19 +373,7 @@ class Base_Station_Wifi(Node):
 
         self.console_log = self.create_publisher(ConsoleLog, 'console_log', 10)
 
-        self.last_origin = None
-        origin_qos = QoSProfile(
-            depth=1,
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-        )
-        self.origin_subscriber = self.create_subscription(
-            GeoPoint,
-            '/origin',
-            self.origin_callback,
-            origin_qos,
-        )
-
+ 
         self.ip_addresses = {}
         self.ping_rate_seconds = 2
         self.max_missed_pings = 2
@@ -473,44 +479,7 @@ class Base_Station_Wifi(Node):
             else:
                 self.get_logger().error(f"Error loading config: {e}")
 
-    def origin_callback(self, msg):
-        self.last_origin = msg
-        if not self.is_wifi_enabled():
-            self.get_logger().warn(
-                f"Received origin on /origin, but WiFi is disabled: "
-                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
-            )
-            self.console_log.publish(
-                ConsoleLog(
-                    message=f"Received origin on /origin but WiFi is disabled: lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}",
-                    vehicle_number=0,
-                )
-            )
-            return
 
-        connected_vehicles = [
-            vehicle_id
-            for vehicle_id, vehicle_wifi in self.vehicle_wifis.items()
-            if vehicle_wifi.connection_status
-        ]
-
-        if connected_vehicles:
-            self.get_logger().info(
-                f"Received origin on /origin over WiFi for connected vehicles {connected_vehicles}: "
-                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
-            )
-        else:
-            self.get_logger().warn(
-                f"Received origin on /origin, but no WiFi-connected vehicles are currently available: "
-                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
-            )
-
-        self.console_log.publish(
-            ConsoleLog(
-                message=f"Received origin on /origin: lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}",
-                vehicle_number=0,
-            )
-        )
 
     def create_test_wifi_connection(self, vehicle_id):
         self.ip_addresses[vehicle_id] = '127.0.0.1'

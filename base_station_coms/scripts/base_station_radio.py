@@ -3,15 +3,15 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
-from base_station_interfaces.msg import ConsoleLog,
+from rclpy.serialization import serialize_message
+from base_station_interfaces.msg import ConsoleLog
 from cougars_interfaces.msg import MissionFeedback, SystemControl, WaypointFeedback
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from dvl_msgs.msg import DVL
-from geographic_msgs.msg import RouteNetwork
+from geographic_msgs.msg import GeoPoint, RouteNetwork
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState, FluidPressure
-from std_msgs.msg import String, Bool
-from std_msgs.msg import Int8
+from std_msgs.msg import Bool
 import time
 import math
 
@@ -51,13 +51,13 @@ class VehicleRadioConnection:
 
         self.pressure_data_publisher = node.create_publisher(
             FluidPressure,
-            f'coug{vehicle_id}/pressure_data',
+            f'coug{vehicle_id}/pressure/data',
             10
         )
 
         self.battery_data_publisher = node.create_publisher(
             BatteryState,
-            f'coug{vehicle_id}/battery_data',
+            f'coug{vehicle_id}/battery/data',
             10
         )
 
@@ -70,6 +70,12 @@ class VehicleRadioConnection:
         self.waypoint_feedback_publisher = node.create_publisher(
             WaypointFeedback,
             f'coug{vehicle_id}/waypoint_feedback',
+            10
+        )
+
+        self.mission_feedback_publisher = node.create_publisher(
+            MissionFeedback,
+            f'coug{vehicle_id}/mission_feedback',
             10
         )
 
@@ -107,25 +113,55 @@ class VehicleRadioConnection:
             self.emergency_surface_callback,
             10
         )
-
     def link_status_callback(self, msg):
         connected = msg.level == DiagnosticStatus.OK
-        if msg.hardware_id == "radio":
-            self.connection_status = connected
-        elif msg.hardware_id == "wifi":
+        if msg.hardware_id == "wifi":
             self.wifi_connection = connected
         elif msg.hardware_id == "modem":
             self.modem_connection = connected
 
     def load_mission_callback(self, msg):
-        if not self.wifi_connection and self.connection_status:
-            # log sending over radio
-            self.node.get_logger().info(f"Sending mission for vehicle {self.vehicle_id} over radio")
+        if self.wifi_connection or not self.connection_status:
+            return
+
+        mission_message = {
+            "message": "MISSION",
+            "data": base64.b64encode(bytes(serialize_message(msg))).decode('ascii'),
+        }
+        payload = json.dumps(mission_message, separators=(',', ':'))
+        if self.send_message(self.node.send_message, payload):
+            self.node.get_logger().info(
+                f"Sent RouteNetwork to vehicle {self.vehicle_id} over radio"
+            )
+        else:
+            self.node.get_logger().error(
+                f"Failed to send RouteNetwork to vehicle {self.vehicle_id}"
+            )
 
     def start_mission_callback(self, msg):
-        if not self.wifi_connection and self.connection_status:
-            # log sending over radio
-            self.node.get_logger().info(f"Starting mission for vehicle {self.vehicle_id} over radio")
+        if self.wifi_connection or not self.connection_status:
+            return
+
+        init_message = {
+            "message": "INIT",
+            "src_id": self.node.vehicle_id,
+            "vehicle_id": self.vehicle_id,
+            "start": msg.start.data,
+            "rosbag_flag": msg.rosbag_flag.data,
+            "rosbag_prefix": msg.rosbag_prefix,
+            "thruster_arm": msg.thruster_arm.data,
+            "dvl_acoustics": msg.dvl_acoustics.data,
+        }
+        payload = json.dumps(init_message, separators=(',', ':'))
+
+        if self.send_message(self.node.send_message, payload):
+            self.node.get_logger().info(
+                f"Sent INIT command to vehicle {self.vehicle_id} over radio"
+            )
+        else:
+            self.node.get_logger().error(
+                f"Failed to send INIT command to vehicle {self.vehicle_id} over radio"
+            )
 
     def emergency_kill_callback(self, msg):
         if msg.data and not self.wifi_connection and self.connection_status:
@@ -137,10 +173,12 @@ class VehicleRadioConnection:
             self.node.get_logger().info(f"Emergency surface for vehicle {self.vehicle_id} over radio")
 
     def handle_ping(self, sender_address):
+        was_connected = self.connection_status
         self.radio_address = sender_address
         self.last_ping_time = time.time()
         self.connection_status = True
         self.publish_link_status()
+
 
     def has_address(self):
         return self.radio_address is not None
@@ -159,6 +197,11 @@ class VehicleRadioConnection:
 
     def should_request_status(self):
         return self.connection_status and not self.wifi_connection and self.has_address()
+
+    def send_message(self, send_fn, msg):
+        if not self.has_address():
+            return False
+        return send_fn(msg, self.radio_address)
 
     def request_status(self, send_fn):
         if not self.should_request_status():
@@ -185,53 +228,81 @@ class VehicleRadioConnection:
     
     # Function to handle received status messages
     def recieve_status(self, data):
-        self.get_logger().debug(f"Coug {data.get('src_id', 'unknown')}'s Status:")
-        self.get_logger().debug(f"    Data: {data}")
+        self.node.get_logger().info(
+            f"Received STATUS from Coug {data.get('src_id', 'unknown')}: {data}"
+        )
 
-        odometry_msg = Odometry()
-        odometry_msg.header.stamp = self.get_clock().now().to_msg()
-        odometry_msg.header.frame_id = "odom"
-        odometry_msg.child_frame_id = "base_link"
-        odometry_msg.pose.pose.position.x = data.get('x', 0.0)
-        odometry_msg.pose.pose.position.y = data.get('y', 0.0)
-        odometry_msg.pose.pose.position.z = data.get('z', 0.0)
-        odometry_msg.pose.pose.orientation.x = data.get('qx', 0.0)
-        odometry_msg.pose.pose.orientation.y = data.get('qy', 0.0)
-        odometry_msg.pose.pose.orientation.z = data.get('qz', 0.0)
-        odometry_msg.pose.pose.orientation.w = data.get('qw', 1.0)
-        self.odom_publisher.publish(odometry_msg)
+        now = self.node.get_clock().now().to_msg()
 
-        fluid_pressure_msg = FluidPressure()
-        fluid_pressure_msg.fluid_pressure = data.get('pressure', 0.0)
-        self.pressure_publisher.publish(fluid_pressure_msg)
+        if any(key in data for key in ('x', 'y', 'z', 'qx', 'qy', 'qz', 'qw')):
+            odometry_msg = Odometry()
+            odometry_msg.header.stamp = now
+            odometry_msg.header.frame_id = "odom"
+            odometry_msg.child_frame_id = "base_link"
+            odometry_msg.pose.pose.position.x = data.get('x', 0.0)
+            odometry_msg.pose.pose.position.y = data.get('y', 0.0)
+            odometry_msg.pose.pose.position.z = data.get('z', 0.0)
+            odometry_msg.pose.pose.orientation.x = data.get('qx', 0.0)
+            odometry_msg.pose.pose.orientation.y = data.get('qy', 0.0)
+            odometry_msg.pose.pose.orientation.z = data.get('qz', 0.0)
+            odometry_msg.pose.pose.orientation.w = data.get('qw', 1.0)
+            self.state_estimate_publisher.publish(odometry_msg)
 
-        battery_state_msg = BatteryState()
-        battery_state_msg.voltage = data.get('voltage', 0.0)
-        self.battery_publisher.publish(battery_state_msg)
+        if 'pressure' in data:
+            fluid_pressure_msg = FluidPressure()
+            fluid_pressure_msg.header.stamp = now
+            fluid_pressure_msg.fluid_pressure = data.get('pressure', 0.0)
+            fluid_pressure_msg.variance = data.get('pressure_variance', 0.0)
+            self.pressure_data_publisher.publish(fluid_pressure_msg)
 
-        dvl_msg = DVL()
-        dvl_msg.velocity.x = data.get('dvl_x', 0.0)
-        dvl_msg.velocity.y = data.get('dvl_y', 0.0)
-        dvl_msg.velocity.z = data.get('dvl_z', 0.0)
-        self.dvl_publisher.publish(dvl_msg)
+        if 'voltage' in data:
+            battery_state_msg = BatteryState()
+            battery_state_msg.header.stamp = now
+            battery_state_msg.voltage = data.get('voltage', float('nan'))
+            battery_state_msg.current = data.get('current', float('nan'))
+            battery_state_msg.percentage = data.get('percentage', float('nan'))
+            self.battery_data_publisher.publish(battery_state_msg)
 
-        waypoint_msg = WaypointFeedback()
-        waypoint_msg.state = data.get('ws', 0)
-        waypoint_msg.horizontal_distance_error = data.get('hd', 0.0)
-        self.waypoint_publisher.publish(waypoint_msg)
+        if any(key in data for key in ('dvl_x', 'dvl_y', 'dvl_z')):
+            dvl_msg = DVL()
+            dvl_msg.header.stamp = now
+            dvl_msg.velocity.x = data.get('dvl_x', 0.0)
+            dvl_msg.velocity.y = data.get('dvl_y', 0.0)
+            dvl_msg.velocity.z = data.get('dvl_z', 0.0)
+            dvl_msg.velocity_valid = data.get('dvl_valid', False)
+            dvl_msg.altitude = data.get('dvl_altitude', 0.0)
+            dvl_msg.fom = data.get('dvl_fom', 0.0)
+            self.dvl_publisher.publish(dvl_msg)
 
-        mission_msg = MissionFeedback()
-        mission_msg.state = data.get('ms', 0)
-        mission_msg.waypoints_completed = data.get('wc', 0)
-        mission_msg.waypoints_total = data.get('tw', 0)
-        mission_msg.elapsed_time = data.get('et', 0.0)
-        mission_msg.current = data.get('c', 0.0)
-        self.mission_publisher.publish(mission_msg)
+        waypoint_msg = None
+        if any(key in data for key in ('ws', 'hd', 'de', 'be')):
+            waypoint_msg = WaypointFeedback()
+            waypoint_msg.header.stamp = now
+            waypoint_msg.state = data.get('ws', 0)
+            waypoint_msg.horizontal_distance_error = data.get('hd', 0.0)
+            waypoint_msg.depth_error = data.get('de', 0.0)
+            waypoint_msg.bearing_error = data.get('be', 0.0)
+            self.waypoint_feedback_publisher.publish(waypoint_msg)
+
+        if any(key in data for key in ('ms', 'wc', 'tw', 'et', 'mission_id')):
+            mission_msg = MissionFeedback()
+            mission_msg.header.stamp = now
+            mission_msg.mission_id = data.get('mission_id', '')
+            mission_msg.state = data.get('ms', 0)
+            mission_msg.waypoints_completed = data.get('wc', 0)
+            mission_msg.waypoints_total = data.get('tw', 0)
+            mission_msg.elapsed_time = data.get('et', 0.0)
+            if waypoint_msg is not None:
+                mission_msg.current = waypoint_msg
+            self.mission_feedback_publisher.publish(mission_msg)
 
 
 
 
 class RFBridge(Node):
+    MAX_XBEE_PAYLOAD_BYTES = 90
+    FRAGMENT_DATA_BYTES = 18
+
     def __init__(self):
         super().__init__('base_station_rf_bridge')
 
@@ -275,16 +346,30 @@ class RFBridge(Node):
         self.device = XBeeDevice(self.xbee_port, self.xbee_baud)
 
         self.radio_addresses = {}
+        self.fragment_transfers = {}
 
         # publishes console log messages to GUI
         self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
     
         self.running = True
         self.max_msgs_missed = 5  # Number of missed messages before considering a vehicle disconnected
+
         self.vehicle_radios = {
             vehicle: VehicleRadioConnection(vehicle, self, self.max_msgs_missed)
             for vehicle in self.vehicles_in_mission
         }
+
+        origin_qos = QoSProfile(
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.origin_subscriber = self.create_subscription(
+            GeoPoint,
+            '/send_origin',
+            self.origin_callback,
+            origin_qos,
+        )
     
         self.timer = self.create_timer(self.ping_frequency, self.check_connections)
 
@@ -305,8 +390,7 @@ class RFBridge(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to open XBee device: {e}")
 
-    # Function to send a message to a specific address
-    def send_message(self, msg, address):
+    def _send_raw_message(self, msg, address):
         try:
             remote_device = RemoteXBeeDevice(self.device, address)
             self.device.send_data(remote_device, msg)
@@ -321,6 +405,50 @@ class RFBridge(Node):
             self.get_logger().debug(traceback.format_exc())
             return False
 
+    def send_message(self, msg, address):
+        payload = msg.encode('utf-8') if isinstance(msg, str) else bytes(msg)
+        if len(payload) <= self.MAX_XBEE_PAYLOAD_BYTES:
+            return self._send_raw_message(payload, address)
+
+        transfer_id = f"{time.time_ns() & 0xffffffffffff:x}"
+        chunks = [
+            payload[offset:offset + self.FRAGMENT_DATA_BYTES]
+            for offset in range(0, len(payload), self.FRAGMENT_DATA_BYTES)
+        ]
+        for index, chunk in enumerate(chunks):
+            fragment = json.dumps({
+                "message": "FRAGMENT",
+                "id": transfer_id,
+                "i": index,
+                "n": len(chunks),
+                "data": base64.b64encode(chunk).decode('ascii'),
+            }, separators=(',', ':'))
+            if not self._send_raw_message(fragment, address):
+                return False
+            time.sleep(0.03)
+
+        self.get_logger().debug(
+            f"Sent fragmented message {transfer_id} in {len(chunks)} chunks"
+        )
+        return True
+
+    def reassemble_fragment(self, data, sender_address):
+        transfer_key = (str(sender_address), data["id"])
+        transfer = self.fragment_transfers.setdefault(transfer_key, {
+            "total": int(data["n"]),
+            "chunks": {},
+        })
+        transfer["chunks"][int(data["i"])] = base64.b64decode(data["data"])
+        if len(transfer["chunks"]) != transfer["total"]:
+            return None
+
+        payload = b''.join(
+            transfer["chunks"][index] for index in range(transfer["total"])
+        ).decode('utf-8')
+        del self.fragment_transfers[transfer_key]
+        self.get_logger().debug(f"Reassembled fragmented message {data['id']}")
+        return payload
+
     # Callback for receiving data from XBee
     def data_receive_callback(self, xbee_message):
         try:
@@ -330,10 +458,16 @@ class RFBridge(Node):
             self.get_logger().debug(f"Received from {sender_address}: {payload}")
 
             data = json.loads(payload)
+            if data.get("message") == "FRAGMENT":
+                payload = self.reassemble_fragment(data, sender_address)
+                if payload is None:
+                    return
+                data = json.loads(payload)
             message_type = data.get("message")
             if (message_type == "PING"):
                 self.get_logger().debug(f"Received PING from vehicle {data.get('src_id')}")
                 self.recieve_ping(data.get("src_id"), sender_address)
+                return
             
             if sender_address not in self.radio_addresses:
                 self.get_logger().warn(f"Received message from unknown vehicle: {sender_address}")
@@ -387,6 +521,33 @@ class RFBridge(Node):
     def request_status_when_wifi_disconnected(self):
         for vehicle_radio in self.vehicle_radios.values():
             vehicle_radio.request_status(self.send_message)
+
+    def origin_callback(self, msg):
+        origin_message = {
+            "message": "ORIGIN",
+            "src_id": self.vehicle_id,
+            "lat": msg.latitude,
+            "lon": msg.longitude,
+            "alt": msg.altitude,
+        }
+        payload = json.dumps(origin_message, separators=(',', ':'))
+        sent_to = []
+        for vehicle_radio in self.vehicle_radios.values():
+            if vehicle_radio.wifi_connection or not vehicle_radio.is_connected():
+                continue
+            if vehicle_radio.send_message(self.send_message, payload):
+                sent_to.append(vehicle_radio.vehicle_id)
+
+        if sent_to:
+            self.get_logger().info(
+                f"Sent origin over radio to vehicles {sent_to}: "
+                f"lat={msg.latitude}, lon={msg.longitude}, alt={msg.altitude}"
+            )
+        else:
+            self.get_logger().warn(
+                "Received origin, but no radio-connected vehicle without WiFi was available"
+            )
+
     
 
 
