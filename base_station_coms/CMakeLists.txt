@@ -41,7 +41,6 @@ DESTINATION share/${PROJECT_NAME}/launch)
 install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
-  scripts/coms_logic_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
