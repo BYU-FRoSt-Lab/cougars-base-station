@@ -1,0 +1,19 @@
+<library path="libcougars_mapviz">
+  <class name="cougars_mapviz/cougars_waypoints"
+         type="cougars_mapviz::CougarsWaypointsPlugin"
+         base_class_type="mapviz::MapvizPlugin">
+    <description>CougUV fleet waypoint manager</description>
+  </class>
+
+  <class name="cougars_mapviz/cougars_startup"
+         type="cougars_mapviz::CougarsStartupPlugin"
+         base_class_type="mapviz::MapvizPlugin">
+    <description>Simple SystemControl publisher UI</description>
+  </class>
+
+  <class name="cougars_mapviz/cougars_origin"
+         type="cougars_mapviz::CougarsOrigin"
+         base_class_type="mapviz::MapvizPlugin">
+    <description>Displays an X marker at the origin location</description>
+  </class>
+</library>

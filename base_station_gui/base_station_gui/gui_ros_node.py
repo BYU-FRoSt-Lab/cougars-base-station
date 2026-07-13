@@ -87,6 +87,15 @@ class GuiNode(Node):
             )
             setattr(self, f'dvl_vel_subscription{coug_number}', sub)
 
+            # Subscribe to depth data messages for each vehicle
+            sub = self.create_subscription(
+                PoseWithCovarianceStamped,
+                f'coug{coug_number}/depth_data',
+                lambda msg, n=coug_number: window.recieve_depth_data_message(n, msg),
+                10
+            )
+            setattr(self, f'depth_data_subscription{coug_number}', sub)            
+            
             # Subscribe to pressure data topic for each vehicle
             sub = self.create_subscription(
                 FluidPressure,
