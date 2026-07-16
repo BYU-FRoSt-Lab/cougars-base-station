@@ -87,8 +87,6 @@ class GuiNode(Node):
             )
             setattr(self, f'dvl_vel_subscription{coug_number}', sub)
 
-<<<<<<< HEAD
-=======
             # Subscribe to depth data messages for each vehicle
             sub = self.create_subscription(
                 PoseWithCovarianceStamped,
@@ -98,7 +96,6 @@ class GuiNode(Node):
             )
             setattr(self, f'depth_data_subscription{coug_number}', sub)            
             
->>>>>>> cougars_mapviz
             # Subscribe to pressure data topic for each vehicle
             sub = self.create_subscription(
                 FluidPressure,
