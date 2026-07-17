@@ -11,7 +11,8 @@
 
   <exec_depend>base_station_coms</exec_depend>
   <exec_depend>base_station_gui</exec_depend>
-  <exec_depend>base_station_utils</exec_depend>
+  <exec_depend>cougars_mapviz</exec_depend>
+  <exec_depend>seatrac</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

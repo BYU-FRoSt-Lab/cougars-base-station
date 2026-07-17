@@ -26,6 +26,9 @@ include_directories(include)
 add_executable(modem_pinger src/modem_pinger.cpp)
 ament_target_dependencies(modem_pinger rclcpp std_srvs seatrac_interfaces)
 
+add_executable(modem_pinger_timesync src/modem_pinger_timesync.cpp)
+ament_target_dependencies(modem_pinger_timesync rclcpp nav_msgs sensor_msgs geographic_msgs seatrac_interfaces)
+
 add_executable(base_station_modem src/base_station_modem.cpp)
 ament_target_dependencies(base_station_modem rclcpp nav_msgs sensor_msgs std_srvs std_msgs geographic_msgs diagnostic_msgs seatrac_interfaces base_station_interfaces cougars_interfaces)
 
@@ -41,6 +44,7 @@ DESTINATION share/${PROJECT_NAME}/launch)
 install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
+  scripts/radio_protocol.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -53,6 +57,7 @@ ament_export_dependencies(rosidl_default_runtime)
 install(TARGETS
 base_station_modem
 modem_pinger
+modem_pinger_timesync
 teleop_couguv_key
 DESTINATION lib/${PROJECT_NAME})
 

@@ -100,6 +100,11 @@ public:
             case CONFIRM_EMERGENCY_SURFACE: {
                 RCLCPP_INFO(logger_, "Vehicle %d: confirmed emergency surface", this->get_vehicle_id());
             } break;
+            case TIMESTAMP: {
+                const TimeStamp* timestamp_msg =
+                    reinterpret_cast<const TimeStamp*>(msg.packet_data.data());
+                RCLCPP_DEBUG(logger_, "Vehicle %d: received timestamp message - seconds: %u, nanoseconds: %u", this->get_vehicle_id(), timestamp_msg->seconds, timestamp_msg->nanoseconds);
+            } break;
         }
 
         if (publish_link_status_) {

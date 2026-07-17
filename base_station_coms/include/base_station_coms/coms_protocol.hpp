@@ -25,6 +25,9 @@ enum COUG_MSG_ID : uint8_t {
     REQUEST_LOCALIZATION_INFO = 0x60,
     LOCALIZATION_INFO = 0x61,
 
+    REQUEST_TIMESTAMP = 0x70,
+    TIMESTAMP = 0x71
+
 };
 
 struct RequestStatus {
@@ -101,6 +104,15 @@ struct LocalizationInfo {
    float yaw;
    float depth;
 }__attribute__((packed));
+
+struct RequestTimestamp {
+    COUG_MSG_ID msg_id = REQUEST_TIMESTAMP;
+}__attribute__((packed));
+
+struct TimeStamp {
+    uint32_t seconds;
+    uint32_t nanoseconds;
+};
 
 
 
