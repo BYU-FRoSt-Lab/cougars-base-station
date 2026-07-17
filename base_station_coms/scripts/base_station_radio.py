@@ -172,8 +172,11 @@ class VehicleRadioConnection:
                 self.node.get_logger().info(f"Vehicle {self.vehicle_id} was disarmed over radio")
     
     def confirm_disarm_thruster(self, data):
+        confirmation = rp.ConfirmDisarmThrusterMessage.unpack(data)
         self.node.get_logger().info(f"Vehicle {self.vehicle_id} confirmed disarm thruster over radio")
-        self.print_to_gui_publisher.publish(ConsoleLog(message="Start mission command was successful", vehicle_number=data.get("src_id")))
+        self.print_to_gui_publisher.publish(ConsoleLog(
+            message="Disarm thruster command was successful",
+            vehicle_number=confirmation.src_id))
 
     def emergency_surface_callback(self, msg):
         if msg.data and not self.wifi_connection and self.connection_status:
@@ -286,7 +289,7 @@ class VehicleRadioConnection:
 
         mission_msg = MissionFeedback()
         mission_msg.header.stamp = now
-        mission_msg.mission_id = status.mission_id
+        mission_msg.mission_id = str(status.mission_id)
         mission_msg.state = status.mission_state
         mission_msg.waypoints_completed = status.waypoints_completed
         mission_msg.waypoints_total = status.waypoints_total
@@ -300,7 +303,6 @@ class VehicleRadioConnection:
 
 class RFBridge(Node):
     MAX_XBEE_PAYLOAD_BYTES = 90
-    FRAGMENT_DATA_BYTES = 18
 
     def __init__(self):
         super().__init__('base_station_rf_bridge')
@@ -433,9 +435,15 @@ class RFBridge(Node):
                     self.get_logger().warning(
                         f"Ignoring disarm confirmation from unknown vehicle {sender_id}")
             elif msg_id == int(rp.MessageID.CONFIRM_SYSTEM_CONTROL):
-                self.print_to_gui_publisher.publish(ConsoleLog(message="Start mission command was successful", vehicle_number=sender_id))
+                confirmation = rp.ConfirmSystemControlMessage.unpack(payload)
+                self.print_to_gui_publisher.publish(ConsoleLog(
+                    message="Start mission command was successful",
+                    vehicle_number=confirmation.src_id))
             elif msg_id == int(rp.MessageID.MISSION_RECEIVED):
-                self.print_to_gui_publisher.publish(ConsoleLog(message="Mission received by vehicle", vehicle_number=sender_id))
+                confirmation = rp.MissionReceivedMessage.unpack(payload)
+                self.print_to_gui_publisher.publish(ConsoleLog(
+                    message="Mission received by vehicle",
+                    vehicle_number=confirmation.src_id))
         except Exception as e:
             self.get_logger().error(f"Error in data_receive_callback: {e}")
             self.get_logger().error(traceback.format_exc())
