@@ -197,6 +197,8 @@ class MainWindow(QMainWindow):
 
             "Mission_time": {vehicle_num: "0.0 s" for vehicle_num in self.selected_vehicles},
 
+            "Waypoint_state": {vehicle_num: "Idle" for vehicle_num in self.selected_vehicles},
+
             "Waypoint_distance": {vehicle_num: "x" for vehicle_num in self.selected_vehicles},
 
             #Vehicles 1-3 Linear Velocities, list of ints
@@ -215,6 +217,7 @@ class MainWindow(QMainWindow):
             "Waypoint": "Current Waypoint: ",
             "Mission_state": "Mission State: ",
             "Mission_time": "Mission Time: ",
+            "Waypoint_state": "Waypoint State: ",
             "Waypoint_distance": "Distance to Next WP (m): ",
             "DVL_vel": "DVL Velocity <br>(m/s): ",
             "Battery": "Battery (V): ",
@@ -2065,11 +2068,14 @@ class MainWindow(QMainWindow):
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Heading (deg): h", f"Heading{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
-        temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Mission State: Idle", f"Mission_state{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Mission Time: 0.0 s", f"Mission_time{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Current Waypoint: w", f"Waypoint{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        temp_layout.addSpacing(status_spacing)
+        temp_layout.addSpacing(status_spacing)
+        temp_layout.addWidget(self.create_normal_label("Waypoint State: Idle", f"Waypoint_state{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
         temp_layout.addWidget(self.create_normal_label("Distance to Next WP (m): x", f"Waypoint_distance{vehicle_number}"), alignment=Qt.AlignmentFlag.AlignVCenter)
         temp_layout.addSpacing(status_spacing)
@@ -2197,10 +2203,10 @@ class MainWindow(QMainWindow):
             )
         )
 
-        self.feedback_dict["XPos"][vehicle_number] = round(x, 2)
-        self.feedback_dict["YPos"][vehicle_number] = round(y, 2)
-        self.feedback_dict["Depth"][vehicle_number] = round(depth, 2)
-        self.feedback_dict["Heading"][vehicle_number] = round(heading, 2)
+        self.feedback_dict["XPos"][vehicle_number] = round(x, 5)
+        self.feedback_dict["YPos"][vehicle_number] = round(y, 5)
+        self.feedback_dict["Depth"][vehicle_number] = round(depth, 5)
+        self.feedback_dict["Heading"][vehicle_number] = round(heading, 3)
 
         #replace specific page status widget
         self.replace_specific_status_widget(vehicle_number, "XPos")
@@ -2297,20 +2303,20 @@ class MainWindow(QMainWindow):
 
     def _update_waypoint_feedback(self, vehicle_number, msg):
         waypoint_state_labels = {
-            0: "Transiting",
-            1: "Arrived",
-            2: "Parking",
-            3: "Skipped",
+            0: "Idle",
+            1: "Transiting",
+            2: "Arrived",
+            3: "Parking",
+            4: "Skipped",
         }
         waypoint_state_value = diagnostic_level_value(msg.state)
         waypoint_state = waypoint_state_labels.get(waypoint_state_value, f"Unknown ({waypoint_state_value})")
 
         self.feedback_dict["Waypoint_distance"][vehicle_number] = f"{float(msg.horizontal_distance_error):.1f}"
-        if self.feedback_dict["Mission_state"].get(vehicle_number) in ("Idle", ""):
-            self.feedback_dict["Mission_state"][vehicle_number] = waypoint_state
+        self.feedback_dict["Waypoint_state"][vehicle_number] = waypoint_state
 
         self.replace_specific_status_widget(vehicle_number, "Waypoint_distance")
-        self.replace_specific_status_widget(vehicle_number, "Mission_state")
+        self.replace_specific_status_widget(vehicle_number, "Waypoint_state")
 
     def recieve_kill_confirmation_message(self, kill_message):
         """

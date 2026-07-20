@@ -113,6 +113,9 @@ public:
                 this->create_publisher<nav_msgs::msg::Odometry>(topic, 10));
         }
 
+        // wait 5 seconds before starting the ping scheduler to allow the modem to initialize
+        rclcpp::sleep_for(std::chrono::seconds(5));
+
         if (ping_delay_ > 0 && !vehicles_in_mission_.empty())
         {
             this->ping_timer_ = this->create_wall_timer(
@@ -168,6 +171,7 @@ private:
     {
         if (msg->packet_len == 0)
         {
+            RCLCPP_WARN(this->get_logger(), "Received empty packet from vehicle %d", msg->src_id);
             return;
         }
 
@@ -179,6 +183,7 @@ private:
             this->publish_vehicle_location(msg);
             break;
         default:
+            RCLCPP_INFO(this->get_logger(), "Received unknown message from vehicle %d with COUG_MSG_ID %d", msg->src_id, id);
             break;
         }
     }
@@ -227,8 +232,8 @@ private:
         nav_msgs::msg::Odometry vehicle_odometry_msg;
         vehicle_odometry_msg.header.stamp.sec = timestamp_msg->seconds;
         vehicle_odometry_msg.header.stamp.nanosec = timestamp_msg->nanoseconds;
-        vehicle_odometry_msg.header.frame_id = "world";
-        vehicle_odometry_msg.child_frame_id = "vehicle_" + std::to_string(msg->src_id);
+        vehicle_odometry_msg.header.frame_id = "map";
+        vehicle_odometry_msg.child_frame_id = "coug" + std::to_string(msg->src_id);
         vehicle_odometry_msg.pose.pose.position.x = x;
         vehicle_odometry_msg.pose.pose.position.y = y;
         vehicle_odometry_msg.pose.pose.position.z = z;

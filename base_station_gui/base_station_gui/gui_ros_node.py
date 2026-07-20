@@ -72,7 +72,7 @@ class GuiNode(Node):
             # Subscribe to state estimate messages for each vehicle
             sub = self.create_subscription(
                 Odometry,
-                f'coug{coug_number}/state_estimate',
+                f'coug{coug_number}/odometry/global',
                 lambda msg, n=coug_number: window.recieve_state_estimate_message(n, msg),
                 10
             )
@@ -288,6 +288,7 @@ class GuiNode(Node):
         self.publish_console_log(f"Published emergency surface command for Coug {vehicle_number}", vehicle_number)
 
     def load_route_network(self, mission_file_path):
+        self.get_logger().debug(f'Loading mission file: "{mission_file_path}"')
         try:
             with open(mission_file_path, 'r') as f:
                 data = yaml.safe_load(f)
@@ -295,24 +296,49 @@ class GuiNode(Node):
             self.get_logger().error(f'Failed to load mission file "{mission_file_path}": {e}')
             return RouteNetwork()
 
+        self.get_logger().debug(f'Parsed mission file type: {type(data).__name__}')
+        self.get_logger().debug(f'Parsed mission file content: {data}')
+
         if not isinstance(data, dict) or not data:
             self.get_logger().error(f'Mission file "{mission_file_path}" must be a non-empty mapping.')
             return RouteNetwork()
 
-        key, value = next(iter(data.items()))
-        if isinstance(value, list):
-            defaults = {}
-            waypoints = value
-        elif isinstance(value, dict):
-            defaults = value.get('defaults', {})
-            waypoints = value.get('waypoints', [])
-        else:
-            self.get_logger().error(f'Mission key "{key}" has unexpected format.')
+        self.get_logger().debug(f'Mission top-level keys: {list(data.keys())}')
+
+        mission_key = None
+        mission_value = None
+        for key, value in data.items():
+            if isinstance(value, dict) and 'waypoints' in value:
+                mission_key = key
+                mission_value = value
+                break
+            if isinstance(value, list):
+                mission_key = key
+                mission_value = value
+                break
+
+        if mission_key is None:
+            self.get_logger().error(
+                f'Mission file "{mission_file_path}" does not contain a mission block with waypoints.'
+            )
             return RouteNetwork()
+
+        self.get_logger().debug(f'Mission block key: {mission_key}')
+        if isinstance(mission_value, list):
+            defaults = {}
+            waypoints = mission_value
+            self.get_logger().debug(f'Mission format: list with {len(waypoints)} waypoints')
+        else:
+            defaults = mission_value.get('defaults', {})
+            waypoints = mission_value.get('waypoints', [])
+            self.get_logger().debug(
+                f"Mission format: dict with {len(waypoints)} waypoints and defaults {defaults}"
+            )
 
         return self.build_route_network(defaults, waypoints)
 
     def build_route_network(self, defaults, waypoints):
+        self.get_logger().debug(f'Building RouteNetwork with {len(waypoints)} waypoints')
         msg = RouteNetwork()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'wgs84'
@@ -325,6 +351,7 @@ class GuiNode(Node):
         msg.props.append(_kv('capture_radius', str(defaults.get('capture_radius', 10.0))))
 
         for i, wp_data in enumerate(waypoints):
+            self.get_logger().debug(f'Waypoint {i}: {wp_data}')
             wp = WayPoint()
             wp.id = _make_uuid(i)
             wp.position = GeoPoint()
@@ -340,6 +367,10 @@ class GuiNode(Node):
             if 'capture_radius' in wp_data:
                 wp.props.append(_kv('capture_radius', str(wp_data['capture_radius'])))
             msg.points.append(wp)
+
+        self.get_logger().debug(
+            f'Built RouteNetwork mission_id={mission_id} with {len(msg.points)} points'
+        )
 
         return msg
 

@@ -27,6 +27,9 @@ from pathlib import Path
 import base64
 
 class VehicleRadioConnection:
+    MAX_XBEE_PAYLOAD_BYTES = 90
+    FRAGMENT_DATA_BYTES = 18
+
     def __init__(self, vehicle_id, node, max_missed_messages, print_to_gui_publisher):
         self.vehicle_id = vehicle_id
         self.node = node
@@ -47,7 +50,7 @@ class VehicleRadioConnection:
 
         self.state_estimate_publisher = node.create_publisher(
             Odometry,
-            f'coug{vehicle_id}/state_estimate',
+            f'coug{vehicle_id}/odometry/global',
             10
         )
 
@@ -126,14 +129,45 @@ class VehicleRadioConnection:
         if self.wifi_connection or not self.connection_status:
             return
 
-        mission_message = {
-            "message": "MISSION",
-            "data": base64.b64encode(bytes(serialize_message(msg))).decode('ascii'),
-        }
-        payload = json.dumps(mission_message, separators=(',', ':'))
-        if self.send_message(self.node.send_message, payload):
+        mission_bytes = bytes(serialize_message(msg))
+
+        if len(mission_bytes) <= self.MAX_XBEE_PAYLOAD_BYTES:
+            if self.send_message(self.node.send_message, mission_bytes):
+                self.node.get_logger().info(
+                    f"Sent RouteNetwork to vehicle {self.vehicle_id} over radio"
+                )
+            else:
+                self.node.get_logger().error(
+                    f"Failed to send RouteNetwork to vehicle {self.vehicle_id}"
+                )
+            return
+
+        transfer_id = f"{time.time_ns() & 0xffffffffffff:x}"
+        chunks = [
+            mission_bytes[offset:offset + self.FRAGMENT_DATA_BYTES]
+            for offset in range(0, len(mission_bytes), self.FRAGMENT_DATA_BYTES)
+        ]
+
+        for index, chunk in enumerate(chunks):
+            fragment = json.dumps({
+                "message": "MISSION_FRAGMENT",
+                "id": transfer_id,
+                "i": index,
+                "n": len(chunks),
+                "data": base64.b64encode(chunk).decode('ascii'),
+            }, separators=(',', ':')).encode('utf-8')
+
+            if not self.send_message(self.node.send_message, fragment):
+                self.node.get_logger().error(
+                    f"Failed to send mission fragment {index + 1}/{len(chunks)} to vehicle {self.vehicle_id}"
+                )
+                return
+
+            time.sleep(0.03)
+
+        if self.send_message(self.node.send_message, b"MISSION_DONE"):
             self.node.get_logger().info(
-                f"Sent RouteNetwork to vehicle {self.vehicle_id} over radio"
+                f"Sent fragmented RouteNetwork to vehicle {self.vehicle_id} over radio"
             )
         else:
             self.node.get_logger().error(
@@ -238,14 +272,14 @@ class VehicleRadioConnection:
         
         status = rp.StatusResponseMessage.unpack(data)
 
-        self.node.get_logger().info(
+        self.node.get_logger().debug(
             f"Received STATUS from Coug {status.src_id}: {data}"
         )
 
         odometry_msg = Odometry()
         odometry_msg.header.stamp = now
-        odometry_msg.header.frame_id = "odom"
-        odometry_msg.child_frame_id = "base_link"
+        odometry_msg.header.frame_id = "map"
+        odometry_msg.child_frame_id = f"coug{status.src_id}/base_link"  # Assuming the child frame is named after the vehicle ID
         odometry_msg.pose.pose.position.x = status.x
         odometry_msg.pose.pose.position.y = status.y
         odometry_msg.pose.pose.position.z = status.depth
@@ -253,6 +287,12 @@ class VehicleRadioConnection:
         odometry_msg.pose.pose.orientation.y = status.orientation_y
         odometry_msg.pose.pose.orientation.z = status.orientation_z
         odometry_msg.pose.pose.orientation.w = status.orientation_w
+        odometry_msg.pose.covariance[0] = status.cov_x
+        odometry_msg.pose.covariance[7] = status.cov_y
+        odometry_msg.pose.covariance[14] = status.cov_z
+        odometry_msg.pose.covariance[21] = status.cov_roll
+        odometry_msg.pose.covariance[28] = status.cov_pitch
+        odometry_msg.pose.covariance[35] = status.cov_yaw
         self.state_estimate_publisher.publish(odometry_msg)
 
 
@@ -348,6 +388,9 @@ class RFBridge(Node):
         # Mapping of radio addresses to vehicle IDs
         self.radio_addresses = {}
 
+        # transfer_id -> {"chunks": {index: bytes}, "total": int}
+        self.fragment_transfers = {}
+
         # publishes console log messages to GUI
         self.print_to_gui_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
     
@@ -412,41 +455,73 @@ class RFBridge(Node):
         try:
             payload = xbee_message.data
             sender_address = xbee_message.remote_device.get_64bit_addr()
-            sender_id = payload[1] if len(payload) > 1 else None
 
-            msg_id = payload[0] if len(payload) > 0 else None
-            if msg_id is not None:
-                self.get_logger().info(f"Received message ID {msg_id} from {sender_id}")
+            if isinstance(payload, (bytes, bytearray)) and payload.startswith(b'{"'):
+                try:
+                    decoded = json.loads(payload.decode('utf-8'))
+                except Exception:
+                    decoded = None
+                if isinstance(decoded, dict) and decoded.get("message") == "FRAGMENT":
+                    self.handle_fragment(decoded, sender_address)
+                    return
 
-            if msg_id == int(rp.MessageID.PING):
-                self.recieve_ping(payload, sender_address)
-            elif msg_id == int(rp.MessageID.STATUS_RESPONSE):
-                vehicle_id = self.radio_addresses.get(sender_address, sender_id)
-                if vehicle_id in self.vehicle_radios:
-                    self.vehicle_radios[vehicle_id].recieve_status(payload)
-                else:
-                    self.get_logger().warning(
-                        f"Ignoring status from unknown vehicle {sender_id}")
-            elif msg_id == int(rp.MessageID.CONFIRM_DISARM_THRUSTER):
-                vehicle_id = self.radio_addresses.get(sender_address, sender_id)
-                if vehicle_id in self.vehicle_radios:
-                    self.vehicle_radios[vehicle_id].confirm_disarm_thruster(payload)
-                else:
-                    self.get_logger().warning(
-                        f"Ignoring disarm confirmation from unknown vehicle {sender_id}")
-            elif msg_id == int(rp.MessageID.CONFIRM_SYSTEM_CONTROL):
-                confirmation = rp.ConfirmSystemControlMessage.unpack(payload)
-                self.print_to_gui_publisher.publish(ConsoleLog(
-                    message="Start mission command was successful",
-                    vehicle_number=confirmation.src_id))
-            elif msg_id == int(rp.MessageID.MISSION_RECEIVED):
-                confirmation = rp.MissionReceivedMessage.unpack(payload)
-                self.print_to_gui_publisher.publish(ConsoleLog(
-                    message="Mission received by vehicle",
-                    vehicle_number=confirmation.src_id))
+            self.dispatch_payload(payload, sender_address)
         except Exception as e:
             self.get_logger().error(f"Error in data_receive_callback: {e}")
             self.get_logger().error(traceback.format_exc())
+
+    # Reassembles a fragmented message and dispatches it once all chunks arrive
+    def handle_fragment(self, fragment, sender_address):
+        transfer_id = fragment.get("id")
+        chunk_index = fragment.get("i")
+        total_chunks = fragment.get("n")
+        data = fragment.get("data")
+
+        if transfer_id is None or chunk_index is None or total_chunks is None or data is None:
+            self.get_logger().warning("Ignoring malformed FRAGMENT message: missing fields")
+            return
+
+        transfer = self.fragment_transfers.setdefault(
+            transfer_id, {"chunks": {}, "total": total_chunks}
+        )
+        transfer["chunks"][chunk_index] = base64.b64decode(data)
+
+        if len(transfer["chunks"]) != transfer["total"]:
+            return
+
+        payload = b"".join(transfer["chunks"][i] for i in range(transfer["total"]))
+        del self.fragment_transfers[transfer_id]
+        self.dispatch_payload(payload, sender_address)
+
+    # Routes a fully-assembled payload to the right handler based on its message ID
+    def dispatch_payload(self, payload, sender_address):
+        sender_id = payload[1] if len(payload) > 1 else None
+
+        msg_id = payload[0] if len(payload) > 0 else None
+        if msg_id is not None:
+            self.get_logger().debug(f"Received message ID {msg_id} from {sender_id}")
+
+        if msg_id == int(rp.MessageID.PING):
+            self.recieve_ping(payload, sender_address)
+        elif msg_id == int(rp.MessageID.STATUS_RESPONSE):
+            vehicle_id = self.radio_addresses.get(sender_address, sender_id)
+            if vehicle_id in self.vehicle_radios:
+                self.vehicle_radios[vehicle_id].recieve_status(payload)
+            else:
+                self.get_logger().warning(
+                    f"Ignoring status from unknown vehicle {sender_id}")
+        elif msg_id == int(rp.MessageID.CONFIRM_DISARM_THRUSTER):
+            vehicle_id = self.radio_addresses.get(sender_address, sender_id)
+            if vehicle_id in self.vehicle_radios:
+                self.vehicle_radios[vehicle_id].confirm_disarm_thruster(payload)
+            else:
+                self.get_logger().warning(
+                    f"Ignoring disarm confirmation from unknown vehicle {sender_id}")
+        elif msg_id == int(rp.MessageID.CONFIRM_SYSTEM_CONTROL):
+            confirmation = rp.ConfirmSystemControlMessage.unpack(payload)
+            self.print_to_gui_publisher.publish(ConsoleLog(
+                message="Start mission command was successful",
+                vehicle_number=confirmation.src_id))
 
     # Function to check connections and send PING messages
     def check_connections(self):
@@ -461,7 +536,7 @@ class RFBridge(Node):
                 self.get_logger().debug(f"Failed to send broadcast PING: {e}")
         else:
             for vehicle_radio in self.vehicle_radios.values():
-                self.get_logger().info(f"Sending PING to Coug{vehicle_radio.vehicle_id}")
+                self.get_logger().debug(f"Sending PING to Coug{vehicle_radio.vehicle_id}")
                 vehicle_radio.send_message(self.send_message, ping)
 
         for vehicle_radio in self.vehicle_radios.values():
