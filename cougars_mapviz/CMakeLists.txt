@@ -24,6 +24,7 @@ endif()
 # --- Dependencies ---
 find_package(ament_cmake_auto REQUIRED)
 
+find_package(ament_index_cpp REQUIRED)
 find_package(geographic_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(cougars_interfaces REQUIRED)
@@ -62,6 +63,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC
   "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
 ament_target_dependencies(${PROJECT_NAME}
+  ament_index_cpp
   geographic_msgs
   geometry_msgs
   mapviz
@@ -88,6 +90,7 @@ install(FILES mapviz_plugins.xml DESTINATION share/${PROJECT_NAME})
 pluginlib_export_plugin_description_file(mapviz mapviz_plugins.xml)
 
 ament_export_dependencies(
+  ament_index_cpp
   geographic_msgs
   geometry_msgs
   mapviz

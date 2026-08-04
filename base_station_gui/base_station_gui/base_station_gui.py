@@ -11,11 +11,11 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 
 # PyQt6 imports for GUI components
-from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow, 
-    QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout, 
-    QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog, 
-    QDialogButtonBox, QMessageBox, QColorDialog, QDoubleSpinBox
+from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
+    QWidget, QPushButton, QTabWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QFrame,QSizePolicy, QSplashScreen, QCheckBox, QSpacerItem, QGridLayout,
+    QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog,
+    QDialogButtonBox, QMessageBox, QColorDialog, QDoubleSpinBox, QComboBox
 )
 from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
     QPainter, QAction, QIcon, QActionGroup
@@ -2796,6 +2796,38 @@ class ConfirmationDialog(QDialog):
         layout.addWidget(self.buttonBox)
         self.setLayout(layout)
 
+def load_origin_presets():
+    """
+    Load named origin presets from cougars_mapviz's mapviz_origins.yaml, so mapviz
+    and this GUI share a single list of sites. Returns [] if the file or package
+    can't be found (e.g. cougars_mapviz isn't installed on this machine).
+    """
+    try:
+        mapviz_share = get_package_share_directory('cougars_mapviz')
+    except Exception:
+        return []
+
+    origins_path = os.path.join(mapviz_share, 'mapviz', 'mapviz_origins.yaml')
+    try:
+        with open(origins_path, 'r') as f:
+            entries = yaml.safe_load(f) or []
+    except Exception:
+        return []
+
+    presets = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if 'name' not in entry or 'latitude' not in entry or 'longitude' not in entry:
+            continue
+        presets.append({
+            'name': entry['name'],
+            'latitude': float(entry['latitude']),
+            'longitude': float(entry['longitude']),
+            'altitude': float(entry.get('altitude', 0.0)),
+        })
+    return presets
+
 class OriginDialog(QDialog):
     """
     Dialog for publishing the shared WGS84 origin.
@@ -2808,6 +2840,18 @@ class OriginDialog(QDialog):
         latitude, longitude, altitude = origin_values
 
         layout = QGridLayout()
+
+        self.presets = load_origin_presets()
+        preset_label = QLabel("Preset:")
+        preset_label.setStyleSheet(f"color: {text_color};")
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItem("Manual")
+        for preset in self.presets:
+            self.preset_combo.addItem(preset['name'])
+        self.preset_combo.currentIndexChanged.connect(self.apply_preset)
+        layout.addWidget(preset_label, 0, 0)
+        layout.addWidget(self.preset_combo, 0, 1)
+
         self.latitude_spin = self.create_spin_box(latitude, -90.0, 90.0, 8)
         self.longitude_spin = self.create_spin_box(longitude, -180.0, 180.0, 8)
         self.altitude_spin = self.create_spin_box(altitude, -10000.0, 10000.0, 2)
@@ -2817,7 +2861,7 @@ class OriginDialog(QDialog):
             ("Longitude:", self.longitude_spin),
             ("Altitude:", self.altitude_spin),
         ]
-        for row, (label_text, spin_box) in enumerate(fields):
+        for row, (label_text, spin_box) in enumerate(fields, start=1):
             label = QLabel(label_text)
             label.setStyleSheet(f"color: {text_color};")
             layout.addWidget(label, row, 0)
@@ -2832,8 +2876,17 @@ class OriginDialog(QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
 
-        layout.addWidget(button_box, len(fields), 0, 1, 2)
+        layout.addWidget(button_box, len(fields) + 1, 0, 1, 2)
         self.setLayout(layout)
+
+    def apply_preset(self, index):
+        preset_index = index - 1
+        if preset_index < 0 or preset_index >= len(self.presets):
+            return
+        preset = self.presets[preset_index]
+        self.latitude_spin.setValue(preset['latitude'])
+        self.longitude_spin.setValue(preset['longitude'])
+        self.altitude_spin.setValue(preset['altitude'])
 
     def create_spin_box(self, value, minimum, maximum, decimals):
         spin_box = QDoubleSpinBox()

@@ -29,6 +29,7 @@
 #include <QPainter>
 #include <QWidget>
 #include <QLabel>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -37,8 +38,16 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2/LinearMath/Vector3.h>
 #include <string>
+#include <vector>
 
 namespace cougars_mapviz {
+
+struct OriginPreset {
+  std::string name;
+  double latitude;
+  double longitude;
+  double altitude;
+};
 
 class CougarsOrigin : public mapviz::MapvizPlugin {
   Q_OBJECT
@@ -66,9 +75,13 @@ class CougarsOrigin : public mapviz::MapvizPlugin {
   void OriginCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void UpdateOriginDisplay();
   void PublishOrigin();
+  void OnPresetSelected(int index);
 
  private:
+  void LoadOriginPresets();
+
   QWidget* config_widget_;
+  QComboBox* preset_combo_;
   QDoubleSpinBox* lat_spinbox_;
   QDoubleSpinBox* lon_spinbox_;
   QDoubleSpinBox* alt_spinbox_;
@@ -77,6 +90,7 @@ class CougarsOrigin : public mapviz::MapvizPlugin {
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr origin_sub_;
   rclcpp::Publisher<geographic_msgs::msg::GeoPoint>::SharedPtr publisher_;
   tf2::Vector3 origin_;
+  std::vector<OriginPreset> presets_;
 };
 
 }  // namespace cougars_mapviz

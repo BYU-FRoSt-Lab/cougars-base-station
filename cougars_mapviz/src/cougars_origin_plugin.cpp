@@ -20,11 +20,16 @@
 #include <cougars_mapviz/cougars_origin_plugin.hpp>
 #include <pluginlib/class_list_macros.hpp>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <yaml-cpp/yaml.h>
+
 #include <QLabel>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <exception>
 #include <string>
 
 PLUGINLIB_EXPORT_CLASS(cougars_mapviz::CougarsOrigin, mapviz::MapvizPlugin)
@@ -42,6 +47,15 @@ CougarsOrigin::CougarsOrigin()
     : MapvizPlugin(), config_widget_(new QWidget()), map_canvas_(nullptr),
       origin_(0, 0, 0) {
   QVBoxLayout* layout = new QVBoxLayout(config_widget_);
+
+  // Preset selector
+  QHBoxLayout* preset_layout = new QHBoxLayout();
+  preset_layout->addWidget(new QLabel("Preset:"));
+  preset_combo_ = new QComboBox();
+  preset_combo_->addItem("Manual");
+  preset_layout->addWidget(preset_combo_);
+  layout->addLayout(preset_layout);
+  QObject::connect(preset_combo_, SIGNAL(currentIndexChanged(int)), this, SLOT(OnPresetSelected(int)));
 
   // Latitude
   QHBoxLayout* lat_layout = new QHBoxLayout();
@@ -82,7 +96,9 @@ CougarsOrigin::~CougarsOrigin() {}
 
 bool CougarsOrigin::Initialize(QGLWidget* canvas) {
   map_canvas_ = dynamic_cast<mapviz::MapCanvas*>(canvas);
-  
+
+  LoadOriginPresets();
+
     rclcpp::QoS origin_qos(rclcpp::KeepLast(1));
     origin_qos.transient_local();
     origin_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -185,6 +201,55 @@ void CougarsOrigin::UpdateOriginDisplay() {
   lat_spinbox_->blockSignals(false);
   lon_spinbox_->blockSignals(false);
   alt_spinbox_->blockSignals(false);
+}
+
+void CougarsOrigin::LoadOriginPresets() {
+  std::string yaml_path;
+  try {
+    yaml_path = ament_index_cpp::get_package_share_directory("cougars_mapviz") +
+                "/mapviz/mapviz_origins.yaml";
+  } catch (const std::exception& e) {
+    PrintWarning("Unable to locate cougars_mapviz share directory: " + std::string(e.what()));
+    return;
+  }
+
+  YAML::Node root;
+  try {
+    root = YAML::LoadFile(yaml_path);
+  } catch (const std::exception& e) {
+    PrintWarning("Unable to load origin presets from " + yaml_path + ": " + e.what());
+    return;
+  }
+
+  if (!root.IsSequence()) {
+    return;
+  }
+
+  for (const auto& entry : root) {
+    if (!entry["name"] || !entry["latitude"] || !entry["longitude"]) {
+      continue;
+    }
+    OriginPreset preset;
+    preset.name = entry["name"].as<std::string>();
+    preset.latitude = entry["latitude"].as<double>();
+    preset.longitude = entry["longitude"].as<double>();
+    preset.altitude = entry["altitude"] ? entry["altitude"].as<double>() : 0.0;
+    presets_.push_back(preset);
+    preset_combo_->addItem(QString::fromStdString(preset.name));
+  }
+}
+
+void CougarsOrigin::OnPresetSelected(int index) {
+  // Index 0 is the "Manual" placeholder entry; leave existing values alone.
+  int preset_index = index - 1;
+  if (preset_index < 0 || static_cast<size_t>(preset_index) >= presets_.size()) {
+    return;
+  }
+
+  const OriginPreset& preset = presets_[preset_index];
+  lat_spinbox_->setValue(preset.latitude);
+  lon_spinbox_->setValue(preset.longitude);
+  alt_spinbox_->setValue(preset.altitude);
 }
 
 void CougarsOrigin::PublishOrigin() {

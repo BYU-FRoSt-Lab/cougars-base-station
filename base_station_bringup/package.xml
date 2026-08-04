@@ -13,6 +13,8 @@
   <exec_depend>base_station_gui</exec_depend>
   <exec_depend>cougars_mapviz</exec_depend>
   <exec_depend>seatrac</exec_depend>
+  <exec_depend>gpsd_client</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

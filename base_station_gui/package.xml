@@ -15,6 +15,7 @@
   <build_depend>base_station_interfaces</build_depend>
   <exec_depend>base_station_interfaces</exec_depend>
   <exec_depend>base_station_utils</exec_depend>
+  <exec_depend>cougars_mapviz</exec_depend>
   <build_depend>cougars_interfaces</build_depend>
   <build_export_depend>cougars_interfaces</build_export_depend>
   <exec_depend>cougars_interfaces</exec_depend>

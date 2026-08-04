@@ -45,6 +45,7 @@ install(PROGRAMS
   scripts/base_station_radio.py
   scripts/base_station_wifi.py
   scripts/radio_protocol.py
+  scripts/comm_range_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -11,6 +11,11 @@ def generate_launch_description():
             default_value='/home/frostlab/config/base_station_params.yaml',
             description='Path to the base station parameter file'
         ),
+        DeclareLaunchArgument(
+            'origin',
+            default_value='default_site',
+            description='Origin for the base station'
+        ),
         launch_ros.actions.Node(
             package='base_station_gui',
             executable='gui_node',
@@ -18,6 +23,7 @@ def generate_launch_description():
             output='screen',
             additional_env={
                 'BASE_STATION_PARAM_FILE': LaunchConfiguration('param_file')
-            }
+            },
+            parameters=[LaunchConfiguration('origin')],
         ),
     ])

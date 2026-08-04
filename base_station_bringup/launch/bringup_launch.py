@@ -40,6 +40,7 @@ def generate_launch_description():
 
     launch_args = [
         ('param_file', LaunchConfiguration('param_file')),
+        ('origin', LaunchConfiguration('origin')),
     ]
 
     ### Package launch directories
@@ -87,6 +88,7 @@ def generate_launch_description():
         use_gui_launch_arg,
         use_mapviz_launch_arg,
         acoms_on_launch_arg,
+
         # launch files
         coms_launch,
         gui_launch,
