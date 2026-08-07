@@ -16,6 +16,9 @@ def generate_launch_description():
         default_value=f'{Path.home()}/config/base/base_station_params.yaml',
     )
 
+    # origin = DeclareLaunchArgument('origin', default_value='default_site'),
+
+
     mapviz_launch_dir = os.path.join(
         get_package_share_directory('cougars_mapviz'), 'launch')
 
@@ -34,10 +37,11 @@ def generate_launch_description():
         output='log',
     )
 
-    mapviz_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(mapviz_launch_dir, 'mapviz_launch.py')),
-    )
+    # mapviz_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(mapviz_launch_dir, 'mapviz_launch.py')),
+    #     launch_arguments={'param_file': LaunchConfiguration('param_file'), 'origin': LaunchConfiguration('origin')}.items()
+    # )
 
     gpsd_host_launch_arg = DeclareLaunchArgument(
         'gpsd_host',
@@ -73,11 +77,12 @@ def generate_launch_description():
         arguments=['--ros-args', '--log-level', 'WARN'],
     )
 
+
     return LaunchDescription([
         param_file_arg,
         modem_pinger,
         seatrac_node,
-        mapviz_launch,
+        # mapviz_launch,
         gpsd_host_launch_arg,
         gpsd_port_launch_arg,
         gps_node_container,

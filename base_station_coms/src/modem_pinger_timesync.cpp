@@ -86,6 +86,18 @@ public:
         this->declare_parameter<double>("modem_offset_y", 0.0);
         this->declare_parameter<double>("modem_offset_z", 0.0);
 
+
+        /**
+         * @param origin_latitude / origin_longitude / origin_altitude
+         *
+         * The geographic coordinates of the base station's origin, expressed in
+         * degrees and meters, respectively. This is used as the reference point
+         * for all position calculations.
+         */
+        this->declare_parameter<double>("origin_latitude", 0.0);
+        this->declare_parameter<double>("origin_longitude", 0.0);
+        this->declare_parameter<double>("origin_altitude", 0.0);
+
         this->ping_delay_ = this->get_parameter("ping_delay_seconds").as_int();
         this->vehicles_in_mission_ =
             this->get_parameter("vehicles_in_mission").as_integer_array();
@@ -94,6 +106,13 @@ public:
         this->modem_offset_y_ = this->get_parameter("modem_offset_y").as_double();
         this->modem_offset_z_ = this->get_parameter("modem_offset_z").as_double();
         this->latest_fix_ = nullptr;
+
+        this->latest_origin_ = std::make_shared<geographic_msgs::msg::GeoPoint>();
+        this->latest_origin_->latitude = this->get_parameter("origin_latitude").as_double();
+        this->latest_origin_->longitude = this->get_parameter("origin_longitude").as_double();
+        this->latest_origin_->altitude = this->get_parameter("origin_altitude").as_double();
+
+
 
         modem_publisher_ = this->create_publisher<ModemSend>("modem_send", 10);
 
@@ -125,7 +144,7 @@ public:
         for (const int64_t vehicle_id : vehicles_in_mission_)
         {
             const std::string topic =
-                "/coug" + std::to_string(vehicle_id) + "/vehicle_odometry";
+                "/coug" + std::to_string(vehicle_id) + "/modem_gps_odometry";
             vehicle_odometry_publishers_.try_emplace(
                 vehicle_id,
                 this->create_publisher<nav_msgs::msg::Odometry>(topic, 10));
@@ -146,6 +165,8 @@ public:
             RCLCPP_WARN(this->get_logger(),
                 "Ping scheduler disabled: ping_delay_seconds must be positive and vehicles_in_mission must not be empty.");
         }
+        RCLCPP_INFO(this->get_logger(), "SeatracPinger node initialized with origin (%.9f, %.9f, %.3f).",
+            latest_origin_->latitude, latest_origin_->longitude, latest_origin_->altitude);
     }
 
 private:
