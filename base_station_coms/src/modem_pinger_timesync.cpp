@@ -56,7 +56,7 @@ public:
          * ping_delay_seconds interval, then the list repeats from the beginning.
          */
         this->declare_parameter<std::vector<int64_t>>(
-            "vehicles_in_mission", std::vector<int64_t>{1});
+            "vehicles_in_mission", std::vector<int64_t>{2});
 
         /**
          * @param request_response
@@ -71,10 +71,28 @@ public:
          */
         this->declare_parameter<bool>("request_response", false);
 
+        /**
+         * @param modem_offset_x / modem_offset_y / modem_offset_z
+         *
+         * Lever arm from the GPS antenna to the Seatrac modem, expressed in
+         * the vehicle body frame (x: forward, y: right/starboard, z: down),
+         * in meters. This accounts for the modem not being co-located with
+         * the GPS antenna: the reported USBL range/bearing is relative to
+         * the modem, but the only absolute position we have is the GPS fix.
+         * The offset is rotated into the world frame using the beacon's
+         * reported attitude before being applied.
+         */
+        this->declare_parameter<double>("modem_offset_x", 0.0);
+        this->declare_parameter<double>("modem_offset_y", 0.0);
+        this->declare_parameter<double>("modem_offset_z", 0.0);
+
         this->ping_delay_ = this->get_parameter("ping_delay_seconds").as_int();
         this->vehicles_in_mission_ =
             this->get_parameter("vehicles_in_mission").as_integer_array();
         this->request_response_ = this->get_parameter("request_response").as_bool();
+        this->modem_offset_x_ = this->get_parameter("modem_offset_x").as_double();
+        this->modem_offset_y_ = this->get_parameter("modem_offset_y").as_double();
+        this->modem_offset_z_ = this->get_parameter("modem_offset_z").as_double();
         this->latest_fix_ = nullptr;
 
         modem_publisher_ = this->create_publisher<ModemSend>("modem_send", 10);
@@ -135,6 +153,9 @@ private:
     std::vector<int64_t> vehicles_in_mission_;
     std::size_t next_vehicle_index_ = 0;
     bool request_response_;
+    double modem_offset_x_;
+    double modem_offset_y_;
+    double modem_offset_z_;
     rclcpp::Publisher<ModemSend>::SharedPtr modem_publisher_;
     rclcpp::TimerBase::SharedPtr ping_timer_;
     rclcpp::Subscription<seatrac_interfaces::msg::ModemRec>::SharedPtr modem_subscriber_;
@@ -226,6 +247,20 @@ private:
         double z;
         beacon_spherical_to_cartesian(range, azimuth, elevation, x, y, z);
         rotate_from_beacon_frame(beacon_roll, beacon_pitch, beacon_yaw, x, y, z);
+
+        // The USBL range/bearing is relative to the modem, not the GPS
+        // antenna. Rotate the modem's body-frame lever arm (from GPS to
+        // modem) into the world frame using the same attitude, and add it
+        // so the fix-based translation below effectively originates from
+        // the modem's true position rather than the GPS antenna's.
+        double offset_x = modem_offset_x_;
+        double offset_y = modem_offset_y_;
+        double offset_z = modem_offset_z_;
+        rotate_from_beacon_frame(beacon_roll, beacon_pitch, beacon_yaw, offset_x, offset_y, offset_z);
+        x += offset_x;
+        y += offset_y;
+        z += offset_z;
+
         translate_to_world_frame(*latest_fix_, *latest_origin_, x, y, z);
 
 
