@@ -36,6 +36,8 @@ def generate_launch_description():
             executable='base_station_radio.py',
             name='base_station_radio',
             parameters=[param_file],
-            output='screen'
+            output='screen',
+            remappings=[('odometry/global', 'gps/odom')]
+
         ),
     ])

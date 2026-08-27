@@ -35,6 +35,12 @@ DEFAULT_DURATION_S = "30"
 DEFAULT_DISTANCES = "5,10,20,30,40,50"
 DEFAULT_TOLERANCE_M = "1.0"
 DEFAULT_NAVSAT_TOPIC = "/fix"
+DEFAULT_MAX_WIFI_DISTANCE_M = "30"
+DEFAULT_XCTU_EXPORT_DIR = "~/scripts/hardware_tests/xctu_exports"
+
+# iperf3's default TCP connect retry behavior can hang for ~2 minutes when
+# the server is unreachable (e.g. out of WiFi range). Bound it explicitly.
+CONNECT_TIMEOUT_MS = 5000
 
 EARTH_RADIUS_M = 6371000.0
 
@@ -164,9 +170,20 @@ def run_wifi_stop(server_ip, interface, duration_s, output_csv):
     )
 
     iperf = subprocess.Popen(
-        ["iperf3", "-c", server_ip, "-i", "1", "-t", str(duration_s), "--forceflush"],
+        [
+            "iperf3", "-c", server_ip, "-i", "1", "-t", str(duration_s),
+            "--connect-timeout", str(CONNECT_TIMEOUT_MS), "--forceflush",
+        ],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     )
+
+    # Belt-and-suspenders on top of --connect-timeout: if iperf3 still
+    # hasn't finished well past its expected runtime (e.g. it hangs for
+    # some other reason when out of range), kill it rather than block the
+    # whole test session forever. select() lets us poll for that even
+    # while waiting on iperf3's stdout.
+    watchdog_s = duration_s + (CONNECT_TIMEOUT_MS / 1000.0) + 15
+    start = time.monotonic()
 
     samples = []
     try:
@@ -174,7 +191,27 @@ def run_wifi_stop(server_ip, interface, duration_s, output_csv):
             writer = csv.writer(f)
             writer.writerow(["timestamp", "iperf_mbits_sec", "rssi_dbm"])
 
-            for line in iperf.stdout:
+            while True:
+                remaining = watchdog_s - (time.monotonic() - start)
+                if remaining <= 0:
+                    print(
+                        f"\niperf3 exceeded {watchdog_s:.0f}s without finishing "
+                        "(likely out of range) — killing it."
+                    )
+                    break
+
+                ready, _, _ = select.select([iperf.stdout], [], [], min(remaining, 1.0))
+                if not ready:
+                    if iperf.poll() is not None:
+                        break
+                    continue
+
+                line = iperf.stdout.readline()
+                if not line:
+                    if iperf.poll() is not None:
+                        break
+                    continue
+
                 print(line, end="")
 
                 match = pattern.search(line)
@@ -200,6 +237,10 @@ def run_wifi_stop(server_ip, interface, duration_s, output_csv):
     finally:
         try:
             iperf.terminate()
+            try:
+                iperf.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                iperf.kill()
         except Exception:
             pass
 
@@ -232,24 +273,40 @@ def plot_wifi_stop(csv_path, output_dir, label_prefix):
     print(f"Saved {path}")
 
 
-def run_radio_stop(output_dir, label_prefix):
+def run_radio_stop(output_dir, label_prefix, xctu_dir):
     print("\nNow perform the XCTU radio range-test capture.")
-    input("Press Enter once you've finished the XCTU capture...")
+    print(f"Export/save the capture into: {xctu_dir}")
 
-    src = ask("Path to the exported XCTU log file (leave blank to skip)", "")
-    if not src:
-        print("No XCTU log copied in — add it to this folder manually if needed.")
-        return None
+    while True:
+        response = input(
+            "Press Enter once exported (or type 'skip' to skip this stop): "
+        ).strip().lower()
 
-    src_path = Path(src).expanduser()
-    if not src_path.exists():
-        print(f"File not found: {src_path}; skipping copy.")
-        return None
+        if response == "skip":
+            print("Skipped — no radio log for this stop.")
+            return None
 
-    dest = output_dir / f"{label_prefix}_radio{src_path.suffix}"
-    shutil.copy2(src_path, dest)
-    print(f"Copied XCTU log to {dest}")
-    return dest
+        files = [p for p in xctu_dir.glob("*") if p.is_file()]
+        if not files:
+            print(f"No file found in {xctu_dir}. Export the capture there, then press Enter again.")
+            continue
+
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        chosen = files[0]
+        if len(files) > 1:
+            print(f"Found {len(files)} files in {xctu_dir}; using the newest: {chosen.name}")
+
+        dest = output_dir / f"{label_prefix}_radio{chosen.suffix}"
+        shutil.copy2(chosen, dest)
+        print(f"Copied {chosen.name} -> {dest}")
+
+        for stale in files:
+            try:
+                stale.unlink()
+            except Exception as e:
+                print(f"Warning: could not remove {stale} from {xctu_dir}: {e}")
+
+        return dest
 
 
 def plot_summary(summary_rows, output_dir, test_name):
@@ -303,10 +360,19 @@ def main():
     detected_interface = find_wifi_interface()
     interface = ask("WiFi interface", detected_interface or "wlan0")
     distances_str = ask("Target distances in meters, comma-separated", DEFAULT_DISTANCES)
-    distances = [float(d.strip()) for d in distances_str.split(",") if d.strip()]
+    distances = sorted({float(d.strip()) for d in distances_str.split(",") if d.strip()})
     duration_s = ask_int("iperf3 duration per stop (seconds)", DEFAULT_DURATION_S)
     tolerance_m = ask_float("Distance tolerance (meters)", DEFAULT_TOLERANCE_M)
+    max_wifi_distance_m = ask_float(
+        "Max WiFi test distance in meters (radio is tested at every distance)",
+        DEFAULT_MAX_WIFI_DISTANCE_M
+    )
     navsat_topic = ask("Base station NavSatFix topic", DEFAULT_NAVSAT_TOPIC)
+    # Default lives under ~/scripts (the same bind mount used for output_dir
+    # below) since XCTU typically runs on the host, outside the container —
+    # a path outside that mount would never be visible to this script.
+    xctu_dir = Path(ask("Directory to export XCTU captures into", DEFAULT_XCTU_EXPORT_DIR)).expanduser()
+    xctu_dir.mkdir(parents=True, exist_ok=True)
 
     # comm_range_test.py runs from the colcon install space, not the source
     # checkout, so __file__ can't reach the repo's scripts/ dir. Anchor on
@@ -325,7 +391,9 @@ def main():
     print(f"Distances:        {distances}")
     print(f"Duration/stop:    {duration_s} s")
     print(f"Tolerance:        {tolerance_m} m")
+    print(f"Max WiFi distance: {max_wifi_distance_m} m (radio tested at all distances)")
     print(f"NavSatFix topic:  {navsat_topic}")
+    print(f"XCTU export dir:  {xctu_dir}")
     print()
 
     rclpy.init()
@@ -333,16 +401,41 @@ def main():
     spin_thread = threading.Thread(target=rclpy.spin, args=(fix_node,), daemon=True)
     spin_thread.start()
 
-    summary_rows = []
+    summary = {target: {"target_distance_m": target} for target in distances}
+    wifi_targets = [d for d in reversed(distances) if d <= max_wifi_distance_m]
 
     try:
+        print("\n=== Outbound leg: radio range test (XCTU) ===")
+        print("Walk away from the submarine, stopping at each target distance below.")
         for target in distances:
             label = f"{target:g}m"
             label_prefix = f"{test_name}_{label}"
 
-            measured_distance = wait_until_at_distance(
-                fix_node, sub_lat, sub_lon, target, tolerance_m
+            measured = wait_until_at_distance(fix_node, sub_lat, sub_lon, target, tolerance_m)
+            radio_path = run_radio_stop(output_dir, label_prefix, xctu_dir)
+
+            summary[target]["measured_distance_radio_m"] = measured
+            summary[target]["radio_log"] = str(radio_path) if radio_path else ""
+
+            print(f"\nDone with {label}.")
+
+        if wifi_targets:
+            print("\n=== Inbound leg: WiFi throughput/RSSI test ===")
+            print(
+                f"Turn around and walk back toward the submarine, stopping at each "
+                f"target distance at or below {max_wifi_distance_m:g} m."
             )
+        else:
+            print(
+                f"\nNo target distances are within the {max_wifi_distance_m:g} m WiFi "
+                "cutoff — skipping the WiFi leg."
+            )
+
+        for target in wifi_targets:
+            label = f"{target:g}m"
+            label_prefix = f"{test_name}_{label}"
+
+            measured = wait_until_at_distance(fix_node, sub_lat, sub_lon, target, tolerance_m)
 
             print(f"\nRunning WiFi test at {label}...")
             wifi_csv = output_dir / f"{label_prefix}_wifi.csv"
@@ -353,18 +446,12 @@ def main():
             mbits_vals = [m for m, _ in samples if m is not None]
             rssi_vals = [r for _, r in samples if r is not None]
 
-            radio_path = run_radio_stop(output_dir, label_prefix)
-
-            summary_rows.append({
-                "target_distance_m": target,
-                "measured_distance_m": measured_distance,
-                "mean_mbits": statistics.mean(mbits_vals) if mbits_vals else None,
-                "std_mbits": statistics.pstdev(mbits_vals) if len(mbits_vals) > 1 else 0.0,
-                "mean_rssi": statistics.mean(rssi_vals) if rssi_vals else None,
-                "std_rssi": statistics.pstdev(rssi_vals) if len(rssi_vals) > 1 else 0.0,
-                "n_samples": len(samples),
-                "radio_log": str(radio_path) if radio_path else "",
-            })
+            summary[target]["measured_distance_wifi_m"] = measured
+            summary[target]["mean_mbits"] = statistics.mean(mbits_vals) if mbits_vals else None
+            summary[target]["std_mbits"] = statistics.pstdev(mbits_vals) if len(mbits_vals) > 1 else 0.0
+            summary[target]["mean_rssi"] = statistics.mean(rssi_vals) if rssi_vals else None
+            summary[target]["std_rssi"] = statistics.pstdev(rssi_vals) if len(rssi_vals) > 1 else 0.0
+            summary[target]["n_samples"] = len(samples)
 
             print(f"\nDone with {label}.")
 
@@ -376,10 +463,16 @@ def main():
         rclpy.shutdown()
         spin_thread.join(timeout=2)
 
+        summary_rows = [summary[target] for target in distances]
         if summary_rows:
+            fieldnames = [
+                "target_distance_m", "measured_distance_radio_m", "radio_log",
+                "measured_distance_wifi_m", "mean_mbits", "std_mbits",
+                "mean_rssi", "std_rssi", "n_samples",
+            ]
             summary_csv = output_dir / f"{test_name}_summary.csv"
             with open(summary_csv, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=list(summary_rows[0].keys()))
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(summary_rows)
             print(f"\nSaved {summary_csv}")
