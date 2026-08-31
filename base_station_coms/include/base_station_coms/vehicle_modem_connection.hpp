@@ -5,8 +5,10 @@
 #include "seatrac_interfaces/msg/modem_rec.hpp"
 #include "seatrac_interfaces/msg/modem_send.hpp"
 #include "geographic_msgs/msg/route_network.hpp"
+#include "geographic_msgs/msg/geo_point.hpp"
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "cougars_interfaces/msg/system_control.hpp"
 #include "base_station_coms/coms_protocol.hpp"
 #include "base_station_coms/seatrac_enums.hpp"
@@ -72,6 +74,21 @@ public:
             }
         );
 
+        this->hardware_control_subscriber_ = node->create_subscription<std_msgs::msg::String>(
+            namespace_name + "/hardware_control", 10,
+            [this](const std_msgs::msg::String::SharedPtr msg) {
+                this->hardware_control_callback(msg);
+            }
+        );
+
+        // Global topic (not vehicle-namespaced), matching the WiFi/radio origin bridges
+        this->origin_subscriber_ = node->create_subscription<geographic_msgs::msg::GeoPoint>(
+            "/send_origin", 10,
+            [this](const geographic_msgs::msg::GeoPoint::SharedPtr msg) {
+                this->origin_callback(msg);
+            }
+        );
+
         this->modem_connections_publisher_ = node->create_publisher<diagnostic_msgs::msg::DiagnosticStatus>(
             namespace_name + "/link_status", 10
         );
@@ -99,6 +116,15 @@ public:
             } break;
             case CONFIRM_EMERGENCY_SURFACE: {
                 RCLCPP_INFO(logger_, "Vehicle %d: confirmed emergency surface", this->get_vehicle_id());
+            } break;
+            case CONFIRM_HARDWARE_CONTROL: {
+                const ConfirmHardwareControl* confirm =
+                    reinterpret_cast<const ConfirmHardwareControl*>(msg.packet_data.data());
+                RCLCPP_INFO(logger_, "Vehicle %d: confirmed hardware control (device=%d, mode=%d, success=%d)",
+                    this->get_vehicle_id(), confirm->device, confirm->mode, confirm->success);
+            } break;
+            case CONFIRM_ORIGIN_UPDATE: {
+                RCLCPP_INFO(logger_, "Vehicle %d: confirmed origin update", this->get_vehicle_id());
             } break;
             case TIMESTAMP: {
                 const TimeStamp* timestamp_msg =
@@ -269,6 +295,70 @@ private:
         );
     }
 
+    void hardware_control_callback(const std_msgs::msg::String::SharedPtr msg) {
+        if (!this->is_connected() || radio_connection_status_ || wifi_connection_status_) {
+            return;
+        }
+
+        // Parses "DEVICE:MODE" (matches the string format published by the GUI and used by the other bridges)
+        const std::string& data = msg->data;
+        size_t sep = data.find(':');
+        if (sep == std::string::npos) {
+            RCLCPP_ERROR(logger_, "Ignoring malformed hardware control command: %s", data.c_str());
+            return;
+        }
+        std::string device_str = data.substr(0, sep);
+        std::string mode_str = data.substr(sep + 1);
+
+        uint8_t device;
+        if (device_str == "RELAY") device = 0;
+        else if (device_str == "STROBE") device = 1;
+        else {
+            RCLCPP_ERROR(logger_, "Unknown hardware control device: %s", device_str.c_str());
+            return;
+        }
+
+        uint8_t mode;
+        if (mode_str == "AUTO") mode = 0;
+        else if (mode_str == "ON") mode = 1;
+        else if (mode_str == "OFF") mode = 2;
+        else {
+            RCLCPP_ERROR(logger_, "Unknown hardware control mode: %s", mode_str.c_str());
+            return;
+        }
+
+        RCLCPP_WARN(logger_, "Sending hardware control for vehicle %d over modem: %s",
+            this->get_vehicle_id(), data.c_str());
+
+        cougars_coms::HardwareControl control_msg;
+        control_msg.device = device;
+        control_msg.mode = mode;
+        send_acoustic_message(
+            sizeof(control_msg),
+            reinterpret_cast<uint8_t*>(&control_msg),
+            narval::seatrac::MSG_OWAY
+        );
+    }
+
+    void origin_callback(const geographic_msgs::msg::GeoPoint::SharedPtr msg) {
+        if (!this->is_connected() || radio_connection_status_ || wifi_connection_status_) {
+            return;
+        }
+
+        RCLCPP_WARN(logger_, "Sending origin for vehicle %d over modem: lat=%.6f, lon=%.6f, alt=%.2f",
+            this->get_vehicle_id(), msg->latitude, msg->longitude, msg->altitude);
+
+        cougars_coms::OriginUpdate origin_msg;
+        origin_msg.latitude = static_cast<float>(msg->latitude);
+        origin_msg.longitude = static_cast<float>(msg->longitude);
+        origin_msg.altitude = static_cast<float>(msg->altitude);
+        send_acoustic_message(
+            sizeof(origin_msg),
+            reinterpret_cast<uint8_t*>(&origin_msg),
+            narval::seatrac::MSG_OWAY
+        );
+    }
+
     int vehicle_id_;
     bool modem_connection_status_;
     bool radio_connection_status_;
@@ -284,6 +374,8 @@ private:
     rclcpp::Subscription<cougars_interfaces::msg::SystemControl>::SharedPtr start_mission_subscriber_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_kill_subscriber_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr emergency_surface_subscriber_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr hardware_control_subscriber_;
+    rclcpp::Subscription<geographic_msgs::msg::GeoPoint>::SharedPtr origin_subscriber_;
     rclcpp::Publisher<seatrac_interfaces::msg::ModemSend>::SharedPtr modem_publisher_;
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr modem_connections_publisher_;
     rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr connections_subscriber_;

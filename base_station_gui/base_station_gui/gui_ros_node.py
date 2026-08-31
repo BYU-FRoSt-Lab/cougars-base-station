@@ -18,7 +18,7 @@ from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter as RclParameter, ParameterType
 
 import time
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String, Bool, Int32
 from nav_msgs.msg import Odometry
 
 from nav_msgs.msg import Path #used to publish the map viz path
@@ -166,6 +166,13 @@ class GuiNode(Node):
             )
             setattr(self, f'coug{coug_number}_emergency_surface_pub', pub)
 
+            pub = self.create_publisher(
+                String,
+                f'coug{coug_number}/hardware_control',
+                10
+            )
+            setattr(self, f'coug{coug_number}_hardware_control_pub', pub)
+
             # Publisher for map visualization paths for each vehicle
             pub = self.create_publisher(
                 Path,
@@ -225,7 +232,7 @@ class GuiNode(Node):
             'console_log',
             window.handle_console_log,
             10
-        ) 
+        )
 
         # Publisher for the shared origin topic used by vehicle navigation.
         origin_qos = QoSProfile(
@@ -234,6 +241,34 @@ class GuiNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.origin_pub = self.create_publisher(GeoPoint, 'send_origin', origin_qos)
+
+        # Teleop status, published by teleop_couguv_key.cpp for the Keyboard Controls tab.
+        # Same TRANSIENT_LOCAL QoS as origin_qos so the tab gets current state immediately,
+        # even if the GUI was opened after teleop_couguv_key already started.
+        self.teleop_vehicle_sub = self.create_subscription(
+            Int32,
+            '/teleop_status/vehicle_id',
+            lambda msg: window.recieve_teleop_vehicle(msg.data),
+            origin_qos
+        )
+        self.teleop_thruster_sub = self.create_subscription(
+            Bool,
+            '/teleop_status/thruster_enabled',
+            lambda msg: window.recieve_teleop_thruster(msg.data),
+            origin_qos
+        )
+        self.teleop_publishing_sub = self.create_subscription(
+            Bool,
+            '/teleop_status/publishing_enabled',
+            lambda msg: window.recieve_teleop_publishing(msg.data),
+            origin_qos
+        )
+        self.teleop_hard_turn_sub = self.create_subscription(
+            Bool,
+            '/teleop_status/hard_turn_mode',
+            lambda msg: window.recieve_teleop_hard_turn(msg.data),
+            origin_qos
+        )
 
         # Publisher for console log messages
         self.console_publisher = self.create_publisher(ConsoleLog, 'console_log', 10)
@@ -286,6 +321,19 @@ class GuiNode(Node):
     def publish_emergency_surface(self, vehicle_number):
         getattr(self, f'coug{vehicle_number}_emergency_surface_pub').publish(Bool(data=True))
         self.publish_console_log(f"Published emergency surface command for Coug {vehicle_number}", vehicle_number)
+
+    def publish_hardware_control(self, vehicle_number, device, mode):
+        """
+        Sends a relay/strobe control command to the vehicle over radio.
+        device: "RELAY" or "STROBE". mode: "AUTO", "ON", or "OFF".
+        """
+        msg = String()
+        msg.data = f"{device}:{mode}"
+        getattr(self, f'coug{vehicle_number}_hardware_control_pub').publish(msg)
+        self.publish_console_log(
+            f"Sent {device.title()} {mode.title()} command for Coug {vehicle_number} over radio",
+            vehicle_number
+        )
 
     def load_route_network(self, mission_file_path):
         self.get_logger().debug(f'Loading mission file: "{mission_file_path}"')

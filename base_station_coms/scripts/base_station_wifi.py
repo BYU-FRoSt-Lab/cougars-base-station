@@ -6,10 +6,10 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from rclpy.node import Node
 import subprocess
 from base_station_interfaces.msg import Connections, ConsoleLog, UCommandBase
-from cougars_interfaces.msg import SystemControl, UCommand
+from cougars_interfaces.msg import ActuatorCommand, SystemControl
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from geographic_msgs.msg import GeoPoint, RouteNetwork
-from std_msgs.msg import Header, Empty, Bool
+from std_msgs.msg import Header, Empty, Bool, String
 from std_srvs.srv import SetBool
 import json
 import time
@@ -58,9 +58,11 @@ class VehicleWifiConnection:
             f'coug{vehicle_id}/system/control',
             10
         )
+        # coug_kinematics.cpp is the node that actually drives the fins/thruster; it
+        # listens on control/u_cmd for ActuatorCommand messages.
         self.keyboard_controls_publisher = node.create_publisher(
-            UCommand,
-            f'coug{vehicle_id}/controls/command',
+            ActuatorCommand,
+            f'coug{vehicle_id}/control/u_cmd',
             10
         )
         self.thruster_client = node.create_client(
@@ -74,6 +76,14 @@ class VehicleWifiConnection:
         self.link_status_publisher = node.create_publisher(
             DiagnosticStatus,
             f'coug{vehicle_id}/link_status',
+            10
+        )
+
+        # Forwards the GUI's hardware control "intent" topic to the vehicle's actual
+        # ROS topic (rf_bridge.py listens on the un-namespaced 'hardware_control_cmd').
+        self.hardware_control_publisher = node.create_publisher(
+            String,
+            f'coug{vehicle_id}/hardware_control_cmd',
             10
         )
 
@@ -122,6 +132,13 @@ class VehicleWifiConnection:
             Bool,
             f'coug{vehicle_id}/emergency_surface',
             self.emergency_surface_callback,
+            10
+        )
+
+        self.hardware_control_subscriber = node.create_subscription(
+            String,
+            f'coug{vehicle_id}/hardware_control',
+            self.hardware_control_callback,
             10
         )
 
@@ -177,6 +194,17 @@ class VehicleWifiConnection:
                 f"Not sending emergency surface for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
             )
 
+    def hardware_control_callback(self, msg):
+        if not self.node.is_wifi_enabled() or not self.connection_status:
+            self.node.get_logger().warn(
+                f"Not sending hardware control for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
+            )
+            return
+        self.node.get_logger().info(
+            f"Sending hardware control '{msg.data}' to vehicle {self.vehicle_id} over WiFi"
+        )
+        self.hardware_control_publisher.publish(msg)
+
     def ping(self):
         if not self.node.is_wifi_enabled():
             return False
@@ -226,11 +254,15 @@ class VehicleWifiConnection:
 
     def publish_keyboard_controls(self, msg):
         if not self.node.is_wifi_enabled() or not self.connection_status:
-            self.node.get_logger().warn(
+            self.node.get_logger().debug(
                 f"Not sending keyboard controls for vehicle {self.vehicle_id} over WiFi because WiFi is disabled or disconnected"
             )
             return
-        self.keyboard_controls_publisher.publish(msg.ucommand)
+        actuator_msg = ActuatorCommand()
+        actuator_msg.header = msg.ucommand.header
+        actuator_msg.fin = msg.ucommand.fin
+        actuator_msg.thruster = msg.ucommand.thruster
+        self.keyboard_controls_publisher.publish(actuator_msg)
 
         if msg.thruster_enabled != self.thruster_enabled:
             self.node.get_logger().info(
@@ -362,11 +394,9 @@ class Base_Station_Wifi(Node):
         # publishes connections messages
         self.wifi_connection_publisher = self.create_publisher(Connections, 'connections', 10)
 
-        self.keyboard_controls_publisher = self.create_publisher(UCommand, 'keyboard_controls', 10)
-
         self.keyboard_controls_subscriber = self.create_subscription(
             UCommandBase,
-            'wifi_keyboard_controls',
+            'keyboard_controls',
             self.keyboard_controls_callback,
             10
         )

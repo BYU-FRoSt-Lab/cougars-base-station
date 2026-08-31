@@ -40,4 +40,11 @@ def generate_launch_description():
             remappings=[('odometry/global', 'gps/odom')]
 
         ),
+        Node(
+            package='base_station_coms',
+            executable='teleop_couguv_key',
+            name='teleop_couguv_key',
+            parameters=[param_file],
+            output='screen'
+        ),
     ])

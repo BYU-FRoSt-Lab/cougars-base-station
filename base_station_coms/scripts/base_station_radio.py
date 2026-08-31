@@ -4,14 +4,14 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 from rclpy.serialization import serialize_message
-from base_station_interfaces.msg import ConsoleLog
+from base_station_interfaces.msg import ConsoleLog, UCommandBase
 from cougars_interfaces.msg import MissionFeedback, SystemControl, WaypointFeedback
 from diagnostic_msgs.msg import DiagnosticStatus, KeyValue
 from dvl_msgs.msg import DVL
 from geographic_msgs.msg import GeoPoint, RouteNetwork
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import BatteryState, FluidPressure
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 import time
 import math
 
@@ -118,6 +118,13 @@ class VehicleRadioConnection:
             self.emergency_surface_callback,
             10
         )
+
+        self.hardware_control_subscriber = node.create_subscription(
+            String,
+            f'coug{vehicle_id}/hardware_control',
+            self.hardware_control_callback,
+            10
+        )
     def link_status_callback(self, msg):
         connected = msg.level == DiagnosticStatus.OK
         if msg.hardware_id == "wifi":
@@ -215,6 +222,55 @@ class VehicleRadioConnection:
     def emergency_surface_callback(self, msg):
         if msg.data and not self.wifi_connection and self.connection_status:
             self.node.get_logger().info(f"Emergency surface for vehicle {self.vehicle_id} over radio")
+
+    def hardware_control_callback(self, msg):
+        if self.wifi_connection:
+            return
+        if not self.connection_status:
+            self.node.get_logger().warn(
+                f"Not sending hardware control for vehicle {self.vehicle_id} over radio because radio is disconnected"
+            )
+            return
+
+        try:
+            device_str, mode_str = msg.data.split(":", 1)
+            device = rp.HardwareDevice[device_str]
+            mode = rp.HardwareMode[mode_str]
+        except (ValueError, KeyError):
+            self.node.get_logger().error(f"Ignoring malformed hardware control command: {msg.data}")
+            return
+
+        hardware_control_message = rp.HardwareControlMessage(
+            src_id=self.node.vehicle_id,
+            device=int(device),
+            mode=int(mode)
+        )
+        payload = hardware_control_message.pack()
+
+        if self.send_message(self.node.send_message, payload):
+            self.node.get_logger().info(
+                f"Sent {device_str} {mode_str} command to vehicle {self.vehicle_id} over radio"
+            )
+        else:
+            self.node.get_logger().error(
+                f"Failed to send {device_str} {mode_str} command to vehicle {self.vehicle_id} over radio"
+            )
+
+    def confirm_hardware_control(self, data):
+        confirmation = rp.ConfirmHardwareControlMessage.unpack(data)
+        device_name = "Relay" if confirmation.device == int(rp.HardwareDevice.RELAY) else "Strobe"
+        mode_name = {
+            int(rp.HardwareMode.AUTO): "Auto",
+            int(rp.HardwareMode.ON): "On",
+            int(rp.HardwareMode.OFF): "Off",
+        }.get(confirmation.mode, "Unknown")
+        status = "succeeded" if confirmation.success else "failed"
+        self.node.get_logger().info(
+            f"Vehicle {self.vehicle_id} {device_name} {mode_name} command {status}"
+        )
+        self.print_to_gui_publisher.publish(ConsoleLog(
+            message=f"{device_name} set to {mode_name} ({status})",
+            vehicle_number=confirmation.src_id))
 
     def handle_ping(self, sender_address):
         self.radio_address = sender_address
@@ -414,7 +470,16 @@ class RFBridge(Node):
             self.origin_callback,
             origin_qos,
         )
-    
+
+        # Same UCommandBase teleop stream the WiFi bridge consumes; used as a radio
+        # fallback for the vehicle currently being teleoperated when it has no WiFi link.
+        self.keyboard_controls_subscriber = self.create_subscription(
+            UCommandBase,
+            '/keyboard_controls',
+            self.keyboard_controls_callback,
+            10,
+        )
+
         self.timer = self.create_timer(self.ping_frequency, self.check_connections)
 
         if self.request_status:
@@ -522,6 +587,13 @@ class RFBridge(Node):
             self.print_to_gui_publisher.publish(ConsoleLog(
                 message="Start mission command was successful",
                 vehicle_number=confirmation.src_id))
+        elif msg_id == int(rp.MessageID.CONFIRM_HARDWARE_CONTROL):
+            vehicle_id = self.radio_addresses.get(sender_address, sender_id)
+            if vehicle_id in self.vehicle_radios:
+                self.vehicle_radios[vehicle_id].confirm_hardware_control(payload)
+            else:
+                self.get_logger().warning(
+                    f"Ignoring hardware control confirmation from unknown vehicle {sender_id}")
 
     # Function to check connections and send PING messages
     def check_connections(self):
@@ -570,6 +642,29 @@ class RFBridge(Node):
             self.get_logger().warn(
                 "Received origin, but no radio-connected vehicle without WiFi was available"
             )
+
+    def keyboard_controls_callback(self, msg):
+        vehicle_radio = self.vehicle_radios.get(msg.vehicle_id)
+        if vehicle_radio is None:
+            self.get_logger().warn(f"Received keyboard controls for unknown vehicle ID {msg.vehicle_id}. Ignoring.")
+            return
+        if vehicle_radio.wifi_connection:
+            return
+        if not vehicle_radio.is_connected():
+            self.get_logger().debug(
+                f"Not sending keyboard controls for vehicle {msg.vehicle_id} over radio because radio is disconnected"
+            )
+            return
+        self.get_logger().info(f"Sending keyboard controls for vehicle {msg.vehicle_id} over radio: thruster_enabled={msg.thruster_enabled}, thruster={msg.ucommand.thruster}, fin={list(msg.ucommand.fin)}")
+
+        key_control_message = rp.KeyControlMessage(
+            src_id=self.vehicle_id,
+            thruster_enabled=msg.thruster_enabled,
+            thruster=int(msg.ucommand.thruster),
+            fin=list(msg.ucommand.fin),
+        )
+        if not vehicle_radio.send_message(self.send_message, key_control_message.pack()):
+            self.get_logger().error(f"Failed to send keyboard controls to vehicle {msg.vehicle_id} over radio")
 
     # Function to handle received PING messages
     def recieve_ping(self, payload, sender_address):

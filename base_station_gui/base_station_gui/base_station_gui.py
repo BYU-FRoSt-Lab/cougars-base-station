@@ -4,7 +4,7 @@
 import sys, random, os, re, time
 import yaml, json
 import base64, math, functools
-import multiprocessing, threading, paramiko
+import multiprocessing, threading, paramiko, subprocess
 import tkinter
 import rclpy
 # Get package share directory for accessing media files
@@ -57,6 +57,11 @@ class MainWindow(QMainWindow):
     update_wifi_signal = pyqtSignal(dict)
     mission_feedback_signal = pyqtSignal(int, object)
     waypoint_feedback_signal = pyqtSignal(int, object)
+    teleop_vehicle_signal = pyqtSignal(int)
+    teleop_thruster_signal = pyqtSignal(bool)
+    teleop_publishing_signal = pyqtSignal(bool)
+    teleop_hard_turn_signal = pyqtSignal(bool)
+    teleop_console_signal = pyqtSignal(str)
 
     # Initializes GUI window with a ros node inside
     def __init__(self, ros_node, vehicle_list):
@@ -251,7 +256,7 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
 
         # Create tab names and dictionary for tab widgets/layouts
-        tab_names = ["General"] + [f"Vehicle {i}" for i in self.selected_vehicles]
+        tab_names = ["General"] + [f"Vehicle {i}" for i in self.selected_vehicles] + ["Keyboard Controls"]
         self.tab_dict = {name: [None, QHBoxLayout()] for name in tab_names}
 
         # Create widgets/layouts for each tab and add to the tab widget
@@ -269,7 +274,11 @@ class MainWindow(QMainWindow):
             label.setStyleSheet(f"color: {self.text_color}; font-size: 14px;") 
             self.confirm_reject_labels[name] = label
 
-            if name.lower() != "general":
+            if name == "Keyboard Controls":
+                # Teleop tab: vehicle indicator, on-screen controls, and its own activity log
+                content_layout.addWidget(self.create_keyboard_controls_tab())
+                content_layout.addWidget(label, alignment=Qt.AlignmentFlag.AlignTop)
+            elif name.lower() != "general":
                 vehicle_number = int(name.split()[-1])  # Extract vehicle number from tab name
                 # For Vehicle tabs, add specific widgets and console log
                 content_layout.addWidget(self.set_specific_vehicle_widgets(vehicle_number))
@@ -319,6 +328,11 @@ class MainWindow(QMainWindow):
         self.update_wifi_signal.connect(self.update_wifi_widgets)
         self.mission_feedback_signal.connect(self._update_mission_feedback)
         self.waypoint_feedback_signal.connect(self._update_waypoint_feedback)
+        self.teleop_vehicle_signal.connect(self._update_teleop_vehicle_gui)
+        self.teleop_thruster_signal.connect(self._update_teleop_thruster_gui)
+        self.teleop_publishing_signal.connect(self._update_teleop_publishing_gui)
+        self.teleop_hard_turn_signal.connect(self._update_teleop_hard_turn_gui)
+        self.teleop_console_signal.connect(self._append_teleop_console)
 
         # Get IP addresses for selected vehicles and display in console
         self.get_IP_addresses()
@@ -644,7 +658,8 @@ class MainWindow(QMainWindow):
         Updates tab colors, console log colors, button styles, label colors, and icon backgrounds.
         """
         #get current width, and recolor the tabs themselves
-        width_px = self.width() // (len(self.selected_vehicles) + 1) - 10
+        # +2 accounts for the fixed "General" and "Keyboard Controls" tabs, in addition to one per vehicle
+        width_px = self.width() // (len(self.selected_vehicles) + 2) - 10
         self.repaintTabs(width_px)
 
         bg_color, text_color = self.background_color, self.text_color
@@ -694,6 +709,12 @@ class MainWindow(QMainWindow):
                     new_pixmap = self.paintIconBackground(orig_pixmap, bg_color=icon_bkgrnd)
                     ic_label.setPixmap(new_pixmap)
 
+        # The generic button-recoloring pass above only recognizes "danger" buttons by keywords
+        # in their text, which doesn't match the Keyboard Controls tab's toggle buttons. Reassert
+        # their armed/enabled-based styling so it isn't lost on a theme switch.
+        if hasattr(self, "teleop_enable_button"):
+            self._refresh_teleop_toggle_labels()
+
     def repaint_icon(self, ic_label):
         """
         Repaints a QLabel icon according to the current theme.
@@ -742,6 +763,9 @@ class MainWindow(QMainWindow):
         elif msg.vehicle_number in self.selected_vehicles:
             self.recieve_console_update(msg.message, msg.vehicle_number)
 
+        # Mirror everything into the Keyboard Controls tab's own activity log too
+        self.teleop_console_signal.emit(msg.message)
+
     def scroll_console_to_bottom_on_tab(self, index):
         """
         Ensures the console log for a Vehicle tab is always scrolled to the bottom when the tab is selected.
@@ -761,11 +785,16 @@ class MainWindow(QMainWindow):
             vehicle_number = int(tab_name.split()[-1])
             # Get the scroll area for this Vehicle's console log
             scroll_area = getattr(self, f"vehicle{vehicle_number}_console_scroll_area", None)
-            if scroll_area:
-                # Process any pending events to ensure the layout is up to date
-                QApplication.processEvents()
-                # Scroll the vertical scrollbar to the maximum (bottom)
-                scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
+        elif tab_name == "Keyboard Controls":
+            scroll_area = getattr(self, "teleop_console_scroll_area", None)
+        else:
+            scroll_area = None
+
+        if scroll_area:
+            # Process any pending events to ensure the layout is up to date
+            QApplication.processEvents()
+            # Scroll the vertical scrollbar to the maximum (bottom)
+            scroll_area.verticalScrollBar().setValue(scroll_area.verticalScrollBar().maximum())
 
     def clear_console(self, vehicle_number):
         """
@@ -818,7 +847,8 @@ class MainWindow(QMainWindow):
         """
         size = self.size()
         # Calculate new tab width based on window width and number of vehicles
-        width_px = self.width() // (len(self.selected_vehicles) + 1) - 10
+        # +2 accounts for the fixed "General" and "Keyboard Controls" tabs, in addition to one per vehicle
+        width_px = self.width() // (len(self.selected_vehicles) + 2) - 10
         self.repaintTabs(width_px)
         # Dynamically resize each console scroll area and column widgets for each vehicle
         for i in self.selected_vehicles:
@@ -1051,70 +1081,74 @@ class MainWindow(QMainWindow):
         else: vehicles = [vehicle_number]
         calibrate.main(self.ros_node, vehicles)
 
-    def sftp_get_dir(self, sftp, remote_dir, local_dir, vehicle_number):
-        """
-        Recursively copies a remote directory to a local directory using SFTP.
-        """
-        os.makedirs(local_dir, exist_ok=True)
-        for entry in sftp.listdir_attr(remote_dir):
-            remote_path = os.path.join(remote_dir, entry.filename)
-            local_path = os.path.join(local_dir, entry.filename)
-            if entry.st_mode & 0o170000 == 0o040000:  # Directory
-                self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
-            else:
-                try:
-                    sftp.get(remote_path, local_path)
-                except Exception as e:
-                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
-
     #used by copy bags
     def run_sync_bags(self, vehicle_number):
         """
-        Uses paramiko to sync bag files from the specified vehicle.
+        Bootstraps passwordless SSH key auth (via paramiko, generating/copying a key if needed),
+        then uses rsync to sync mission log (rosbag) folders from the specified vehicle's
+        ~/cougars-frost/mission_logs into this base station's local mission_logs folder.
+        rsync only transfers files that are missing or different, and --partial keeps a
+        partially-transferred file instead of discarding it, so an interrupted sync resumes
+        cleanly and re-running the sync never duplicates or re-downloads already-synced data.
         Reports success or failure through the confirmation/rejection label and console log.
         """
 
         try:
-            # Set up connection info (customize as needed)
-            vehicle_id = f"coug{vehicle_number}"
             vehicle_suffix = str(vehicle_number)
             ip_address = f"192.168.0.10{vehicle_suffix}"
             remote_user = "frostlab"
-            remote_folder = "/home/frostlab/cougars/bag"
-            local_folder = os.path.expanduser(f"~/bag/{vehicle_id}")
+            local_folder = os.path.expanduser("~/mission_logs")
 
             # Ensure local folder exists
             os.makedirs(local_folder, exist_ok=True)
 
-            # Set up SSH client
+            # Bootstrap passwordless SSH key auth so the rsync subprocess below can run
+            # non-interactively (it will fail fast via BatchMode instead of hanging on a
+            # password prompt if this step didn't already establish key-based trust).
             ssh = self.get_ssh_connection(ip_address, remote_user)
-            self.recieve_console_update(f"Connected to Vehicle {vehicle_number} via SSH", vehicle_number)
-            # Set up SFTP client
-            sftp = ssh.open_sftp()
-            file_list = sftp.listdir(remote_folder)
-            self.recieve_console_update(f"Found {len(file_list)} bag files to sync for Vehicle {vehicle_number}", vehicle_number)
-            i = 0
-            for dirname in file_list:
-                remote_path = os.path.join(remote_folder, dirname)
-                local_path = os.path.join(local_folder, dirname)
-                try:
-                    stat = sftp.stat(remote_path)
-                    if stat.st_mode & 0o170000 == 0o040000:  # Directory
-                        self.sftp_get_dir(sftp, remote_path, local_path, vehicle_number)
-                    else:
-                        sftp.get(remote_path, local_path)
-                except Exception as e:
-                    self.recieve_console_update(f"Failed to copy {remote_path}: {e}", vehicle_number)
-                msg = f"Copied {i + 1}/{len(file_list)} bags from Vehicle {vehicle_number}"
-                self.recieve_console_update(msg, vehicle_number)
-                i += 1
+            if ssh is None:
+                raise RuntimeError(f"Could not establish SSH access to {ip_address}")
+            ssh.close()
+            self.recieve_console_update(f"Verified SSH access to Vehicle {vehicle_number}", vehicle_number)
 
-            success_msg = f"Bag sync completed successfully for Vehicle {vehicle_number}"
-            self.replace_confirm_reject_label(success_msg)
-            self.recieve_console_update(success_msg, vehicle_number)
+            remote_path = f"{remote_user}@{ip_address}:~/cougars-frost/mission_logs/"
+            rsync_cmd = [
+                "rsync",
+                "-avz",            # archive mode (recursive, preserves perms/times) + verbose + compression
+                "--partial",       # keep partially-transferred files so an interrupted sync can resume
+                "--timeout=30",    # abort if the connection stalls instead of hanging forever
+                "-e", "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10",
+                remote_path,
+                local_folder + "/",
+            ]
+
+            self.recieve_console_update(
+                f"Starting rsync of mission logs from Vehicle {vehicle_number}...", vehicle_number)
+
+            process = subprocess.Popen(
+                rsync_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            for line in process.stdout:
+                line = line.strip()
+                if line:
+                    self.recieve_console_update(f"[rsync] {line}", vehicle_number)
+            return_code = process.wait(timeout=600)
+
+            if return_code == 0:
+                success_msg = f"Mission log sync completed successfully for Vehicle {vehicle_number}"
+                self.replace_confirm_reject_label(success_msg)
+                self.recieve_console_update(success_msg, vehicle_number)
+            else:
+                error_msg = f"rsync exited with code {return_code} while syncing Vehicle {vehicle_number}"
+                self.replace_confirm_reject_label(error_msg)
+                self.recieve_console_update(error_msg, vehicle_number)
 
         except Exception as e:
-            error_msg = f"Failed to sync bags via SSH: {str(e)}"
+            error_msg = f"Failed to sync mission logs: {str(e)}"
             self.replace_confirm_reject_label(error_msg)
             self.recieve_console_update(error_msg, vehicle_number)
 
@@ -1360,6 +1394,22 @@ class MainWindow(QMainWindow):
             self.replace_confirm_reject_label("Canceling Emergency Surface command...")
             self.recieve_console_update(f"Canceling Emergency Surface for Vehicle {vehicle_number}", vehicle_number)
 
+    #Opens the relay/strobe control dialog for the given vehicle
+    def hardware_control_button(self, vehicle_number):
+        """
+        Handler for 'Relay / Strobe Control' button.
+        Opens a dialog that sends relay/strobe auto/on/off commands to the vehicle over radio.
+        """
+        dlg = HardwareControlDialog(
+            vehicle_number,
+            self.ros_node,
+            self,
+            background_color=self.background_color,
+            text_color=self.text_color,
+            pop_up_window_style=self.pop_up_window_style,
+        )
+        dlg.exec()
+
     #Connected to the "ModemControl" service in base_station_interfaces
     # def modem_shut_off_service(self, shutoff:bool, vehicle_id:int):
     #     """
@@ -1447,7 +1497,7 @@ class MainWindow(QMainWindow):
             )
 
         self.ros_node.publish_origin((latitude, longitude, altitude))
-    
+
     def make_vline(self):
         """
         Creates and returns a vertical line QFrame for use in layouts.
@@ -1729,6 +1779,200 @@ class MainWindow(QMainWindow):
         # Return the container widget holding the scrollable log
         return temp_container
 
+    # ---- Keyboard Controls tab ----
+
+    KEYBOARD_CONTROLS_INSTRUCTIONS = (
+        "W / Up Arrow     -  Fins up\n"
+        "S / Down Arrow   -  Fins down\n"
+        "A / Left Arrow   -  Turn left\n"
+        "D / Right Arrow  -  Turn right\n"
+        "Space            -  Thruster +5 (up to 100)\n"
+        "R  (or , . -)    -  Thruster -5 (down to -100, i.e. reverse)\n"
+        "Q                -  Arm / disarm thruster\n"
+        "E                -  Switch to next vehicle\n"
+        "Z                -  Enable / disable keyboard controls\n"
+        "T                -  Toggle hard turn mode (see below)\n\n"
+        "Hard turn mode: while enabled, holding A/D snaps the turn fin straight to its\n"
+        "full angle instead of stepping toward it, and releasing springs it back to 0.\n\n"
+        "You can also just type these keys anywhere in this window."
+    )
+
+    def create_keyboard_controls_tab(self):
+        """
+        Builds the Keyboard Controls tab: a currently-controlled-vehicle indicator, instructions,
+        on-screen controls mirroring every key binding, and an activity log at the bottom.
+        Both the on-screen buttons and physical typing go through the same
+        ros_node.publish_keypress() call, so they're equivalent to the teleop node.
+        """
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        self.teleop_vehicle_label = QLabel("Currently controlling: waiting for status...")
+        self.teleop_vehicle_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        self.teleop_vehicle_label.setStyleSheet(f"color: {self.text_color};")
+        self.teleop_vehicle_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.teleop_vehicle_label)
+
+        instructions_label = QLabel(self.KEYBOARD_CONTROLS_INSTRUCTIONS)
+        instructions_label.setStyleSheet(f"color: {self.text_color};")
+        layout.addWidget(instructions_label)
+
+        self.teleop_enable_button = QPushButton()
+        self.teleop_enable_button.clicked.connect(lambda: self._send_teleop_key('z', "Enable/Disable Keyboard Controls"))
+        layout.addWidget(self.teleop_enable_button)
+
+        self.teleop_arm_button = QPushButton()
+        self.teleop_arm_button.clicked.connect(lambda: self._send_teleop_key('q', "Arm/Disarm Thruster"))
+        layout.addWidget(self.teleop_arm_button)
+
+        self.teleop_hard_turn_button = QPushButton()
+        self.teleop_hard_turn_button.clicked.connect(lambda: self._send_teleop_key('t', "Toggle Hard Turn Mode"))
+        layout.addWidget(self.teleop_hard_turn_button)
+
+        switch_vehicle_button = QPushButton("Switch Vehicle (E)")
+        switch_vehicle_button.setStyleSheet(self.normal_button_style_sheet)
+        switch_vehicle_button.clicked.connect(lambda: self._send_teleop_key('e', "Switch Vehicle"))
+        layout.addWidget(switch_vehicle_button)
+
+        layout.addWidget(self._build_teleop_fin_pad())
+        layout.addWidget(self._build_teleop_thruster_row())
+
+        layout.addWidget(self.make_hline())
+        layout.addWidget(self.create_keyboard_controls_console_log())
+
+        self._refresh_teleop_toggle_labels()
+        return container
+
+    def _build_teleop_fin_pad(self):
+        pad_widget = QWidget()
+        grid = QGridLayout(pad_widget)
+        grid.addWidget(self._make_teleop_key_button("Fins Up (W)", 'w'), 0, 1)
+        grid.addWidget(self._make_teleop_key_button("Turn Left (A)", 'a'), 1, 0)
+        grid.addWidget(self._make_teleop_key_button("Turn Right (D)", 'd'), 1, 2)
+        grid.addWidget(self._make_teleop_key_button("Fins Down (S)", 's'), 2, 1)
+        return pad_widget
+
+    def _build_teleop_thruster_row(self):
+        row_widget = QWidget()
+        row = QHBoxLayout(row_widget)
+        row.addWidget(self._make_teleop_key_button("Thruster - (R)", 'r'))
+        row.addWidget(self._make_teleop_key_button("Thruster + (Space)", ' '))
+        return row_widget
+
+    def _make_teleop_key_button(self, text, key):
+        button = QPushButton(text)
+        button.setStyleSheet(self.normal_button_style_sheet)
+        button.clicked.connect(lambda: self._send_teleop_key(key, text))
+        return button
+
+    def _send_teleop_key(self, key, action_label):
+        self.ros_node.publish_keypress(key)
+        key_display = "Space" if key == ' ' else key.upper()
+        self._append_teleop_console(f"Sent: {action_label} ('{key_display}')")
+
+    def _refresh_teleop_toggle_labels(self):
+        enabled = getattr(self, "teleop_publishing_enabled", False)
+        armed = getattr(self, "teleop_thruster_enabled", False)
+        hard_turn = getattr(self, "teleop_hard_turn_mode", False)
+
+        self.teleop_enable_button.setText("Disable Keyboard Controls (Z)" if enabled else "Enable Keyboard Controls (Z)")
+        self.teleop_enable_button.setStyleSheet(self.danger_button_style_sheet if enabled else self.normal_button_style_sheet)
+
+        self.teleop_arm_button.setText("Disarm Thruster (Q)" if armed else "Arm Thruster (Q)")
+        self.teleop_arm_button.setStyleSheet(self.danger_button_style_sheet if armed else self.normal_button_style_sheet)
+
+        self.teleop_hard_turn_button.setText("Disable Hard Turn Mode (T)" if hard_turn else "Enable Hard Turn Mode (T)")
+        self.teleop_hard_turn_button.setStyleSheet(self.danger_button_style_sheet if hard_turn else self.normal_button_style_sheet)
+
+    def recieve_teleop_vehicle(self, vehicle_id):
+        self.teleop_vehicle_signal.emit(vehicle_id)
+
+    def _update_teleop_vehicle_gui(self, vehicle_id):
+        self.teleop_vehicle_label.setText(f"Currently controlling: Vehicle {vehicle_id}")
+
+    def recieve_teleop_thruster(self, armed):
+        self.teleop_thruster_signal.emit(armed)
+
+    def _update_teleop_thruster_gui(self, armed):
+        self.teleop_thruster_enabled = armed
+        self._refresh_teleop_toggle_labels()
+
+    def recieve_teleop_publishing(self, enabled):
+        self.teleop_publishing_signal.emit(enabled)
+
+    def _update_teleop_publishing_gui(self, enabled):
+        self.teleop_publishing_enabled = enabled
+        self._refresh_teleop_toggle_labels()
+
+    def recieve_teleop_hard_turn(self, hard_turn_mode):
+        self.teleop_hard_turn_signal.emit(hard_turn_mode)
+
+    def _update_teleop_hard_turn_gui(self, hard_turn_mode):
+        self.teleop_hard_turn_mode = hard_turn_mode
+        self._refresh_teleop_toggle_labels()
+
+    def create_keyboard_controls_console_log(self):
+        """
+        Scrolling activity log at the bottom of the Keyboard Controls tab. Mirrors every
+        console_log message system-wide (see handle_console_log) plus a local echo of every
+        button/key press sent from this tab, for situational awareness while teleoperating.
+        """
+        temp_container = QWidget()
+        temp_layout = QVBoxLayout(temp_container)
+
+        title_label = QLabel("Keyboard controls activity log")
+        title_label.setWordWrap(True)
+        title_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {self.text_color};")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        temp_layout.addWidget(title_label)
+
+        message_label = QLabel("")
+        message_label.setStyleSheet(f"color: {self.text_color};")
+        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        message_label.setWordWrap(True)
+        font = QFont()
+        font.setFamily("Arial, Noto Color Emoji")
+        font.setPointSize(13)
+        message_label.setFont(font)
+        message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        message_label.setContentsMargins(0, 0, 0, 0)
+        message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.teleop_console_label = message_label
+
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.addWidget(message_label)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(scroll_content)
+        scroll_area.setStyleSheet(
+            f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
+        )
+        self.teleop_console_scroll_area = scroll_area
+
+        temp_layout.addWidget(scroll_area)
+        return temp_container
+
+    def _append_teleop_console(self, message):
+        if not hasattr(self, "teleop_console_label"):
+            return
+        current_text = self.teleop_console_label.text()
+        updated_text = f"{current_text}\n{message}" if current_text else message
+        self.teleop_console_label.setText(updated_text)
+        self.teleop_console_label.setStyleSheet(f"color: {self.text_color};")
+
+        scroll_area = getattr(self, "teleop_console_scroll_area", None)
+        if scroll_area:
+            vbar = scroll_area.verticalScrollBar()
+            at_bottom = vbar.value() >= vbar.maximum() - 2
+            def maybe_scroll():
+                if at_bottom:
+                    vbar.setValue(vbar.maximum())
+            QTimer.singleShot(50, maybe_scroll)
+
     def paintIconBackground(self, icon_pixmap, bg_color="#28625a", diameter=24):
         """
         Draws a colored circle behind the given icon pixmap.
@@ -1878,6 +2122,8 @@ class MainWindow(QMainWindow):
         self.create_vehicle_button(vehicle_number, "copy_bag", "Copy Bag to Base Station", lambda: self.spec_copy_bags(vehicle_number))
         # Sync vehicle (normal button)
         self.create_vehicle_button(vehicle_number, "sync", "Calibrate Vehicle (BUGGY)", lambda: self.run_calibrate_script(vehicle_number))
+        # Relay / strobe control (normal button)
+        self.create_vehicle_button(vehicle_number, "hardware_control", "Relay / Strobe Control", lambda: self.hardware_control_button(vehicle_number))
 
         # Emergency surface (danger button)
         self.create_vehicle_button(vehicle_number, "emergency_surface", "Emergency Surface", lambda: self.emergency_surface_button(vehicle_number), danger=True)
@@ -1897,6 +2143,8 @@ class MainWindow(QMainWindow):
         temp_layout1.addWidget(getattr(self, f"copy_bag_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout1.addWidget(getattr(self, f"sync_vehicle{vehicle_number}_button"))
+        temp_layout1.addSpacing(temp_spacing)
+        temp_layout1.addWidget(getattr(self, f"hardware_control_vehicle{vehicle_number}_button"))
         temp_layout1.addSpacing(temp_spacing)
         temp_layout2.addWidget(getattr(self, f"emergency_surface_vehicle{vehicle_number}_button"))
         temp_layout2.addSpacing(temp_spacing)
@@ -2827,6 +3075,57 @@ def load_origin_presets():
             'altitude': float(entry.get('altitude', 0.0)),
         })
     return presets
+
+
+class HardwareControlDialog(QDialog):
+    """
+    Dialog for turning the DVL/modem relay and nav light strobe on/off/auto over radio.
+    Each button sends its command to the vehicle immediately; the dialog stays open
+    so both the relay and the strobe can be controlled independently.
+    """
+    MODES = [("Auto", "AUTO"), ("On", "ON"), ("Off", "OFF")]
+
+    def __init__(self, vehicle_number, ros_node, parent=None, background_color="white", text_color="black", pop_up_window_style=None):
+        super().__init__(parent)
+        self.vehicle_number = vehicle_number
+        self.ros_node = ros_node
+        self.setWindowTitle(f"Relay / Strobe Control - Coug {vehicle_number}")
+        self.setStyleSheet(pop_up_window_style)
+        self.text_color = text_color
+        self.background_color = background_color
+
+        layout = QVBoxLayout()
+        layout.addWidget(self._build_device_row("Relay", "RELAY"))
+        layout.addWidget(self._build_device_row("Strobe", "STROBE"))
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self.setLayout(layout)
+
+    def _build_device_row(self, label_text, device_key):
+        row_widget = QWidget()
+        row = QHBoxLayout(row_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+
+        label = QLabel(f"{label_text}:")
+        label.setStyleSheet(f"color: {self.text_color};")
+        row.addWidget(label)
+
+        for mode_text, mode_key in self.MODES:
+            button = QPushButton(mode_text)
+            button.setStyleSheet(
+                f"background-color: {self.background_color}; color: {self.text_color}; border: 1px solid {self.text_color}; padding: 4px;"
+            )
+            button.clicked.connect(lambda _, d=device_key, m=mode_key: self.send_command(d, m))
+            row.addWidget(button)
+
+        return row_widget
+
+    def send_command(self, device_key, mode_key):
+        self.ros_node.publish_hardware_control(self.vehicle_number, device_key, mode_key)
+
 
 class OriginDialog(QDialog):
     """

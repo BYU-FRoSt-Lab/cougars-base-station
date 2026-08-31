@@ -2,6 +2,8 @@
 #include <base_station_interfaces/msg/u_command_base.hpp>
 #include <base_station_interfaces/msg/console_log.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/int32.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <signal.h>
 #include <termios.h>
 #include <stdio.h>
@@ -30,10 +32,12 @@ private:
   void processKey(char key);
   void publishCommand();
   void publishConsoleLog(const std::string& message, int vehicle_id = 0);
+  void publishStatus();  // Publishes current vehicle/thruster/publishing/hard-turn state (latched) for the GUI tab
   bool tryApplyChange(const std::function<void()> &apply_fn);
+  void applyHardTurn(double direction);  // direction: -1.0 for left, +1.0 for right
   void timerCallback();  // New timer callback for rate-limited publishing
 
-  double fin1_, fin2_, fin3_, max_fin_value_; 
+  double fin1_, fin2_, fin3_, max_fin_value_;
   int thruster_value_, fin_change_speed_;
   std::string vehicle_name_;
   int vehicle_id_;
@@ -43,7 +47,11 @@ private:
   rclcpp::Publisher<base_station_interfaces::msg::UCommandBase>::SharedPtr command_pub_;
   rclcpp::Publisher<base_station_interfaces::msg::ConsoleLog>::SharedPtr console_pub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr keypress_sub_;
-  
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr status_vehicle_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr status_thruster_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr status_publishing_pub_;
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr status_hard_turn_pub_;
+
   // Rate limiting variables
   rclcpp::TimerBase::SharedPtr publish_timer_;
   bool command_dirty_;  // Flag to track if we need to publish
@@ -57,11 +65,21 @@ private:
   double command_change_rate_hz_; // max number of changes per second
   std::chrono::steady_clock::time_point last_change_time_;
   std::chrono::milliseconds min_change_interval_ms_;
+  // Hard turn mode: A/D (and Left/Right arrows) snap fin1 straight to +/- hard_turn_angle_
+  // instead of incrementing, and spring back to 0 once the key stops repeating (there's no
+  // real key-release event available from either the terminal or the GUI's key stream, so a
+  // held key is inferred from repeats arriving faster than hard_turn_release_timeout_).
+  bool hard_turn_mode_;
+  bool turn_key_held_;
+  double hard_turn_angle_;
+  std::chrono::steady_clock::time_point last_turn_key_time_;
+  std::chrono::milliseconds hard_turn_release_timeout_;
 };
 
 TeleopCommand::TeleopCommand() :
   Node("teleop_command"),
-  fin1_(0.0), fin2_(0.0), fin3_(0.0), current_vehicle_index_(0), command_dirty_(false), thruster_enabled_(false), publishing_enabled_(false)
+  fin1_(0.0), fin2_(0.0), fin3_(0.0), current_vehicle_index_(0), command_dirty_(false), thruster_enabled_(false), publishing_enabled_(false),
+  hard_turn_mode_(false), turn_key_held_(false)
 {
   declare_parameter("max_fin_value", 70.0);
   declare_parameter("thruster_value", 0);
@@ -73,6 +91,8 @@ TeleopCommand::TeleopCommand() :
   declare_parameter("invert_vertical_controls", false);
   declare_parameter("invert_lateral_controls", false);
   declare_parameter("fin_change_speed", 2); // degrees per key press
+  declare_parameter("hard_turn_angle", 45.0); // degrees, fin1 snap target in hard turn mode
+  declare_parameter("hard_turn_release_timeout_ms", 400); // how long without a repeat before we consider the key released
 
   get_parameter("max_fin_value", max_fin_value_);
   get_parameter("thruster_value", thruster_value_);
@@ -82,6 +102,10 @@ TeleopCommand::TeleopCommand() :
   get_parameter("invert_lateral_controls", invert_lateral_controls_);
   get_parameter("command_change_rate_hz", command_change_rate_hz_);
   get_parameter("fin_change_speed", fin_change_speed_); // just to use the param and avoid warning
+  get_parameter("hard_turn_angle", hard_turn_angle_);
+  int hard_turn_release_timeout_ms = 400;
+  get_parameter("hard_turn_release_timeout_ms", hard_turn_release_timeout_ms);
+  hard_turn_release_timeout_ = std::chrono::milliseconds(hard_turn_release_timeout_ms);
 
   if (command_change_rate_hz_ <= 0.0) command_change_rate_hz_ = 1.0;
   min_change_interval_ms_ = std::chrono::milliseconds(static_cast<int>(1000.0 / command_change_rate_hz_));
@@ -100,6 +124,14 @@ TeleopCommand::TeleopCommand() :
 
   // Publisher for console log messages to GUI
   console_pub_ = create_publisher<base_station_interfaces::msg::ConsoleLog>("console_log", 10);
+
+  // Status publishers for the GUI's Keyboard Controls tab. TRANSIENT_LOCAL so a GUI opened
+  // after this node has already started still immediately gets the current state.
+  auto status_qos = rclcpp::QoS(1).reliable().transient_local();
+  status_vehicle_pub_ = create_publisher<std_msgs::msg::Int32>("/teleop_status/vehicle_id", status_qos);
+  status_thruster_pub_ = create_publisher<std_msgs::msg::Bool>("/teleop_status/thruster_enabled", status_qos);
+  status_publishing_pub_ = create_publisher<std_msgs::msg::Bool>("/teleop_status/publishing_enabled", status_qos);
+  status_hard_turn_pub_ = create_publisher<std_msgs::msg::Bool>("/teleop_status/hard_turn_mode", status_qos);
 
   // Subscribe to GUI key press events
   keypress_sub_ = create_subscription<std_msgs::msg::String>(
@@ -129,11 +161,14 @@ TeleopCommand::TeleopCommand() :
     std::bind(&TeleopCommand::timerCallback, this)
   );
 
-  RCLCPP_INFO(get_logger(), "Initialized teleop for vehicle %d with publish rate %.1f Hz, thruster %s, invert_vertical=%s, invert_lateral=%s", 
+  RCLCPP_INFO(get_logger(), "Initialized teleop for vehicle %d with publish rate %.1f Hz, thruster %s, invert_vertical=%s, invert_lateral=%s",
               vehicle_id_, publish_rate_hz_, thruster_enabled_ ? "ENABLED" : "DISABLED",
               invert_vertical_controls_ ? "true" : "false",
               invert_lateral_controls_ ? "true" : "false");
-  
+
+  // Publish initial status so a GUI that's already open picks up the starting state
+  publishStatus();
+
   // Send initial console message to GUI
   publishConsoleLog("Teleop node initialized for vehicle " + std::to_string(vehicle_id_) + 
                    ", thruster " + (thruster_enabled_ ? "ENABLED" : "DISABLED"));
@@ -187,9 +222,10 @@ void TeleopCommand::keyLoop()
   puts("Use arrow keys OR WASD to control fins");
   puts("W/Up: Fins up, S/Down: Fins down");
   puts("A/Left: Turn left, D/Right: Turn right");
-  puts("Spacebar: +thruster, R/Period/Comma: -thruster");
+  puts("Spacebar: +thruster (up to 100), R/Period/Comma: -thruster (down to -100, reverse)");
   puts("Q: Toggle thruster enable/disable");
   puts("Z: Toggle publishing and GUI printing on/off");
+  puts("T: Toggle hard turn mode (A/D snap fin1 to +/- hard_turn_angle instead of incrementing)");
   puts("E: Switch vehicle");
   puts("Ctrl+C to quit");
   puts("NOTE: This node also accepts key presses from the GUI via ROS messages");
@@ -232,14 +268,22 @@ void TeleopCommand::keyLoop()
             });
             break;
           case 'C': // Right arrow
-            tryApplyChange([this, lateral_step]() {
-              fin1_ = std::clamp(fin1_ + lateral_step, -max_fin_value_, max_fin_value_);
-            });
+            if (hard_turn_mode_) {
+              applyHardTurn(1.0);
+            } else {
+              tryApplyChange([this, lateral_step]() {
+                fin1_ = std::clamp(fin1_ + lateral_step, -max_fin_value_, max_fin_value_);
+              });
+            }
             break;
           case 'D': // Left arrow
-            tryApplyChange([this, lateral_step]() {
-              fin1_ = std::clamp(fin1_ - lateral_step, -max_fin_value_, max_fin_value_);
-            });
+            if (hard_turn_mode_) {
+              applyHardTurn(-1.0);
+            } else {
+              tryApplyChange([this, lateral_step]() {
+                fin1_ = std::clamp(fin1_ - lateral_step, -max_fin_value_, max_fin_value_);
+              });
+            }
             break;
         }
       }
@@ -273,18 +317,34 @@ void TeleopCommand::switchVehicle()
   current_vehicle_index_ = (current_vehicle_index_ + 1) % vehicles_in_mission_.size();
   vehicle_id_ = vehicles_in_mission_[current_vehicle_index_];
   last_command_msg_.vehicle_id = vehicle_id_;
-  
+
   // Reset local control values to zero for the new vehicle
   fin1_ = 0.0;
   fin2_ = 0.0;
   fin3_ = 0.0;
   thruster_value_ = 0; // Reset to default thruster value
-  
+  turn_key_held_ = false; // Don't carry a stale "held" hard-turn state to the new vehicle
+
   RCLCPP_INFO(get_logger(), "Switched to controlling vehicle %d (fins and thruster reset to defaults)", vehicle_id_);
+  publishStatus();
 }
 
 void TeleopCommand::timerCallback()
 {
+  // No real key-release event is available, so a held A/D is inferred from repeats; once
+  // they stop arriving for longer than the timeout, treat it as released and spring back to 0.
+  if (hard_turn_mode_ && turn_key_held_) {
+    auto elapsed = std::chrono::steady_clock::now() - last_turn_key_time_;
+    if (elapsed > hard_turn_release_timeout_) {
+      fin1_ = 0.0;
+      turn_key_held_ = false;
+      command_dirty_ = true;
+      if (publishing_enabled_) {
+        publishConsoleLog("Hard turn released for vehicle " + std::to_string(vehicle_id_));
+      }
+    }
+  }
+
   // Publish at a steady rate regardless of changes (only if publishing is enabled)
   if (publishing_enabled_) {
     publishCommand();
@@ -352,15 +412,23 @@ void TeleopCommand::processKey(char key)
       break;
     case 'a':
     case 'A':
-      tryApplyChange([this, lateral_step]() {
-        fin1_ = std::clamp(fin1_ - lateral_step, -max_fin_value_, max_fin_value_);
-      });
+      if (hard_turn_mode_) {
+        applyHardTurn(-1.0);
+      } else {
+        tryApplyChange([this, lateral_step]() {
+          fin1_ = std::clamp(fin1_ - lateral_step, -max_fin_value_, max_fin_value_);
+        });
+      }
       break;
     case 'd':
     case 'D':
-      tryApplyChange([this, lateral_step]() {
-        fin1_ = std::clamp(fin1_ + lateral_step, -max_fin_value_, max_fin_value_);
-      });
+      if (hard_turn_mode_) {
+        applyHardTurn(1.0);
+      } else {
+        tryApplyChange([this, lateral_step]() {
+          fin1_ = std::clamp(fin1_ + lateral_step, -max_fin_value_, max_fin_value_);
+        });
+      }
       break;
     case ' ': // Space key
       tryApplyChange([this]() {
@@ -370,7 +438,7 @@ void TeleopCommand::processKey(char key)
     case 'r':
     case 'R':
       tryApplyChange([this]() {
-        thruster_value_ = std::max(0, thruster_value_ - 5);
+        thruster_value_ = std::max(-100, thruster_value_ - 5);
       });
       break;
     case '.':
@@ -378,7 +446,7 @@ void TeleopCommand::processKey(char key)
     case '-':
     case '_':
       tryApplyChange([this]() {
-        thruster_value_ = std::max(0, thruster_value_ - 5);
+        thruster_value_ = std::max(-100, thruster_value_ - 5);
       });
       break;
     case 'e':
@@ -390,18 +458,30 @@ void TeleopCommand::processKey(char key)
     case 'Q':
       thruster_enabled_ = !thruster_enabled_;  // Toggle thruster enable
       RCLCPP_DEBUG(get_logger(), "Thruster %s", thruster_enabled_ ? "ENABLED" : "DISABLED");
-      publishConsoleLog("Thruster " + std::string(thruster_enabled_ ? "ENABLED" : "DISABLED") + 
+      publishConsoleLog("Thruster " + std::string(thruster_enabled_ ? "ENABLED" : "DISABLED") +
                        " for vehicle " + std::to_string(vehicle_id_));
+      publishStatus();
       command_dirty_ = true;  // Mark for publishing to update thruster state
       break;
     case 'z':
     case 'Z':
       publishing_enabled_ = !publishing_enabled_;  // Toggle publishing and GUI printing
       RCLCPP_INFO(get_logger(), "Keyboard control %s", publishing_enabled_ ? "ENABLED" : "DISABLED");
-      // This message will only be sent if publishing is now enabled
-      if (publishing_enabled_) {
-        publishConsoleLog("Keyboard control ENABLED for vehicle " + std::to_string(vehicle_id_));
-      }
+      publishConsoleLog("Keyboard control " + std::string(publishing_enabled_ ? "ENABLED" : "DISABLED") +
+                       " for vehicle " + std::to_string(vehicle_id_));
+      publishStatus();
+      break;
+    case 't':
+    case 'T':
+      hard_turn_mode_ = !hard_turn_mode_;
+      // Reset fin1 so switching modes never leaves it stuck at an incremental or snapped value
+      fin1_ = 0.0;
+      turn_key_held_ = false;
+      command_dirty_ = true;
+      RCLCPP_INFO(get_logger(), "Hard turn mode %s", hard_turn_mode_ ? "ENABLED" : "DISABLED");
+      publishConsoleLog("Hard turn mode " + std::string(hard_turn_mode_ ? "ENABLED" : "DISABLED") +
+                       " for vehicle " + std::to_string(vehicle_id_));
+      publishStatus();
       break;
     default:
       // Ignore unknown keys
@@ -432,10 +512,50 @@ bool TeleopCommand::tryApplyChange(const std::function<void()> &apply_fn)
   return true;
 }
 
+void TeleopCommand::applyHardTurn(double direction)
+{
+  // Every repeat of A/D while the key is held refreshes this, regardless of
+  // tryApplyChange's separate rate limit - setting fin1 to the same target again is harmless.
+  last_turn_key_time_ = std::chrono::steady_clock::now();
+
+  double target = direction * hard_turn_angle_;
+  bool changed = (fin1_ != target);  // catches both the initial press and a direction reversal mid-hold
+  turn_key_held_ = true;
+
+  if (changed) {
+    fin1_ = target;
+    command_dirty_ = true;
+    if (publishing_enabled_) {
+      publishConsoleLog(
+        "Hard turn " + std::string(direction < 0 ? "LEFT" : "RIGHT") +
+        " (" + std::to_string(static_cast<int>(target)) + " deg) for vehicle " + std::to_string(vehicle_id_));
+    }
+  }
+}
+
 void TeleopCommand::publishConsoleLog(const std::string& message, int vehicle_id)
 {
   auto console_msg = base_station_interfaces::msg::ConsoleLog();
   console_msg.message = message;
   console_msg.vehicle_number = vehicle_id;
   console_pub_->publish(console_msg);
+}
+
+void TeleopCommand::publishStatus()
+{
+  std_msgs::msg::Int32 vehicle_msg;
+  vehicle_msg.data = vehicle_id_;
+  status_vehicle_pub_->publish(vehicle_msg);
+
+  std_msgs::msg::Bool thruster_msg;
+  thruster_msg.data = thruster_enabled_;
+  status_thruster_pub_->publish(thruster_msg);
+
+  std_msgs::msg::Bool publishing_msg;
+  publishing_msg.data = publishing_enabled_;
+  status_publishing_pub_->publish(publishing_msg);
+
+  std_msgs::msg::Bool hard_turn_msg;
+  hard_turn_msg.data = hard_turn_mode_;
+  status_hard_turn_pub_->publish(hard_turn_msg);
 }
