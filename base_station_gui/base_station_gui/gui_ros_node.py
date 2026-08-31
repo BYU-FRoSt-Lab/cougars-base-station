@@ -28,7 +28,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovariance, PoseWithCovarianc
 from unique_identifier_msgs.msg import UUID
 from diagnostic_msgs.msg import DiagnosticStatus
 
-from base_station_interfaces.msg import ConsoleLog
+from base_station_interfaces.msg import ConsoleLog, UCommandBase
 from cougars_interfaces.msg import SystemStatus, SystemControl, UCommand, MissionFeedback, WaypointFeedback
 from dvl_msgs.msg import DVL
 
@@ -268,6 +268,17 @@ class GuiNode(Node):
             '/teleop_status/hard_turn_mode',
             lambda msg: window.recieve_teleop_hard_turn(msg.data),
             origin_qos
+        )
+
+        # Live fin/thruster command, published by teleop_couguv_key.cpp at its configured
+        # publish rate while keyboard controls are enabled. Drives the Keyboard Controls tab's
+        # live speed/turn/pitch gauges. Default (reliable, volatile, depth 10) QoS to match
+        # the publisher.
+        self.teleop_command_sub = self.create_subscription(
+            UCommandBase,
+            '/keyboard_controls',
+            lambda msg: window.recieve_teleop_command(msg),
+            10
         )
 
         # Publisher for console log messages

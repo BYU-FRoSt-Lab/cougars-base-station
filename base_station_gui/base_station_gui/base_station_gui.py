@@ -17,10 +17,10 @@ from PyQt6.QtWidgets import (QScrollArea, QApplication, QMainWindow,
     QToolBar, QSlider, QStyle, QLineEdit, QWidget, QDialog, QFileDialog,
     QDialogButtonBox, QMessageBox, QColorDialog, QDoubleSpinBox, QComboBox
 )
-from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor, 
-    QPainter, QAction, QIcon, QActionGroup
+from PyQt6.QtGui import (QColor, QPalette, QFont, QPixmap, QKeySequence, QShortcut, QCursor,
+    QPainter, QAction, QIcon, QActionGroup, QPen
 )
-from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread
+from PyQt6.QtCore import QSize, QByteArray, Qt, QTimer, pyqtSignal, QObject, QEvent, QThread, QPointF, QRectF
 
 from pathlib import Path
 # Import custom modules for mission control, calibration, startup, and waypoint planner
@@ -40,6 +40,155 @@ def diagnostic_level_value(level):
     if isinstance(level, str):
         return ord(level[0]) if level else 0
     return int(level)
+
+class BarGauge(QWidget):
+    """
+    Vertical bidirectional bar gauge centered at zero. Used on the Keyboard Controls tab
+    to show live thruster percentage and fin pitch angle at a glance.
+    """
+    def __init__(self, title, gauge_range, unit, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._range = gauge_range  # gauge spans -gauge_range .. +gauge_range
+        self._unit = unit
+        self._value = 0.0
+        self._text_color = "#000000"
+        self._border_color = "#000000"
+        self._bg_color = "#FFFFFF"
+        self.setMinimumSize(90, 200)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+
+    def set_theme_colors(self, text_color, border_color, bg_color):
+        self._text_color = text_color
+        self._border_color = border_color
+        self._bg_color = bg_color
+        self.update()
+
+    def set_value(self, value):
+        self._value = value
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        title_h, value_h, margin = 18, 20, 8
+        painter.setPen(QColor(self._text_color))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        painter.drawText(QRectF(0, 0, self.width(), title_h),
+                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, self._title)
+
+        track_rect = QRectF(self.rect()).adjusted(margin, title_h, -margin, -value_h)
+        if track_rect.width() <= 0 or track_rect.height() <= 0:
+            painter.end()
+            return
+
+        painter.setPen(QPen(QColor(self._border_color), 2))
+        painter.setBrush(QColor(self._bg_color))
+        painter.drawRoundedRect(track_rect, 6, 6)
+
+        mid_y = track_rect.top() + track_rect.height() / 2.0
+        painter.setPen(QPen(QColor(self._border_color), 1, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(track_rect.left(), mid_y), QPointF(track_rect.right(), mid_y))
+
+        clamped = max(-self._range, min(self._range, self._value)) if self._range else 0.0
+        half_h = track_rect.height() / 2.0
+        fill_h = half_h * abs(clamped) / self._range if self._range else 0.0
+        fill_rect = QRectF(track_rect.left() + 3, mid_y, track_rect.width() - 6, 0)
+        if clamped >= 0:
+            fill_rect.setTop(mid_y - fill_h)
+            fill_rect.setBottom(mid_y)
+            fill_color = QColor("#3fae4a")
+        else:
+            fill_rect.setTop(mid_y)
+            fill_rect.setBottom(mid_y + fill_h)
+            fill_color = QColor("#c94f4f")
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(fill_color)
+        painter.drawRect(fill_rect)
+
+        painter.setPen(QColor(self._text_color))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        painter.drawText(QRectF(0, self.height() - value_h, self.width(), value_h),
+                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                          f"{self._value:+.0f}{self._unit}")
+        painter.end()
+
+
+class TurnWheelGauge(QWidget):
+    """
+    Circular "steering wheel" gauge showing the current commanded turn (fin 1) angle.
+    The needle rotates right for a right turn and left for a left turn, matching the
+    A/D key convention, and is scaled against full_scale_deg (the fin's max travel).
+    """
+    def __init__(self, full_scale_deg, parent=None):
+        super().__init__(parent)
+        self._angle = 0.0
+        self._full_scale = full_scale_deg
+        self._text_color = "#000000"
+        self._border_color = "#000000"
+        self._bg_color = "#FFFFFF"
+        self.setMinimumSize(160, 180)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_theme_colors(self, text_color, border_color, bg_color):
+        self._text_color = text_color
+        self._border_color = border_color
+        self._bg_color = bg_color
+        self.update()
+
+    def set_angle(self, angle_deg):
+        self._angle = angle_deg
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        title_h, value_h = 18, 20
+        painter.setPen(QColor(self._text_color))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        painter.drawText(QRectF(0, 0, self.width(), title_h),
+                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, "Turn (Fin 1)")
+
+        side = max(min(self.width(), self.height() - title_h - value_h) - 12, 10)
+        cx = self.width() / 2.0
+        cy = title_h + 6 + side / 2.0
+        radius = side / 2.0
+
+        painter.setPen(QPen(QColor(self._border_color), 2))
+        painter.setBrush(QColor(self._bg_color))
+        painter.drawEllipse(QPointF(cx, cy), radius, radius)
+
+        painter.setPen(QPen(QColor(self._text_color), 1))
+        for tick_angle in (-self._full_scale, 0.0, self._full_scale):
+            rad = math.radians(tick_angle)
+            x1 = cx + math.sin(rad) * (radius - 8)
+            y1 = cy - math.cos(rad) * (radius - 8)
+            x2 = cx + math.sin(rad) * radius
+            y2 = cy - math.cos(rad) * radius
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+        clamped = max(-self._full_scale, min(self._full_scale, self._angle)) if self._full_scale else 0.0
+        rad = math.radians(clamped)
+        needle_len = radius - 10
+        nx = cx + math.sin(rad) * needle_len
+        ny = cy - math.cos(rad) * needle_len
+        needle_color = "#c94f4f" if abs(self._angle) > 1.0 else self._text_color
+        painter.setPen(QPen(QColor(needle_color), 3))
+        painter.drawLine(QPointF(cx, cy), QPointF(nx, ny))
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(self._text_color))
+        painter.drawEllipse(QPointF(cx, cy), 4, 4)
+
+        painter.setPen(QColor(self._text_color))
+        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        painter.drawText(QRectF(0, self.height() - value_h, self.width(), value_h),
+                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                          f"{self._angle:+.0f}°")
+        painter.end()
+
 
 class MainWindow(QMainWindow):
     # Main GUI window class for the base station application.
@@ -61,7 +210,7 @@ class MainWindow(QMainWindow):
     teleop_thruster_signal = pyqtSignal(bool)
     teleop_publishing_signal = pyqtSignal(bool)
     teleop_hard_turn_signal = pyqtSignal(bool)
-    teleop_console_signal = pyqtSignal(str)
+    teleop_command_signal = pyqtSignal(object)
 
     # Initializes GUI window with a ros node inside
     def __init__(self, ros_node, vehicle_list):
@@ -332,7 +481,7 @@ class MainWindow(QMainWindow):
         self.teleop_thruster_signal.connect(self._update_teleop_thruster_gui)
         self.teleop_publishing_signal.connect(self._update_teleop_publishing_gui)
         self.teleop_hard_turn_signal.connect(self._update_teleop_hard_turn_gui)
-        self.teleop_console_signal.connect(self._append_teleop_console)
+        self.teleop_command_signal.connect(self._update_teleop_command_gui)
 
         # Get IP addresses for selected vehicles and display in console
         self.get_IP_addresses()
@@ -715,6 +864,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, "teleop_enable_button"):
             self._refresh_teleop_toggle_labels()
 
+        # The gauges are custom-painted QWidgets, not QLabel/QPushButton/QFrame, so the
+        # generic passes above don't touch them - restyle them explicitly here.
+        for gauge_attr in ("teleop_speed_gauge", "teleop_turn_gauge", "teleop_pitch_gauge"):
+            gauge = getattr(self, gauge_attr, None)
+            if gauge is not None:
+                gauge.set_theme_colors(self.text_color, self.border_outline, self.background_color)
+
     def repaint_icon(self, ic_label):
         """
         Repaints a QLabel icon according to the current theme.
@@ -763,9 +919,6 @@ class MainWindow(QMainWindow):
         elif msg.vehicle_number in self.selected_vehicles:
             self.recieve_console_update(msg.message, msg.vehicle_number)
 
-        # Mirror everything into the Keyboard Controls tab's own activity log too
-        self.teleop_console_signal.emit(msg.message)
-
     def scroll_console_to_bottom_on_tab(self, index):
         """
         Ensures the console log for a Vehicle tab is always scrolled to the bottom when the tab is selected.
@@ -785,8 +938,6 @@ class MainWindow(QMainWindow):
             vehicle_number = int(tab_name.split()[-1])
             # Get the scroll area for this Vehicle's console log
             scroll_area = getattr(self, f"vehicle{vehicle_number}_console_scroll_area", None)
-        elif tab_name == "Keyboard Controls":
-            scroll_area = getattr(self, "teleop_console_scroll_area", None)
         else:
             scroll_area = None
 
@@ -1797,10 +1948,14 @@ class MainWindow(QMainWindow):
         "You can also just type these keys anywhere in this window."
     )
 
+    # Mirrors teleop_couguv_key.cpp's default max_fin_value param (degrees of fin travel).
+    # If that param is ever changed on launch, this display scale won't automatically follow it.
+    TELEOP_MAX_FIN_ANGLE_DEG = 70.0
+
     def create_keyboard_controls_tab(self):
         """
         Builds the Keyboard Controls tab: a currently-controlled-vehicle indicator, instructions,
-        on-screen controls mirroring every key binding, and an activity log at the bottom.
+        live speed/turn/pitch gauges, and on-screen controls mirroring every key binding.
         Both the on-screen buttons and physical typing go through the same
         ros_node.publish_keypress() call, so they're equivalent to the teleop node.
         """
@@ -1817,30 +1972,48 @@ class MainWindow(QMainWindow):
         instructions_label.setStyleSheet(f"color: {self.text_color};")
         layout.addWidget(instructions_label)
 
+        layout.addWidget(self._build_teleop_live_gauges())
+
         self.teleop_enable_button = QPushButton()
-        self.teleop_enable_button.clicked.connect(lambda: self._send_teleop_key('z', "Enable/Disable Keyboard Controls"))
+        self.teleop_enable_button.clicked.connect(lambda: self._send_teleop_key('z'))
         layout.addWidget(self.teleop_enable_button)
 
         self.teleop_arm_button = QPushButton()
-        self.teleop_arm_button.clicked.connect(lambda: self._send_teleop_key('q', "Arm/Disarm Thruster"))
+        self.teleop_arm_button.clicked.connect(lambda: self._send_teleop_key('q'))
         layout.addWidget(self.teleop_arm_button)
 
         self.teleop_hard_turn_button = QPushButton()
-        self.teleop_hard_turn_button.clicked.connect(lambda: self._send_teleop_key('t', "Toggle Hard Turn Mode"))
+        self.teleop_hard_turn_button.clicked.connect(lambda: self._send_teleop_key('t'))
         layout.addWidget(self.teleop_hard_turn_button)
 
         switch_vehicle_button = QPushButton("Switch Vehicle (E)")
         switch_vehicle_button.setStyleSheet(self.normal_button_style_sheet)
-        switch_vehicle_button.clicked.connect(lambda: self._send_teleop_key('e', "Switch Vehicle"))
+        switch_vehicle_button.clicked.connect(lambda: self._send_teleop_key('e'))
         layout.addWidget(switch_vehicle_button)
 
         layout.addWidget(self._build_teleop_fin_pad())
         layout.addWidget(self._build_teleop_thruster_row())
 
-        layout.addWidget(self.make_hline())
-        layout.addWidget(self.create_keyboard_controls_console_log())
-
         self._refresh_teleop_toggle_labels()
+        return container
+
+    def _build_teleop_live_gauges(self):
+        """
+        Builds the live thruster/turn/pitch gauge row: reads the same UCommandBase message
+        that's actually being sent to the vehicle (see recieve_teleop_command), so it shows
+        what's really commanded rather than just echoing button presses.
+        """
+        container = QWidget()
+        row = QHBoxLayout(container)
+
+        self.teleop_speed_gauge = BarGauge("Thruster", 100.0, "%")
+        self.teleop_turn_gauge = TurnWheelGauge(self.TELEOP_MAX_FIN_ANGLE_DEG)
+        self.teleop_pitch_gauge = BarGauge("Fins Up/Down", self.TELEOP_MAX_FIN_ANGLE_DEG, "°")
+
+        for gauge in (self.teleop_speed_gauge, self.teleop_turn_gauge, self.teleop_pitch_gauge):
+            gauge.set_theme_colors(self.text_color, self.border_outline, self.background_color)
+            row.addWidget(gauge)
+
         return container
 
     def _build_teleop_fin_pad(self):
@@ -1862,13 +2035,11 @@ class MainWindow(QMainWindow):
     def _make_teleop_key_button(self, text, key):
         button = QPushButton(text)
         button.setStyleSheet(self.normal_button_style_sheet)
-        button.clicked.connect(lambda: self._send_teleop_key(key, text))
+        button.clicked.connect(lambda: self._send_teleop_key(key))
         return button
 
-    def _send_teleop_key(self, key, action_label):
+    def _send_teleop_key(self, key):
         self.ros_node.publish_keypress(key)
-        key_display = "Space" if key == ' ' else key.upper()
-        self._append_teleop_console(f"Sent: {action_label} ('{key_display}')")
 
     def _refresh_teleop_toggle_labels(self):
         enabled = getattr(self, "teleop_publishing_enabled", False)
@@ -1889,6 +2060,9 @@ class MainWindow(QMainWindow):
 
     def _update_teleop_vehicle_gui(self, vehicle_id):
         self.teleop_vehicle_label.setText(f"Currently controlling: Vehicle {vehicle_id}")
+        # teleop_couguv_key.cpp resets fins/thruster to 0 for the newly-controlled vehicle on
+        # switch; reflect that immediately instead of showing the previous vehicle's last values.
+        self._reset_teleop_gauges()
 
     def recieve_teleop_thruster(self, armed):
         self.teleop_thruster_signal.emit(armed)
@@ -1903,6 +2077,10 @@ class MainWindow(QMainWindow):
     def _update_teleop_publishing_gui(self, enabled):
         self.teleop_publishing_enabled = enabled
         self._refresh_teleop_toggle_labels()
+        if not enabled:
+            # No new commands are published while disabled, so the gauges would otherwise
+            # keep showing stale last-commanded values; zero them to signal "not commanding".
+            self._reset_teleop_gauges()
 
     def recieve_teleop_hard_turn(self, hard_turn_mode):
         self.teleop_hard_turn_signal.emit(hard_turn_mode)
@@ -1911,67 +2089,33 @@ class MainWindow(QMainWindow):
         self.teleop_hard_turn_mode = hard_turn_mode
         self._refresh_teleop_toggle_labels()
 
-    def create_keyboard_controls_console_log(self):
+    def recieve_teleop_command(self, msg):
+        self.teleop_command_signal.emit(msg)
+
+    def _update_teleop_command_gui(self, msg):
         """
-        Scrolling activity log at the bottom of the Keyboard Controls tab. Mirrors every
-        console_log message system-wide (see handle_console_log) plus a local echo of every
-        button/key press sent from this tab, for situational awareness while teleoperating.
+        Drives the live gauges from the UCommandBase message teleop_couguv_key.cpp actually
+        publishes to /keyboard_controls. fin[0] (turn) and fin[2] are sign-flipped by the
+        teleop node relative to the operator's A/D-positive convention, so undo that here.
         """
-        temp_container = QWidget()
-        temp_layout = QVBoxLayout(temp_container)
+        fins = list(msg.ucommand.fin)
+        turn_angle = -fins[0] if len(fins) > 0 else 0.0
+        pitch_angle = fins[1] if len(fins) > 1 else 0.0
 
-        title_label = QLabel("Keyboard controls activity log")
-        title_label.setWordWrap(True)
-        title_label.setFont(QFont("Arial", 15, QFont.Weight.Bold))
-        title_label.setStyleSheet(f"color: {self.text_color};")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        temp_layout.addWidget(title_label)
+        if hasattr(self, "teleop_speed_gauge"):
+            self.teleop_speed_gauge.set_value(msg.ucommand.thruster)
+        if hasattr(self, "teleop_turn_gauge"):
+            self.teleop_turn_gauge.set_angle(turn_angle)
+        if hasattr(self, "teleop_pitch_gauge"):
+            self.teleop_pitch_gauge.set_value(pitch_angle)
 
-        message_label = QLabel("")
-        message_label.setStyleSheet(f"color: {self.text_color};")
-        message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        message_label.setWordWrap(True)
-        font = QFont()
-        font.setFamily("Arial, Noto Color Emoji")
-        font.setPointSize(13)
-        message_label.setFont(font)
-        message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        message_label.setContentsMargins(0, 0, 0, 0)
-        message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.teleop_console_label = message_label
-
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.addWidget(message_label)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(scroll_content)
-        scroll_area.setStyleSheet(
-            f"border: 2px solid {self.border_outline}; border-radius: 6px; background: {self.background_color};"
-        )
-        self.teleop_console_scroll_area = scroll_area
-
-        temp_layout.addWidget(scroll_area)
-        return temp_container
-
-    def _append_teleop_console(self, message):
-        if not hasattr(self, "teleop_console_label"):
-            return
-        current_text = self.teleop_console_label.text()
-        updated_text = f"{current_text}\n{message}" if current_text else message
-        self.teleop_console_label.setText(updated_text)
-        self.teleop_console_label.setStyleSheet(f"color: {self.text_color};")
-
-        scroll_area = getattr(self, "teleop_console_scroll_area", None)
-        if scroll_area:
-            vbar = scroll_area.verticalScrollBar()
-            at_bottom = vbar.value() >= vbar.maximum() - 2
-            def maybe_scroll():
-                if at_bottom:
-                    vbar.setValue(vbar.maximum())
-            QTimer.singleShot(50, maybe_scroll)
+    def _reset_teleop_gauges(self):
+        if hasattr(self, "teleop_speed_gauge"):
+            self.teleop_speed_gauge.set_value(0.0)
+        if hasattr(self, "teleop_turn_gauge"):
+            self.teleop_turn_gauge.set_angle(0.0)
+        if hasattr(self, "teleop_pitch_gauge"):
+            self.teleop_pitch_gauge.set_value(0.0)
 
     def paintIconBackground(self, icon_pixmap, bg_color="#28625a", diameter=24):
         """
