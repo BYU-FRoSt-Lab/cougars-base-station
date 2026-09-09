@@ -159,7 +159,7 @@ public:
                 battery_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::BatteryState>(
                     ros_namespace + "/battery/data", 10);
                 depth_publishers_[vehicle_id] = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-                    ros_namespace + "/depth_data", 10);
+                    ros_namespace + "/depth/odom", 10);
                 pressure_publishers_[vehicle_id] = this->create_publisher<sensor_msgs::msg::FluidPressure>(
                     ros_namespace + "/pressure/data", 10);
             }
